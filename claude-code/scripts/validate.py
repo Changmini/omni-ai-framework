@@ -18,7 +18,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent  # claude-code/
+REPO = ROOT.parent                             # repo root = marketplace root
+MARKETPLACE_FILE = REPO / ".claude-plugin/marketplace.json"
 SKIP_DIRS = {".git", "node_modules"}
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9-]+$")
@@ -124,14 +126,14 @@ def check_claude_md():
 
 
 def check_marketplace():
-    mp = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+    mp = json.loads(MARKETPLACE_FILE.read_text(encoding="utf-8"))
     for entry in mp.get("plugins", []):
         src = entry.get("source")
         if not isinstance(src, str):
             continue
-        manifest = ROOT / src / ".claude-plugin/plugin.json"
+        manifest = REPO / src / ".claude-plugin/plugin.json"
         if not manifest.exists():
-            errors.append(f"marketplace entry '{entry['name']}': {manifest.relative_to(ROOT)} missing")
+            errors.append(f"marketplace entry '{entry['name']}': {manifest.relative_to(REPO)} missing")
             continue
         if json.loads(manifest.read_text(encoding="utf-8")).get("name") != entry["name"]:
             errors.append(f"marketplace entry '{entry['name']}': name differs from plugin.json name")
@@ -142,11 +144,11 @@ def run_cli_validate():
     if not claude:
         warnings.append("claude CLI not found; skipped `claude plugin validate`")
         return
-    mp = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+    mp = json.loads(MARKETPLACE_FILE.read_text(encoding="utf-8"))
     targets = ["."] + [e["source"] for e in mp["plugins"] if isinstance(e.get("source"), str)]
     for target in targets:
         res = subprocess.run([claude, "plugin", "validate", "--strict", target],
-                             cwd=ROOT, capture_output=True, text=True)
+                             cwd=REPO, capture_output=True, text=True)
         status = "ok" if res.returncode == 0 else "FAILED"
         print(f"claude plugin validate --strict {target}: {status}")
         if res.returncode != 0:

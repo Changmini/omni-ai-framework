@@ -14,7 +14,7 @@ Request: $ARGUMENTS
 | --- | --- |
 | This project only | `.claude/skills/<name>/SKILL.md` |
 | All your projects on this machine | `~/.claude/skills/<name>/SKILL.md` |
-| Every project that enables this framework | `plugins/omni-core/skills/<name>/SKILL.md` in the omni-ai-framework repo |
+| Every project that enables this framework | `claude-code/plugins/omni-core/skills/<name>/SKILL.md` in the omni-ai-framework repo |
 
 Prefer CLAUDE.md for short facts needed every session, a skill for knowledge or workflows needed only sometimes, and a hook for anything that must happen every time.
 
@@ -27,6 +27,6 @@ Prefer CLAUDE.md for short facts needed every session, a skill for knowledge or 
 
 ## Validate
 
-If working in the omni-ai-framework repo, run `python3 scripts/validate.py` and fix every error. Otherwise check the result manually against [checklist.md](checklist.md).
+If working in the omni-ai-framework repo, run `python3 claude-code/scripts/validate.py` and fix every error. Otherwise check the result manually against [checklist.md](checklist.md).
 
 Then test: run the same representative request in a fresh session with and without the skill and compare.
