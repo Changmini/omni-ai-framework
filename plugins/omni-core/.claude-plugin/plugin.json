@@ -1,0 +1,12 @@
+{
+  "name": "omni-core",
+  "displayName": "Omni Core",
+  "version": "0.1.0",
+  "description": "Explore-plan-implement-verify workflow skills, spec interviews, skill authoring, and an adversarial review subagent",
+  "author": {
+    "name": "changmini"
+  },
+  "repository": "https://github.com/changmini/omni-ai-framework",
+  "license": "MIT",
+  "keywords": ["workflow", "planning", "verification", "review", "skills"]
+}
