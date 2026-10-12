@@ -1,0 +1,12 @@
+{
+  "name": "omni-guardrails",
+  "displayName": "Omni Guardrails",
+  "version": "0.1.0",
+  "description": "PreToolUse hooks that block catastrophic shell commands and ask before history-rewriting git operations",
+  "author": {
+    "name": "changmini"
+  },
+  "repository": "https://github.com/changmini/omni-ai-framework",
+  "license": "MIT",
+  "keywords": ["hooks", "safety", "guardrails"]
+}

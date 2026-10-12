@@ -1,0 +1,19 @@
+{
+  "name": "omni-ai-framework",
+  "description": "Project-agnostic Claude Code plugins: workflow skills, a review subagent, and safety hooks",
+  "owner": {
+    "name": "changmini"
+  },
+  "plugins": [
+    {
+      "name": "omni-core",
+      "source": "./plugins/omni-core",
+      "description": "Explore-plan-implement-verify workflow skills, spec interviews, skill authoring, and an adversarial review subagent"
+    },
+    {
+      "name": "omni-guardrails",
+      "source": "./plugins/omni-guardrails",
+      "description": "PreToolUse hooks that block catastrophic shell commands and ask before history-rewriting git operations"
+    }
+  ]
+}
