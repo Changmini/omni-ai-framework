@@ -23,8 +23,8 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-MARKETPLACE = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
+REPO = Path(__file__).resolve().parents[2]  # repo root = marketplace root
+MARKETPLACE = json.loads((REPO / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
 MP_NAME = MARKETPLACE["name"]
 
 
@@ -78,7 +78,7 @@ def main():
         "$schema": "https://json.schemastore.org/claude-code-settings.json"}
 
     for entry in entries:
-        vendor_plugin(ROOT / entry["source"], entry["name"], project, settings)
+        vendor_plugin(REPO / entry["source"], entry["name"], project, settings)
         settings.get("enabledPlugins", {}).pop(f"{entry['name']}@{MP_NAME}", None)
     if not any(k.endswith(f"@{MP_NAME}") for k in settings.get("enabledPlugins", {})):
         settings.get("extraKnownMarketplaces", {}).pop(MP_NAME, None)

@@ -1,4 +1,6 @@
-# 아키텍처와 근거
+# Claude Code 전용 배포본: 아키텍처와 근거
+
+> 도구 중립 설계는 [`../universal/docs/DESIGN.md`](../universal/docs/DESIGN.md)에 있습니다. 이 폴더는 그 설계의 **Claude Code 어댑터**에 해당합니다.
 
 이 문서는 프레임워크의 각 결정이 Anthropic 공식 문서의 어느 내용에 근거하는지 정리합니다.
 (조사 시점: 2026-10, Claude Code v2.1.296 기준. `claude plugin validate --strict` 통과 확인.)
@@ -26,7 +28,7 @@
 
 **범용(모든 프로젝트 동일)** 부분과 **프로젝트별** 부분을 분리합니다.
 
-- 범용 → 플러그인(`plugins/`)으로 만들어 마켓플레이스(`.claude-plugin/marketplace.json`)로 배포
+- 범용 → 플러그인(`claude-code/plugins/`)으로 만들어 마켓플레이스(저장소 루트 `.claude-plugin/marketplace.json`)로 배포. 마켓플레이스 파일을 하위 폴더에 두고 `path`로 가리키는 방식은 문서상 가능하지만, v2.1.296에서 세션 시작 시 `cache-miss`로 로드에 실패해 루트에 진입점 파일 하나만 둠
   - "A plugin marketplace is a directory or repository with a `.claude-plugin/marketplace.json` file" — [Create a marketplace](https://code.claude.com/docs/en/plugin-marketplaces)
 - 프로젝트별 → `template/`을 복사해 각 프로젝트가 채움 (`CLAUDE.md`, rules, 권한)
 

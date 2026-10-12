@@ -17,7 +17,9 @@ jobs:
           python-version: "3.12"
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
-      - name: Validate skills, agents, manifests
+      - name: "claude-code: validate skills, agents, manifests"
+        working-directory: claude-code
         run: python3 scripts/validate.py
-      - name: Hook tests
+      - name: "claude-code: hook tests"
+        working-directory: claude-code
         run: tests/test-hooks.sh
