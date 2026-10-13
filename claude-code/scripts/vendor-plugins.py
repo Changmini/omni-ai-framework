@@ -23,7 +23,7 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]  # repo root = marketplace root
+REPO = Path(__file__).resolve().parents[1]  # claude-code/ = marketplace root
 MARKETPLACE = json.loads((REPO / ".claude-plugin/marketplace.json").read_text(encoding="utf-8"))
 MP_NAME = MARKETPLACE["name"]
 

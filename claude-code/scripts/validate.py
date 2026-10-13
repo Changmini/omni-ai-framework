@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent  # claude-code/
-REPO = ROOT.parent                             # repo root = marketplace root
+REPO = ROOT                                    # claude-code/ = marketplace root
 MARKETPLACE_FILE = REPO / ".claude-plugin/marketplace.json"
 SKIP_DIRS = {".git", "node_modules"}
 

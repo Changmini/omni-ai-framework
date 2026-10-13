@@ -1,18 +1,18 @@
 {
   "name": "omni-ai-framework",
-  "description": "Claude Code-only plugins (sources live in claude-code/). Discovery entry point required at the repo root by `claude plugin marketplace add owner/repo`.",
+  "description": "Claude Code-only plugins: workflow skills, a review subagent, and safety hooks",
   "owner": {
     "name": "changmini"
   },
   "plugins": [
     {
       "name": "omni-core",
-      "source": "./claude-code/plugins/omni-core",
+      "source": "./plugins/omni-core",
       "description": "Explore-plan-implement-verify workflow skills, spec interviews, skill authoring, and an adversarial review subagent"
     },
     {
       "name": "omni-guardrails",
-      "source": "./claude-code/plugins/omni-guardrails",
+      "source": "./plugins/omni-guardrails",
       "description": "PreToolUse hooks that block catastrophic shell commands and ask before history-rewriting git operations"
     }
   ]
