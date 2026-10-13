@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Runs the change policies on staged changes. Enable once per clone:
+#   git config core.hooksPath .agents/githooks
+set -u
+root=$(git rev-parse --show-toplevel)
+if ! "$root/.agents/policies/change/check-secrets.sh" --staged; then
+  echo >&2
+  echo "pre-commit: commit blocked by .agents/policies/change/check-secrets.sh" >&2
+  echo "Remove the secret, or mark a false positive with 'omni:allow-secret' on that line." >&2
+  exit 1
+fi

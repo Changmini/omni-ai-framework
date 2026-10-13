@@ -1,0 +1,20 @@
+{
+  "skill_name": "planning-changes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add rate limiting to every public API endpoint in this service.",
+      "expected_output": "Explores existing middleware first, writes a plan listing files, out-of-scope items and a verification command, implements, runs the checks and shows their output, then reviews the diff."
+    },
+    {
+      "id": 2,
+      "prompt": "Rename the variable `cnt` to `count` in utils.py.",
+      "expected_output": "Recognizes a one-sentence change and does it directly without the full planning checklist."
+    },
+    {
+      "id": 3,
+      "prompt": "Users say login fails after their session times out. Fix it.",
+      "expected_output": "Plans a failing test that reproduces the timeout case before changing code, then fixes the root cause and shows the test passing."
+    }
+  ]
+}

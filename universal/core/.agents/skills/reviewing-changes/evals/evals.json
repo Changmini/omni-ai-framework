@@ -1,0 +1,20 @@
+{
+  "skill_name": "reviewing-changes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review my changes before I open a pull request.",
+      "expected_output": "Collects the diff and requirements, reviews in a separate pass or sub-agent, and reports correctness findings with file, line, and a concrete failing input."
+    },
+    {
+      "id": 2,
+      "prompt": "Review this diff: it only renames two variables.",
+      "expected_output": "Reports that no correctness findings survived instead of inventing issues or listing style preferences."
+    },
+    {
+      "id": 3,
+      "prompt": "Check that the new export feature matches docs/specs/export.md.",
+      "expected_output": "Compares the diff against each requirement in the spec and lists missing or partial requirements."
+    }
+  ]
+}

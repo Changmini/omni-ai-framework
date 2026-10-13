@@ -1,0 +1,20 @@
+{
+  "skill_name": "writing-documents",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a decision record for switching from REST to gRPC between our services.",
+      "expected_output": "Uses the decision template with context, options, decision and consequences, saves under docs/decisions with a numbered file name, and uses absolute dates."
+    },
+    {
+      "id": 2,
+      "prompt": "Turn our discussion into an implementation plan.",
+      "expected_output": "Uses the plan template including files, out of scope, steps and a verification method."
+    },
+    {
+      "id": 3,
+      "prompt": "Document which database versions we support.",
+      "expected_output": "Marks claims about external software as verified with a source link or as unverified."
+    }
+  ]
+}
