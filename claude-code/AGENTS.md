@@ -11,7 +11,7 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 
 ## Layout
 
-- `../.claude-plugin/marketplace.json` — catalog at the repo root (`claude plugin marketplace add owner/repo` only looks there; a `path` source failed to load with `cache-miss` on v2.1.296). Entry sources are `./claude-code/plugins/<name>`; each entry `name` must equal its `plugin.json` `name`
+- `.claude-plugin/marketplace.json` — catalog; this folder is the marketplace root, so users register it from a local clone (`claude plugin marketplace add <clone>/claude-code`). Entry sources are `./plugins/<name>`; each entry `name` must equal its `plugin.json` `name`. GitHub `owner/repo` registration and a GitHub source with `path` don't work for a subfolder marketplace (`cache-miss` on v2.1.296), so don't document them as install routes
 - `plugins/<plugin>/` — one plugin each; only `plugin.json` goes inside `.claude-plugin/`
 - `template/` — files `scripts/bootstrap-project.sh` copies into a target project
 - `scripts/vendor-plugins.py` — copies plugin skills/agents/hooks into a project's `.claude/` for cloud sessions, which don't install repo-enabled plugins; keep hook commands in the form `"${CLAUDE_PLUGIN_ROOT}"/scripts/<file>` so it can rewrite them

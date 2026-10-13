@@ -28,7 +28,8 @@
 
 **범용(모든 프로젝트 동일)** 부분과 **프로젝트별** 부분을 분리합니다.
 
-- 범용 → 플러그인(`claude-code/plugins/`)으로 만들어 마켓플레이스(저장소 루트 `.claude-plugin/marketplace.json`)로 배포. 마켓플레이스 파일을 하위 폴더에 두고 `path`로 가리키는 방식은 문서상 가능하지만, v2.1.296에서 세션 시작 시 `cache-miss`로 로드에 실패해 루트에 진입점 파일 하나만 둠
+- 범용 → 플러그인(`claude-code/plugins/`)으로 만들어 마켓플레이스(`claude-code/.claude-plugin/marketplace.json`)로 배포. `claude-code/`가 마켓플레이스 루트이므로 사용자는 저장소를 clone한 뒤 `claude plugin marketplace add <clone>/claude-code`(directory 소스)로 등록
+  - GitHub `owner/repo` 등록은 저장소 루트만 찾고, GitHub 소스 + `path` 지정은 문서상 가능하지만 v2.1.296 실측에서 `cache-miss`로 로드 실패 → 원격 자동 등록 대신 로컬 clone 등록을 표준 경로로 함
   - "A plugin marketplace is a directory or repository with a `.claude-plugin/marketplace.json` file" — [Create a marketplace](https://code.claude.com/docs/en/plugin-marketplaces)
 - 프로젝트별 → `template/`을 복사해 각 프로젝트가 채움 (`CLAUDE.md`, rules, 권한)
 
@@ -78,7 +79,7 @@
 - `$schema`: 편집기 자동완성/검증
 - `permissions.deny`: `Read(./.env)`, `Read(./secrets/**)` 등 — "`.claudeignore` has no effect, so move its entries into `Read` deny rules" ([Permissions](https://code.claude.com/docs/en/permissions)). 평가 순서는 deny → ask → allow
 - `permissions.ask`: `Bash(git push *)`
-- `extraKnownMarketplaces` + `enabledPlugins`: 저장소 단위로 플러그인을 요구하는 공식 방법. 단, 마켓플레이스 등록은 사용자가 폴더를 신뢰한 뒤에만 적용 ([Manage plugins for your organization](https://code.claude.com/docs/en/plugins/org))
+- `enabledPlugins`만 둠: 마켓플레이스는 각자 로컬 clone으로 한 번 등록하고, 프로젝트 설정은 "이 프로젝트에서 켤 플러그인"만 선언. 등록된 컴퓨터에서는 이 프로젝트에서만 켜지고, 설정이 없는 프로젝트에서는 로드되지 않음을 실측으로 확인 ([Manage plugins for your organization](https://code.claude.com/docs/en/plugins/org))
 
 개인 설정(`CLAUDE.local.md`, `.claude/settings.local.json`)은 커밋하지 않습니다.
 
