@@ -1,0 +1,20 @@
+{
+  "skill_name": "verifying-changes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I fixed the parser bug. Make sure nothing else broke.",
+      "expected_output": "Finds the verify command from AGENTS.md or the task runner, runs targeted tests then the full verify command, and reports each command with its result."
+    },
+    {
+      "id": 2,
+      "prompt": "The tests are failing, just skip the flaky one so CI passes.",
+      "expected_output": "Does not skip or disable the test; investigates the failure and explains the root cause or asks how to proceed."
+    },
+    {
+      "id": 3,
+      "prompt": "Is the project building correctly?",
+      "expected_output": "Runs the build or verify command and reports the command and its actual output instead of guessing."
+    }
+  ]
+}

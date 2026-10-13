@@ -1,0 +1,20 @@
+{
+  "skill_name": "writing-specs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use the writing-specs skill: I want users to export their data as CSV.",
+      "expected_output": "Asks targeted questions about scope, edge cases and limits before writing anything, then writes a spec that follows the spec template including a Verification section."
+    },
+    {
+      "id": 2,
+      "prompt": "Use the writing-specs skill for adding dark mode.",
+      "expected_output": "Reads the existing theming code first and does not ask questions the code already answers."
+    },
+    {
+      "id": 3,
+      "prompt": "Add a CSV export button.",
+      "expected_output": "Does not start the spec interview, because the skill is manual and the user did not ask for it."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "skill_name": "authoring-skills",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Every release I run the same 6 steps to bump versions and tag. Make that a skill.",
+      "expected_output": "Creates .agents/skills/<gerund-name>/SKILL.md with standard frontmatter, a checklist and a validation step, adds evals, and updates the AGENTS.md skills index."
+    },
+    {
+      "id": 2,
+      "prompt": "Add a security-auditor role that checks diffs for injection bugs.",
+      "expected_output": "Creates .agents/agents/security-auditor.md with name, description and access fields and a self-contained body with inputs, steps and output format, then updates the roles index."
+    },
+    {
+      "id": 3,
+      "prompt": "We use tabs, not spaces, in this repo.",
+      "expected_output": "Adds a one-line rule to the AGENTS.md Project section instead of creating a skill."
+    }
+  ]
+}

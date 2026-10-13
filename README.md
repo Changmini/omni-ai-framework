@@ -4,10 +4,10 @@
 
 | 폴더 | 성격 | 상태 |
 | --- | --- | --- |
-| [`universal/`](universal/) | **도구·모델 중립** 프레임워크. AGENTS.md · Agent Skills · MCP 공개 표준과 git hooks · CI 기반 | 설계 단계 → [설계 문서](universal/docs/DESIGN.md) |
+| [`universal/`](universal/) | **도구·모델 중립** 프레임워크. 루트 `AGENTS.md`가 스킬·서브 에이전트 역할·문서 디자인으로 안내하고, git hooks가 강제 | 1단계 구현 완료 → [사용 안내](universal/README.md) · [설계](universal/docs/DESIGN.md) |
 | [`claude-code/`](claude-code/) | **Claude Code 전용** 플러그인 마켓플레이스 + 프로젝트 템플릿 | 동작함 (`claude plugin validate --strict` 통과) |
 
-`universal/`이 기준 설계이고, `claude-code/`는 그 설계 중 Claude Code 어댑터의 참조 구현입니다.
+`universal/`이 기준이고, `claude-code/`는 그 설계 중 Claude Code 어댑터의 참조 구현입니다.
 
 저장소 루트에는 특정 도구 전용 파일이 없습니다. Claude Code를 쓰려면 저장소를 clone한 뒤 `claude-code/` 폴더를 마켓플레이스로 등록하세요.
 

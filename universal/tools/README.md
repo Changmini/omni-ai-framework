@@ -1,11 +1,10 @@
 # tools/
 
-`omni` CLI 위치입니다. 구현 언어는 미정입니다(DESIGN.md §8).
-
-| 명령 | 동작 |
+| 파일 | 내용 |
 | --- | --- |
-| `omni init <project>` | core 설치, `omni.json`·`omni.lock` 생성. 기존 파일은 덮어쓰지 않음 |
-| `omni sync [--check]` | 활성 어댑터 실행 / drift 검사 |
-| `omni update` | core 새 버전 반영, lock 해시로 로컬 수정 보존 |
-| `omni validate` | 스킬 표준·이름 규칙, 중립 서술 린트, mcp.json 스키마, AGENTS.md 길이 |
-| `omni eval <skill> --agent <cmd>` | evals를 스킬 있음/없음으로 실행해 비교 |
+| `omni.py` | `init` · `update` · `index` · `validate` (Python 3.9+ 표준 라이브러리만 사용) |
+| `tests/run.sh` | 정책 25건 + CLI 11건 회귀 테스트 |
+
+사용법은 [../README.md](../README.md#사용법)를 보세요. `python3 omni.py --help`로 명령 목록을 볼 수 있습니다.
+
+🔜 2단계: `sync [--check]`(어댑터 실행), `omni.json`/`omni.lock`. 4단계: `eval`.

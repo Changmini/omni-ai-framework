@@ -56,14 +56,31 @@
 | `anthropic`/`claude` 예약어 금지 | 없음 | 있음 |
 | `disable-model-invocation`, `argument-hint`, `context: fork` 등 | 없음 (→ 다른 도구에서 무시됨) | Claude Code 확장 |
 
-## 4. MCP
+## 4. 도구별 확인: Kimi CLI
+
+출처: <https://github.com/MoonshotAI/kimi-cli> (확인 커밋 2026-09-22). 웹 문서 사이트는 이 환경에서 접근할 수 없어 저장소의 소스와 문서로 확인했습니다.
+
+- **AGENTS.md** ✅ — `src/kimi_cli/soul/agent.py`의 `load_agents_md`가 프로젝트 루트부터 작업 폴더까지 `AGENTS.md`(또는 `agents.md`)와 `.kimi/AGENTS.md`를 찾아 병합합니다.
+- **스킬** ✅ — `src/kimi_cli/skill/__init__.py`, `docs/en/customization/skills.md`:
+  - 프로젝트: generic 그룹 `.agents/skills/`, brand 그룹 `.kimi/skills/` > `.claude/skills/` > `.codex/skills/`
+  - 사용자: `~/.config/agents/skills/` > `~/.agents/skills/`, brand 그룹 `~/.kimi/skills/` 등
+  - 프로젝트 스킬 탐색은 가장 가까운 `.git` 상위 폴더까지 올라갑니다(CHANGELOG).
+- **서브 에이전트** ✅ — 고유 형식은 YAML agent spec(`src/kimi_cli/agents/default/*.yaml`, `subagents:` 맵, `--agent-file`)입니다. 기본 에이전트가 `coder`, `explore`, `plan` 서브 에이전트와 Agent 도구를 가지고 있어, 자유 형식 지시문을 넘길 수 있습니다.
+- **실행 검증**: ❌ 이 환경에 Moonshot 계정이 없어 실제 세션은 실행하지 못했습니다.
+
+## 5. 도구별 확인: Claude Code (실제 세션)
+
+- `CLAUDE.md` 없이 `AGENTS.md`만 둔 프로젝트에서 `claude -p`로 두 작업을 실행했습니다(v2.1.296, 2026-10-13). 에이전트가 AGENTS.md 목록을 보고 `.agents/skills/…/SKILL.md`, `.agents/agents/reviewer.md`, `.agents/docs/templates/decision.md`를 직접 읽고 따랐습니다. ✅
+- 스킬 자동 탐색은 `.claude/skills/`만 대상이므로 `.agents/skills/`는 AGENTS.md 목록으로만 접근합니다 ✅ (<https://code.claude.com/docs/en/skills>).
+
+## 6. MCP
 
 - 프로토콜 자체는 공개 표준. 그러나 **프로젝트 설정 파일 위치·스키마는 도구마다 다름**:
   - Claude Code: `.mcp.json`, 키 `mcpServers` ✅ (code.claude.com)
   - Cursor `.cursor/mcp.json`, VS Code `.vscode/mcp.json`, Codex `~/.codex/config.toml`(`mcp_servers`), Gemini CLI `.gemini/settings.json` ⚠️ (2차 출처, 일부 충돌)
 - 결론: 정본 하나를 두고 어댑터가 도구별 파일을 생성해야 함
 
-## 5. 도구 중립으로 일반화한 Anthropic 권장 사항
+## 7. 도구 중립으로 일반화한 Anthropic 권장 사항
 
 Anthropic 문서(<https://code.claude.com/docs/en/best-practices>, <https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices>)에서 특정 도구 기능이 아닌 **원리**만 추출:
 
