@@ -34,5 +34,6 @@ done < "$src/gitignore.claude"
 
 echo
 echo "Done: $copied added, $skipped skipped."
-echo "Next: fill in CLAUDE.md, adjust .claude/settings.json permissions, commit, then start Claude Code"
-echo "in the project and accept the workspace trust dialog so the marketplace and plugins install."
+echo "Next: fill in CLAUDE.md, adjust .claude/settings.json permissions, and commit."
+echo "Plugins turn on only where the marketplace is registered (once per computer):"
+echo "  claude plugin marketplace add $(cd "$(dirname "$0")/.." && pwd)"

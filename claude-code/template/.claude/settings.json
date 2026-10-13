@@ -13,14 +13,6 @@
     ],
     "allow": []
   },
-  "extraKnownMarketplaces": {
-    "omni-ai-framework": {
-      "source": {
-        "source": "github",
-        "repo": "changmini/omni-ai-framework"
-      }
-    }
-  },
   "enabledPlugins": {
     "omni-core@omni-ai-framework": true,
     "omni-guardrails@omni-ai-framework": true

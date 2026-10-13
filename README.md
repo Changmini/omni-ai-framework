@@ -9,7 +9,14 @@
 
 `universal/`이 기준 설계이고, `claude-code/`는 그 설계 중 Claude Code 어댑터의 참조 구현입니다.
 
-루트의 `.claude-plugin/marketplace.json`은 Claude Code가 `claude plugin marketplace add changmini/omni-ai-framework`를 실행할 때 저장소 루트에서만 찾는 진입점 파일입니다. 내용은 모두 `claude-code/`를 가리킵니다.
+저장소 루트에는 특정 도구 전용 파일이 없습니다. Claude Code를 쓰려면 저장소를 clone한 뒤 `claude-code/` 폴더를 마켓플레이스로 등록하세요.
+
+```bash
+git clone https://github.com/changmini/omni-ai-framework ~/omni-ai-framework
+claude plugin marketplace add ~/omni-ai-framework/claude-code
+```
+
+자세한 사용법은 [claude-code/README.md](claude-code/README.md#설치-claude-code-폴더를-마켓플레이스로-등록)를 보세요.
 
 ## 라이선스
 
