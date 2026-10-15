@@ -15,6 +15,8 @@
   },
   "enabledPlugins": {
     "omni-core@omni-ai-framework": true,
-    "omni-guardrails@omni-ai-framework": true
+    "omni-guardrails@omni-ai-framework": true,
+    "superpowers@omni-ai-framework": true,
+    "playwright-cli@omni-ai-framework": true
   }
 }

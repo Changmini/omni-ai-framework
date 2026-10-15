@@ -13,10 +13,12 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 
 - `.claude-plugin/marketplace.json` — catalog; this folder is the marketplace root, so users register it from a local clone (`claude plugin marketplace add <clone>/claude-code`). Entry sources are `./plugins/<name>`; each entry `name` must equal its `plugin.json` `name`. GitHub `owner/repo` registration and a GitHub source with `path` don't work for a subfolder marketplace (`cache-miss` on v2.1.296), so don't document them as install routes
 - `plugins/<plugin>/` — one plugin each; only `plugin.json` goes inside `.claude-plugin/`
-- `template/` — files `scripts/bootstrap-project.sh` copies into a target project
-- `scripts/vendor-plugins.py` — copies plugin skills/agents/hooks into a project's `.claude/` for cloud sessions, which don't install repo-enabled plugins; keep hook commands in the form `"${CLAUDE_PLUGIN_ROOT}"/scripts/<file>` so it can rewrite them
+- `template/` — files `scripts/bootstrap-project.sh` copies into a target project; bootstrap then runs `scripts/install-plugins.sh`, because externally sourced plugins are not installed from project `enabledPlugins` alone
+- `scripts/vendor-plugins.py` — copies every marketplace plugin (local, or fetched from git at its pinned sha) into a project's `.claude/` for cloud sessions, which don't install repo-enabled plugins. Hook plugins are copied whole to `.claude/vendor/<plugin>/` and their hook commands run with `CLAUDE_PLUGIN_ROOT` set to that copy
 
 ## Rules
+
+- Third-party marketplace entries (`superpowers`, `playwright-cli`) must pin a full 40-character `sha` and name the upstream repository and license in `description`. Bump the sha only after reviewing the upstream diff, then rerun the install test in README "기본 탑재 플러그인".
 
 - Skills: gerund names (`verifying-changes`), third-person description stating what + when, body under 500 lines, reference files one level deep. Checklist: `plugins/omni-core/skills/authoring-skills/checklist.md`.
 - Hook scripts must exit 0 with no output when they have no decision; use exit 2 or JSON `permissionDecision` only to block. Quote `"${CLAUDE_PLUGIN_ROOT}"` in commands.

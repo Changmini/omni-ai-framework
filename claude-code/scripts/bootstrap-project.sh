@@ -34,6 +34,12 @@ done < "$src/gitignore.claude"
 
 echo
 echo "Done: $copied added, $skipped skipped."
+echo
+if command -v claude >/dev/null 2>&1; then
+  "$(dirname "$0")/install-plugins.sh" "$dst" || echo "Some plugins failed to install; see messages above." >&2
+else
+  echo "claude CLI not found: after installing Claude Code, run $(dirname "$0")/install-plugins.sh $dst"
+fi
+echo
 echo "Next: fill in CLAUDE.md, adjust .claude/settings.json permissions, and commit."
-echo "Plugins turn on only where the marketplace is registered (once per computer):"
-echo "  claude plugin marketplace add $(cd "$(dirname "$0")/.." && pwd)"
+echo "Teammates run once per clone of the project: $(cd "$(dirname "$0")" && pwd)/install-plugins.sh <project>"
