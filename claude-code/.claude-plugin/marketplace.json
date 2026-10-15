@@ -1,6 +1,6 @@
 {
   "name": "omni-ai-framework",
-  "description": "Claude Code-only plugins: workflow skills, a review subagent, and safety hooks",
+  "description": "Claude Code plugins: omni workflow skills, review subagent, safety hooks, plus pinned third-party defaults (superpowers, playwright-cli)",
   "owner": {
     "name": "changmini"
   },
@@ -14,6 +14,29 @@
       "name": "omni-guardrails",
       "source": "./plugins/omni-guardrails",
       "description": "PreToolUse hooks that block catastrophic shell commands and ask before history-rewriting git operations"
+    },
+    {
+      "name": "superpowers",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/obra/superpowers.git",
+        "sha": "5bf4e78011075bcfc0dc295f0724994cd123ee71"
+      },
+      "description": "Third-party (obra/superpowers, MIT): brainstorming, planning, TDD, systematic debugging, subagent-driven development, code review. Pinned to the commit Anthropic's official marketplace lists.",
+      "homepage": "https://github.com/obra/superpowers",
+      "category": "third-party"
+    },
+    {
+      "name": "playwright-cli",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/microsoft/playwright-cli.git",
+        "path": "skills/playwright-cli",
+        "sha": "b85c7a736bb473bf55b584e54a09ffa698d6d871"
+      },
+      "description": "Third-party (microsoft/playwright-cli, Apache-2.0): browser automation and testing skill driving the playwright-cli command (installs it with npm when missing).",
+      "homepage": "https://github.com/microsoft/playwright-cli",
+      "category": "third-party"
     }
   ]
 }

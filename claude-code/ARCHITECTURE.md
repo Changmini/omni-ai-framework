@@ -95,7 +95,7 @@
 | 저장소 `.claude/settings.json`의 플러그인/마켓플레이스 | **아니오** |
 | `~/.claude/` 사용자 설정·스킬 | 아니오 |
 
-→ `scripts/vendor-plugins.py`가 플러그인의 스킬·에이전트·훅 스크립트를 `.claude/`로 복사하고, 훅 경로를 `${CLAUDE_PLUGIN_ROOT}`에서 `${CLAUDE_PROJECT_DIR}/.claude/hooks/<plugin>/`로 바꿔 `settings.json`에 병합합니다. 중복 실행을 막기 위해 해당 `enabledPlugins` 항목은 제거합니다.
+→ `scripts/vendor-plugins.py`가 플러그인의 스킬·에이전트를 `.claude/`로 복사합니다. 훅이 있는 플러그인은 `.claude/vendor/<plugin>/`에 통째로 복사하고, 훅 명령의 `${CLAUDE_PLUGIN_ROOT}`를 그 위치로 바꾸고 같은 값을 환경변수로 지정해 `settings.json`에 병합합니다. 외부 플러그인은 고정 sha로 git에서 받아옵니다(11절). 중복 실행을 막기 위해 해당 `enabledPlugins` 항목은 제거합니다.
 
 ## 8. 훅 동작 규약
 
@@ -119,3 +119,11 @@ Claude Code는 `CLAUDE.md`가 없으면 `AGENTS.md`를 읽습니다. 둘 다 써
 - CI(`.github/workflows/validate.yml`)에서 위 두 가지를 실행
 
 스킬의 실제 효과는 공식 권장대로 "with and without the skill"을 새 세션에서 비교해 평가합니다.
+
+## 11. 기본 탑재 외부 플러그인
+
+- **superpowers**는 Anthropic 공식 마켓플레이스(`anthropics/claude-plugins-official`)에 `url` 소스 + `sha` 고정으로 등록되어 있습니다. 같은 커밋(`5bf4e78…`, v6.4.1)을 우리 마켓플레이스에 그대로 고정했습니다.
+- **playwright-cli**는 Claude 플러그인이 아니라 npm CLI(`@playwright/cli`)와 스킬 폴더 하나(`skills/playwright-cli/SKILL.md`)입니다. "루트에 `SKILL.md`만 있는 플러그인은 스킬 하나로 로드된다"는 규칙([Plugins reference › Standard layout](https://code.claude.com/docs/en/plugins-reference))을 이용해, `git-subdir` 소스로 그 폴더를 바로 플러그인으로 등록했습니다. 코드를 복사하지 않고 업스트림을 sha로 고정합니다.
+- 둘을 우리 마켓플레이스에 넣은 이유: 마켓플레이스 등록 한 번으로 전부 설치되고, 버전을 우리가 검토 후 올리며, `vendor-plugins.py`가 같은 방식으로 클라우드용 복사를 할 수 있기 때문입니다.
+- **외부 소스 플러그인은 프로젝트 `enabledPlugins`만으로는 설치되지 않습니다.** 공식 문서: "A plugin whose marketplace entry points at an external source … doesn't install from the repository's settings alone … until they run `claude plugin install <name>@<marketplace> --scope project`" ([Manage plugins for your organization](https://code.claude.com/docs/en/plugins/org)). v2.1.296 실측도 같았고, project scope 설치는 그 프로젝트에만 적용됐습니다. 그래서 `install-plugins.sh`를 두고 bootstrap에서 자동 실행합니다.
+- 클라우드 vendoring: superpowers의 SessionStart 훅은 스크립트 위치로 플러그인 루트를 찾지만, `CLAUDE_PLUGIN_ROOT`가 있어야 Claude Code 형식으로 출력합니다. 그래서 vendoring한 훅 명령 앞에 `CLAUDE_PLUGIN_ROOT="${CLAUDE_PROJECT_DIR}/.claude/vendor/<plugin>"`을 붙입니다. 플러그인을 하나도 설치하지 않은 환경에서 훅이 `using-superpowers` 내용을 주입하는 것을 확인했습니다.
