@@ -18,7 +18,7 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 
 ## Rules
 
-- `plugins/omni-pipeline/` and `plugins/omni-jira/agents/` hold the team's own Korean pipeline documents. Keep their wording; change only what the plugin location requires (plugin-scoped agent names `omni-pipeline:<name>`) and never put personal data in them — names and account ids go through omni-jira's `userConfig` (`${user_config.*}` in agent bodies, `CLAUDE_PLUGIN_OPTION_*` in hooks).
+- `plugins/omni-pipeline/` and `plugins/omni-jira/agents/` hold the team's Korean pipeline documents. Keep them project-independent: no repository-specific paths, commands, section numbers, services or business-domain examples — agents read those from the project's `CLAUDE.md` "Agent pipeline" section (template in `template/CLAUDE.md`). Never put personal data in them; names and account ids go through omni-jira's `userConfig` (`${user_config.*}` in agent bodies, `CLAUDE_PLUGIN_OPTION_*` in hooks).
 - Plugin agents ignore `hooks`, `mcpServers` and `permissionMode` frontmatter; put hooks in the plugin's `hooks/hooks.json` and scope them with the `agent_type` hook input (`omni-jira:jira-manager`).
 
 - Third-party marketplace entries (`superpowers`, `playwright-cli`) must pin a full 40-character `sha` and name the upstream repository and license in `description`. Bump the sha only after reviewing the upstream diff, then rerun the install test in README "기본 탑재 플러그인".

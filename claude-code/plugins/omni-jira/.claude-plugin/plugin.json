@@ -1,14 +1,18 @@
 {
   "name": "omni-jira",
   "displayName": "Omni Jira",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "jira-manager agent that edits only Jira issues assigned to the configured person, enforced by a PreToolUse guard. Requires the Atlassian MCP plugin.",
   "author": {
     "name": "changmini"
   },
   "repository": "https://github.com/changmini/omni-ai-framework",
   "license": "MIT",
-  "keywords": ["jira", "atlassian", "guardrails"],
+  "keywords": [
+    "jira",
+    "atlassian",
+    "guardrails"
+  ],
   "userConfig": {
     "assignee_account_id": {
       "type": "string",

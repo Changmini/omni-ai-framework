@@ -13,7 +13,7 @@ description: Use when the user asks for a plan document only — design, write a
 
 ## 시작
 
-1. 착수 확인(첫 시작만). 플랜은 `docs/superpowers/plans/` 에 쓴다(ledger 재생성 필요).
+1. 착수 확인(첫 시작만). 플랜은 규칙 파일의 「Agent pipeline」 절에 적힌 플랜 위치에 쓴다(기록 집계 명령이 있으면 재생성).
 2. 팀원 띄우기 — `Agent` 에 `name` 을 주고 백그라운드로(tmux 패널). 정의에 model 이 있으면 넘기지 않는다.
 
 | 이름 예 | 정의 | 받는 지시 |
@@ -40,7 +40,7 @@ description: Use when the user asks for a plan document only — design, write a
 ## 마무리
 
 - 끝 조건: critic 의 Blocker·High·Nice-to-have 0, 열린 사용자 결정 0.
-- 플랜 status 는 사용자 지시 전까지 바꾸지 않는다. `python3 -m scripts.ledger.generate --write` 와 `--check`.
+- 플랜 status 는 사용자 지시 전까지 바꾸지 않는다. 규칙 파일의 「Agent pipeline」 절의 기록 집계 명령이 있으면 실행하고 검사한다.
 - 팀원은 닫지 않는다(구현 때 재사용). 커밋하지 않는다.
 
 ## 흔한 실수
