@@ -84,11 +84,8 @@ defining-work-goal ──사용자 확인──▶ running-plan-pipeline (플랜
 - **Agent Teams**(실험 기능)를 씁니다. 템플릿 `.claude/settings.json`에 `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`이 들어 있습니다.
 - 팀원을 tmux 패널로 보려면 **개인** 설정 `~/.claude/settings.json`에 `"teammateMode": "tmux"`를 넣습니다(공식 문서상 사용자 설정 키). 기본값은 한 터미널 안에서 보는 `in-process`입니다.
 - 플러그인 에이전트는 이름 앞에 플러그인 이름이 붙습니다(`omni-pipeline:planner`). 파이프라인 스킬 문서는 이 이름으로 맞춰 두었습니다.
-- **프로젝트 전제**: 원본 지침을 그대로 옮겼기 때문에, 다음이 있는 프로젝트를 기준으로 작성되어 있습니다.
-  - 규칙·문서: `AGENTS.override.md`(없으면 `AGENTS.md`), `tasks/TASKS.md`, `docs/superpowers/plans·specs`, `docs/SERVICE-STRUCTURE.md`
-  - 명령: `python3 -m scripts.ledger.generate`, `.venv/bin/python -m pytest`, `corepack pnpm@10.30.2 --dir frontend`
-  
-  다른 프로젝트에서 쓰려면 이 부분을 그 프로젝트에 맞게 고쳐야 합니다.
+- **프로젝트별 값**: 에이전트 지침에는 특정 프로젝트의 경로·명령을 넣지 않았습니다. 플랜·스펙 위치, 작업 목록 문서, 시험·타입 검사 명령, 기록 집계 명령, 구조 문서, DB 문서, 범위 밖 서비스는 프로젝트 `CLAUDE.md`의 **「Agent pipeline」 절**에 적습니다(템플릿에 빈칸으로 들어 있음). 적지 않은 항목은 에이전트가 기본값을 쓰거나 저장소 설정 파일에서 찾습니다.
+- 공통 규칙 파일 순서: `AGENTS.override.md`가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`.
 
 ## Jira 담당자 제한 (`omni-jira`)
 

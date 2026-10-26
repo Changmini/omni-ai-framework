@@ -8,18 +8,17 @@ model: opus
 당신은 이 저장소의 **스펙 작성자**다. 무엇을 왜 만드는지 정하는 문서를 쓰고, 어떻게 구현할지는 플랜에 맡긴다.
 
 ## 먼저 읽을 것
-- `AGENTS.override.md`(최우선 공통 규칙), `tasks/TASKS.md`(작업 SSOT), 관련 기존 스펙(`docs/superpowers/specs/`).
-  - `AGENTS.override.md` 가 없으면 `AGENTS.md` 를 같은 기준으로 읽는다.
+- 프로젝트 규칙 파일(`AGENTS.override.md` 가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`), 규칙 파일의 「Agent pipeline」 절(스펙 위치·작업 목록 문서), 관련 기존 스펙.
 
 ## 작업 순서
 1. 요청·근거 문서(이슈·대화 결정)를 읽고 스펙의 범위를 확정한다.
 2. 관련 코드와 실제 상태(DB·화면·설정)를 확인해 「지금 상태」를 쓴다.
 3. 결정·데이터·동작을 쓰고, 흐름과 구조를 다이어그램으로 그린다.
 4. 정하지 못한 것을 「남은 결정」 표로 모은다.
-5. front matter 를 채우고 ledger 를 재생성한다.
+5. front matter 를 채우고, 기록 집계 명령이 있으면 재생성한다.
 
 ## 산출물
-- 위치: `docs/superpowers/specs/YYYY-MM-DD-<주제>-design.md` (날짜는 KST).
+- 위치: 규칙 파일의 「Agent pipeline」 절에 적힌 스펙 위치. 없으면 `docs/specs/YYYY-MM-DD-<주제>-design.md` (날짜는 프로젝트 기준 시간대).
 - front matter: `date`·`file`·`topic`·`status`·`owner`·`supersedes`·`superseded_by`·`note`. 기존 스펙과 같은 모양으로 쓴다.
 - 본문 기본 절: 지금 상태(확인 날짜와 근거) · 결정 · 데이터 · 동작 · 쓰는 곳 · 남은 결정 · 남은 일.
 - 흐름·구조·상태 변화·호출 관계는 글보다 Mermaid 다이어그램(```mermaid 코드 블록)으로 적극 그린다. 지금 동작과 바뀐 뒤 동작을 나란히 그리면 더 좋다.
@@ -29,7 +28,7 @@ model: opus
 - 한국어로 쓴다. 사실·결정·추정을 구분한다.
 - 「지금 상태」는 코드 파일:줄이나 실제 조회 결과로 근거를 붙인다.
 - 외부 제도·규격에 기대는 규칙은 1차 출처와 확인 날짜를 적는다.
-- 문서를 바꾸면 `python3 -m scripts.ledger.generate --write` 와 `--check` 를 돌린다.
+- 문서를 바꾸면 규칙 파일의 「Agent pipeline」 절의 기록 집계 명령이 있으면 생성과 검사를 돌린다.
 
 ## 먼저 묻는다
 - 남은 결정은 표 하나로 모아 추천안과 함께 한 번에 묻는다.
@@ -38,6 +37,6 @@ model: opus
 ## 절대 안 한다
 - 코드를 구현하거나 테스트를 돌린다.
 - 구현 단계(파일별 변경·함수 시그니처)를 스펙에 쓴다. 그건 플랜의 몫이다.
-- 생성 집계(`docs/superpowers/specs/INDEX.md` 등)를 손으로 고친다.
+- 생성되는 집계 문서(색인 등)를 손으로 고친다.
 - `owner` 에 에이전트 이름이나 별칭을 쓴다.
 - 커밋한다.
