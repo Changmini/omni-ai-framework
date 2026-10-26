@@ -17,7 +17,7 @@ Anthropic 공식 문서(code.claude.com/docs, platform.claude.com/docs)의 구�
 omni-ai-framework/
 └── claude-code/                  # ← 마켓플레이스 루트. Claude 관련 작업은 모두 여기서
     ├── .claude-plugin/
-    │   └── marketplace.json      # 카탈로그: omni-core, omni-guardrails + 외부 superpowers, playwright-cli (sha 고정)
+    │   └── marketplace.json      # 카탈로그: omni-core, omni-guardrails, omni-pipeline, omni-jira + 외부 superpowers, playwright-cli (sha 고정)
     ├── plugins/
     │   ├── omni-core/                # 범용 워크플로 플러그인
     │   │   ├── .claude-plugin/plugin.json
@@ -30,6 +30,13 @@ omni-ai-framework/
     │   │   │   └── adversarial-reviewer.md   # 새 컨텍스트에서 diff를 반박 검토 (읽기 전용)
     │   │   ├── hooks/hooks.json          # SessionStart: git 상태를 컨텍스트에 주입
     │   │   └── scripts/session-context.sh
+    │   ├── omni-pipeline/            # 팀 개발 파이프라인 (목표 정의 → 플랜 → 비판 검토 → 구현 → 리뷰)
+    │   │   ├── skills/  defining-work-goal · running-dev-pipeline · running-plan-pipeline
+    │   │   └── agents/  planner · rationale-critic · builder · reviewer · spec-writer
+    │   ├── omni-jira/                # Jira 담당자 제한 에이전트 (기본 꺼짐)
+    │   │   ├── agents/jira-manager.md
+    │   │   ├── hooks/hooks.json          # Atlassian MCP 도구 Pre/PostToolUse
+    │   │   └── scripts/jira-owner-guard.py
     │   └── omni-guardrails/          # 안전장치 플러그인
     │       ├── .claude-plugin/plugin.json
     │       ├── hooks/hooks.json          # PreToolUse(Bash)
@@ -57,12 +64,63 @@ omni-ai-framework/
 | --- | --- | --- | --- |
 | `omni-core` | 이 저장소 | `plugins/omni-core` | 계획·검증·스펙·스킬 작성 스킬 4개, `adversarial-reviewer` 에이전트, git 상태 SessionStart 훅 |
 | `omni-guardrails` | 이 저장소 | `plugins/omni-guardrails` | 위험 Bash 명령 차단·확인 PreToolUse 훅 |
+| `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 목표·시작·종료 정의 스킬, 개발·플랜 파이프라인 스킬, 에이전트 5개(planner, rationale-critic, builder, reviewer, spec-writer) |
+| `omni-jira` (**기본 꺼짐**) | 이 저장소 | `plugins/omni-jira` | 설정한 담당자의 이슈만 고치는 `jira-manager` 에이전트 + 담당자 확인 훅 |
 | `superpowers` | [obra/superpowers](https://github.com/obra/superpowers) · MIT | `5bf4e78` (v6.4.1, Anthropic 공식 마켓플레이스가 고정한 커밋과 동일) | 브레인스토밍, 계획 작성·실행, TDD, 체계적 디버깅, 서브에이전트 주도 개발, 코드 리뷰 요청·수용 등 스킬 15개 + `using-superpowers`를 주입하는 SessionStart 훅 |
 | `playwright-cli` | [microsoft/playwright-cli](https://github.com/microsoft/playwright-cli) · Apache-2.0 | `b85c7a7` (`skills/playwright-cli`) | 브라우저 자동화·웹 테스트 스킬. `playwright-cli` 명령을 쓰며, 없으면 스킬이 `npx playwright cli` 또는 `npm install -g @playwright/cli@latest`로 대체 (Node.js 18+ 필요) |
 
 - **외부 플러그인은 커밋(sha)으로 고정**합니다. 업스트림이 바뀌어도 자동으로 따라가지 않으므로, 검토한 뒤 `marketplace.json`의 `sha`를 올려서 업데이트합니다.
 - **겹치는 영역**: superpowers의 `writing-plans`·`verification-before-completion`·`requesting-code-review`·`writing-skills`는 omni-core의 `planning-changes`·`verifying-changes`·`adversarial-reviewer`·`authoring-skills`와 역할이 비슷합니다. 둘 다 켜 두면 Claude가 상황에 따라 어느 쪽이든 고를 수 있습니다. 하나만 쓰려면 프로젝트 `.claude/settings.json`의 `enabledPlugins`에서 해당 항목을 `false`로 바꾸세요.
 - 이미 공식 마켓플레이스에서 `superpowers@claude-plugins-official`을 설치했다면 같은 스킬이 두 벌 로드됩니다. 한쪽을 끄세요.
+
+## 팀 개발 파이프라인 (`omni-pipeline`)
+
+```text
+defining-work-goal ──사용자 확인──▶ running-plan-pipeline (플랜만, Agent Teams)
+                                    └─ running-dev-pipeline (플랜 → 비판 검토 → 구현 → 리뷰)
+에이전트: omni-pipeline:planner · rationale-critic · builder · reviewer · spec-writer
+```
+
+- **Agent Teams**(실험 기능)를 씁니다. 템플릿 `.claude/settings.json`에 `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`이 들어 있습니다.
+- 팀원을 tmux 패널로 보려면 **개인** 설정 `~/.claude/settings.json`에 `"teammateMode": "tmux"`를 넣습니다(공식 문서상 사용자 설정 키). 기본값은 한 터미널 안에서 보는 `in-process`입니다.
+- 플러그인 에이전트는 이름 앞에 플러그인 이름이 붙습니다(`omni-pipeline:planner`). 파이프라인 스킬 문서는 이 이름으로 맞춰 두었습니다.
+- **프로젝트 전제**: 원본 지침을 그대로 옮겼기 때문에, 다음이 있는 프로젝트를 기준으로 작성되어 있습니다.
+  - 규칙·문서: `AGENTS.override.md`(없으면 `AGENTS.md`), `tasks/TASKS.md`, `docs/superpowers/plans·specs`, `docs/SERVICE-STRUCTURE.md`
+  - 명령: `python3 -m scripts.ledger.generate`, `.venv/bin/python -m pytest`, `corepack pnpm@10.30.2 --dir frontend`
+  
+  다른 프로젝트에서 쓰려면 이 부분을 그 프로젝트에 맞게 고쳐야 합니다.
+
+## Jira 담당자 제한 (`omni-jira`)
+
+Atlassian MCP 플러그인(공식 마켓플레이스의 `atlassian`)의 도구를 쓰는 `jira-manager` 에이전트입니다. **설정한 담당자의 이슈만** 수정·상태 변경·댓글 작성·생성하며, 이 제한은 훅이 강제합니다.
+
+켜는 방법:
+
+1. Atlassian 플러그인을 설치합니다: `claude plugin install atlassian@claude-plugins-official`
+2. 프로젝트 `.claude/settings.json`에서 `"omni-jira@omni-ai-framework": true`로 바꾼 뒤 `scripts/install-plugins.sh <프로젝트>`를 실행합니다.
+3. 플러그인을 켜면 설정 화면이 뜹니다(`/config`에서도 변경 가능). 값은 **각자의 개인 설정**(`~/.claude/settings.json`의 `pluginConfigs`)에 저장되고 저장소에는 들어가지 않습니다.
+
+| 설정 | 내용 |
+| --- | --- |
+| `assignee_account_id` | 수정을 허용할 담당자의 Atlassian accountId (`atlassianUserInfo`로 확인) |
+| `assignee_display_name` | 에이전트 지침에 들어갈 표시 이름 |
+| `guard_all_sessions` | 끄면(기본) jira-manager 안에서만 제한합니다. 켜면 메인 세션과 다른 에이전트의 Jira 쓰기도 같은 담당자로 제한합니다. |
+
+훅(`scripts/jira-owner-guard.py`)의 동작:
+- `getJiraIssue`·`searchJiraIssuesUsingJql` 응답에서 이슈별 담당자 accountId를 기록합니다. 기록은 cloudId별로 남고 1시간 동안 유효합니다.
+- 쓰기 전에 기록을 확인합니다. 다음 경우는 거부합니다.
+  - 기록이 없거나, 1시간이 지났거나, 담당자가 다른 이슈
+  - URL 형식의 이슈 id
+  - 다른 사람으로 담당자 변경
+  - 담당자가 다르거나 없는 새 이슈 생성
+  - 남의 상위 이슈 아래 하위 작업 생성
+  - 삭제, 그리고 알 수 없는 Jira 쓰기 도구
+- 확인 중 오류가 나면 쓰기를 막습니다(fail closed).
+
+**확인 상태**
+- 실제 세션에서 플러그인 로드와 표시 이름 치환을 확인했습니다.
+- 훅 판정은 합성 입력 25건으로 테스트했습니다(`tests/test-jira-guard.sh`).
+- **실제 Atlassian 서버 응답 형식으로는 확인하지 못했습니다.** 응답 어디에 있든 `key`와 `fields.assignee.accountId`가 있는 객체를 찾도록 만들었습니다.
 
 ## 설치: `claude-code/` 폴더를 마켓플레이스로 등록
 
@@ -99,7 +157,7 @@ claude plugin marketplace add ~/omni-ai-framework/claude-code
 ### B. 내 컴퓨터의 모든 프로젝트에서 켜기
 
 ```bash
-for p in omni-core omni-guardrails superpowers playwright-cli; do
+for p in omni-core omni-guardrails omni-pipeline superpowers playwright-cli; do
   claude plugin install "$p@omni-ai-framework"
 done
 ```
@@ -117,6 +175,7 @@ done
 - 스킬은 `.claude/skills/`, 에이전트는 `.claude/agents/`로 복사됩니다. 훅이 있는 플러그인은 통째로 `.claude/vendor/<plugin>/`에 복사되고, 훅은 `CLAUDE_PLUGIN_ROOT`를 그 위치로 지정해 `.claude/settings.json`에 병합됩니다.
 - 복사본이 플러그인을 대체하므로 해당 `enabledPlugins` 항목은 자동으로 제거됩니다(중복 실행 방지). 업데이트는 다시 실행하면 됩니다.
 - 실측: 플러그인이 하나도 없는 환경에서 스킬 55개가 인식되고, superpowers와 omni-core의 SessionStart 훅이 모두 정상 출력됐습니다.
+- omni-jira를 vendoring하면 플러그인 설정(`userConfig`)이 없습니다. 그래서 에이전트 지침의 표시 이름이 치환되지 않고, 훅은 모든 쓰기를 막습니다. 클라우드에서 쓰려면 환경의 환경변수에 `CLAUDE_PLUGIN_OPTION_ASSIGNEE_ACCOUNT_ID`를 지정하세요. 필요 없으면 `vendor-plugins.py <프로젝트> omni-core omni-guardrails omni-pipeline superpowers playwright-cli`처럼 골라서 복사합니다.
 
 ### D. 조직 전체 강제 적용
 
@@ -132,6 +191,7 @@ done
   "enabledPlugins": {
     "omni-core@omni-ai-framework": true,
     "omni-guardrails@omni-ai-framework": true,
+    "omni-pipeline@omni-ai-framework": true,
     "superpowers@omni-ai-framework": true,
     "playwright-cli@omni-ai-framework": true
   }
@@ -147,6 +207,10 @@ done
 | 스펙 인터뷰 | `/omni-core:writing-specs <기능>` (수동 전용) |
 | 새 스킬 만들기 | `/omni-core:authoring-skills <설명>` |
 | 반박 리뷰 | "adversarial-reviewer 서브에이전트로 리뷰해줘" |
+| 작업 목표·시작·종료 정의 | `/omni-pipeline:defining-work-goal` 또는 "목표와 시작·종료를 정리해봐" |
+| 개발 파이프라인 | `/omni-pipeline:running-dev-pipeline` |
+| 플랜만 (팀) | `/omni-pipeline:running-plan-pipeline` |
+| Jira 정리 | "jira-manager로 내 이슈 상태 정리해줘" (omni-jira를 켠 경우) |
 | 아이디어 구체화 | `/superpowers:brainstorming` |
 | 버그 원인 추적 | `/superpowers:systematic-debugging` |
 | TDD | `/superpowers:test-driven-development` |
@@ -166,6 +230,7 @@ vendoring한 경우 네임스페이스 없이 `/planning-changes`처럼 호출�
 ```bash
 python3 scripts/validate.py   # 스킬/에이전트 규칙 + claude plugin validate --strict
 tests/test-hooks.sh           # 가드레일 회귀 테스트
+tests/test-jira-guard.sh      # Jira 담당자 훅 회귀 테스트
 ```
 
 ## 라이선스

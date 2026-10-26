@@ -1,6 +1,6 @@
 {
   "name": "omni-ai-framework",
-  "description": "Claude Code plugins: omni workflow skills, review subagent, safety hooks, plus pinned third-party defaults (superpowers, playwright-cli)",
+  "description": "Claude Code plugins: omni workflow skills, dev pipeline agents, Jira guard, safety hooks, plus pinned third-party defaults (superpowers, playwright-cli)",
   "owner": {
     "name": "changmini"
   },
@@ -14,6 +14,16 @@
       "name": "omni-guardrails",
       "source": "./plugins/omni-guardrails",
       "description": "PreToolUse hooks that block catastrophic shell commands and ask before history-rewriting git operations"
+    },
+    {
+      "name": "omni-pipeline",
+      "source": "./plugins/omni-pipeline",
+      "description": "Goal definition (defining-work-goal) and the plan \u2192 critic review \u2192 build \u2192 code review pipeline with planner, rationale-critic, builder, reviewer and spec-writer agents"
+    },
+    {
+      "name": "omni-jira",
+      "source": "./plugins/omni-jira",
+      "description": "jira-manager agent limited to issues assigned to the configured person, enforced by a PreToolUse guard. Requires the Atlassian MCP plugin."
     },
     {
       "name": "superpowers",

@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__(plugin_atlassian_atlassian|atlassian)__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/jira-owner-guard.py check"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__(plugin_atlassian_atlassian|atlassian)__(getJiraIssue|searchJiraIssuesUsingJql)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/jira-owner-guard.py record"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -13,9 +13,14 @@
     ],
     "allow": []
   },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "enabledPlugins": {
     "omni-core@omni-ai-framework": true,
     "omni-guardrails@omni-ai-framework": true,
+    "omni-pipeline@omni-ai-framework": true,
+    "omni-jira@omni-ai-framework": false,
     "superpowers@omni-ai-framework": true,
     "playwright-cli@omni-ai-framework": true
   }
