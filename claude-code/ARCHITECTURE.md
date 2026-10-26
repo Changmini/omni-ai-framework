@@ -127,3 +127,11 @@ Claude Code는 `CLAUDE.md`가 없으면 `AGENTS.md`를 읽습니다. 둘 다 써
 - 둘을 우리 마켓플레이스에 넣은 이유: 마켓플레이스 등록 한 번으로 전부 설치되고, 버전을 우리가 검토 후 올리며, `vendor-plugins.py`가 같은 방식으로 클라우드용 복사를 할 수 있기 때문입니다.
 - **외부 소스 플러그인은 프로젝트 `enabledPlugins`만으로는 설치되지 않습니다.** 공식 문서: "A plugin whose marketplace entry points at an external source … doesn't install from the repository's settings alone … until they run `claude plugin install <name>@<marketplace> --scope project`" ([Manage plugins for your organization](https://code.claude.com/docs/en/plugins/org)). v2.1.296 실측도 같았고, project scope 설치는 그 프로젝트에만 적용됐습니다. 그래서 `install-plugins.sh`를 두고 bootstrap에서 자동 실행합니다.
 - 클라우드 vendoring: superpowers의 SessionStart 훅은 스크립트 위치로 플러그인 루트를 찾지만, `CLAUDE_PLUGIN_ROOT`가 있어야 Claude Code 형식으로 출력합니다. 그래서 vendoring한 훅 명령 앞에 `CLAUDE_PLUGIN_ROOT="${CLAUDE_PROJECT_DIR}/.claude/vendor/<plugin>"`을 붙입니다. 플러그인을 하나도 설치하지 않은 환경에서 훅이 `using-superpowers` 내용을 주입하는 것을 확인했습니다.
+
+## 12. 팀 파이프라인과 Jira 플러그인
+
+- 팀이 쓰던 지침(스킬 3개, 에이전트 6개)을 `omni-pipeline`과 `omni-jira` 두 플러그인으로 나눴습니다. Jira는 Atlassian MCP와 개인 설정이 필요하므로 별도 플러그인으로 두고 기본으로 꺼 두었습니다.
+- **플러그인 에이전트는 frontmatter의 `hooks`·`mcpServers`·`permissionMode`가 무시됩니다**([Sub-agents](https://code.claude.com/docs/en/sub-agents)). 그래서 jira-manager의 훅을 플러그인 `hooks/hooks.json`으로 옮겼습니다. 하위 에이전트 안에서 발생한 도구 이벤트는 `agent_type`(플러그인 에이전트는 `omni-jira:jira-manager`)을 함께 받으므로([Hooks](https://code.claude.com/docs/en/hooks)), 기본적으로 그 에이전트 안에서만 제한합니다.
+- 개인정보(실명, 계정 이름, 홈 경로)는 플러그인 `userConfig`로 옮겼습니다. 비민감 값은 사용자 설정의 `pluginConfigs`에 저장되고, 에이전트 본문에는 `${user_config.KEY}`로, 훅 프로세스에는 `CLAUDE_PLUGIN_OPTION_<KEY>` 환경변수로 전달됩니다([Plugins reference › User configuration](https://code.claude.com/docs/en/plugins-reference)). 치환은 실제 세션에서 확인했습니다.
+- Atlassian MCP 도구 이름은 공식 플러그인(`atlassian/atlassian-mcp-server`, 원격 `https://mcp.atlassian.com/v2/mcp`)을 쓰면 `mcp__plugin_atlassian_atlassian__*`, 프로젝트 `.mcp.json`의 `atlassian` 서버를 쓰면 `mcp__atlassian__*`입니다. 훅 matcher는 둘 다 잡습니다. `createJiraIssue`의 담당자 파라미터 `assignee_account_id`는 그 저장소 스킬 예시에서 확인했습니다.
+

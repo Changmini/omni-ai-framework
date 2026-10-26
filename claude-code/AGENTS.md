@@ -5,7 +5,7 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 ## Commands
 
 - Validate everything (frontmatter rules + `claude plugin validate --strict`): `python3 scripts/validate.py`
-- Hook tests: `tests/test-hooks.sh`
+- Hook tests: `tests/test-hooks.sh` (guardrails), `tests/test-jira-guard.sh` (omni-jira owner guard)
 - Try a plugin locally without installing: `claude --plugin-dir ./plugins/omni-core`
 - Reload after edits inside a session: `/reload-plugins`
 
@@ -17,6 +17,9 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 - `scripts/vendor-plugins.py` — copies every marketplace plugin (local, or fetched from git at its pinned sha) into a project's `.claude/` for cloud sessions, which don't install repo-enabled plugins. Hook plugins are copied whole to `.claude/vendor/<plugin>/` and their hook commands run with `CLAUDE_PLUGIN_ROOT` set to that copy
 
 ## Rules
+
+- `plugins/omni-pipeline/` and `plugins/omni-jira/agents/` hold the team's own Korean pipeline documents. Keep their wording; change only what the plugin location requires (plugin-scoped agent names `omni-pipeline:<name>`) and never put personal data in them — names and account ids go through omni-jira's `userConfig` (`${user_config.*}` in agent bodies, `CLAUDE_PLUGIN_OPTION_*` in hooks).
+- Plugin agents ignore `hooks`, `mcpServers` and `permissionMode` frontmatter; put hooks in the plugin's `hooks/hooks.json` and scope them with the `agent_type` hook input (`omni-jira:jira-manager`).
 
 - Third-party marketplace entries (`superpowers`, `playwright-cli`) must pin a full 40-character `sha` and name the upstream repository and license in `description`. Bump the sha only after reviewing the upstream diff, then rerun the install test in README "기본 탑재 플러그인".
 

@@ -1,0 +1,32 @@
+{
+  "name": "omni-jira",
+  "displayName": "Omni Jira",
+  "version": "0.1.0",
+  "description": "jira-manager agent that edits only Jira issues assigned to the configured person, enforced by a PreToolUse guard. Requires the Atlassian MCP plugin.",
+  "author": {
+    "name": "changmini"
+  },
+  "repository": "https://github.com/changmini/omni-ai-framework",
+  "license": "MIT",
+  "keywords": ["jira", "atlassian", "guardrails"],
+  "userConfig": {
+    "assignee_account_id": {
+      "type": "string",
+      "title": "Jira assignee accountId",
+      "description": "Atlassian accountId of the only assignee whose issues jira-manager may change (find it with atlassianUserInfo)",
+      "required": true
+    },
+    "assignee_display_name": {
+      "type": "string",
+      "title": "Assignee display name",
+      "description": "Name shown in jira-manager's instructions, e.g. 'Hong Gildong (gildong)'",
+      "required": true
+    },
+    "guard_all_sessions": {
+      "type": "boolean",
+      "title": "Guard every session",
+      "description": "Off: the guard applies only inside the jira-manager agent. On: Jira writes from any session or agent must also target the configured assignee",
+      "default": false
+    }
+  }
+}

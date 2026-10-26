@@ -10,4 +10,4 @@ No tool-specific files outside `claude-code/` (and later `universal/adapters/`).
 ## Checks
 
 - `python3 universal/tools/omni.py validate universal/core && universal/tools/tests/run.sh`
-- `cd claude-code && python3 scripts/validate.py && tests/test-hooks.sh`
+- `cd claude-code && python3 scripts/validate.py && tests/test-hooks.sh && tests/test-jira-guard.sh`

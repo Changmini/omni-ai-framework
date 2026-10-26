@@ -26,4 +26,4 @@ jobs:
         run: python3 scripts/validate.py
       - name: "claude-code: hook tests"
         working-directory: claude-code
-        run: tests/test-hooks.sh
+        run: tests/test-hooks.sh && tests/test-jira-guard.sh
