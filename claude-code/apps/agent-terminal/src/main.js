@@ -20,7 +20,7 @@ function registerIpc() {
     manager.create({
       name: str(opts.name, 80) ?? '',
       cwd: str(opts.cwd, 1000) ?? '',
-      command: str(opts.command, 1000) ?? 'claude',
+      command: str(opts.command, 1000) ?? '',
       cols: int(opts.cols) ?? 100,
       rows: int(opts.rows) ?? 30,
     }),
