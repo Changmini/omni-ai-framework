@@ -1,9 +1,15 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
+const { startHookServer } = require('./hook-server');
+const { buildClaudeSettings } = require('./claude-settings');
+const { shellLaunch, parseCwdReport } = require('./shell');
+const { gitBranch } = require('./git');
+const { readTeam, readTasks } = require('./teams');
 
 let win = null;
 let manager = null;
@@ -33,6 +39,11 @@ function registerIpc() {
     if (d !== null) manager.write(str(id, 20), d);
   });
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
+  // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
+  ipcMain.on('session:cwd', (_e, id, kind, data) => {
+    const d = str(data, 4000);
+    if (d !== null && (kind === 7 || kind === 9)) manager.setCwd(str(id, 20), parseCwdReport(kind, d));
+  });
   ipcMain.handle('dialog:pickFolder', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
@@ -65,8 +76,31 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
 }
 
-app.whenReady().then(() => {
-  manager = new SessionManager({ spawn: pty.spawn, emit: send });
+// One app instance: the hooks settings file and its port belong to it.
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => {
+  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+});
+
+let hooks = null;
+
+app.whenReady().then(async () => {
+  // Claude Code hooks for app terminals only: a local receiver plus a settings
+  // file that the shell integration passes to claude with --settings.
+  hooks = await startHookServer({ onEvent: (id, ev) => manager && manager.onHookEvent(id, ev) });
+  const settingsFile = path.join(app.getPath('userData'), 'claude-hooks.json');
+  fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+  fs.writeFileSync(settingsFile, JSON.stringify(buildClaudeSettings(hooks.port), null, 2));
+
+  manager = new SessionManager({
+    spawn: pty.spawn,
+    emit: send,
+    shell: shellLaunch(),
+    extraEnv: { OMNI_CLAUDE_SETTINGS: settingsFile, OMNI_HOOK_TOKEN: hooks.token },
+    readTeam,
+    readTasks,
+    gitBranch,
+  });
   registerIpc();
   createWindow();
   app.on('activate', () => {
@@ -74,7 +108,10 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => manager && manager.killAll());
+app.on('before-quit', () => {
+  if (manager) manager.killAll();
+  if (hooks) hooks.close();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });

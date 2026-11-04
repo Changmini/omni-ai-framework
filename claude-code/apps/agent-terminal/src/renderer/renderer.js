@@ -16,9 +16,8 @@ const TERMINAL_THEME = {
   brightBlue: '#8fbcff', brightMagenta: '#dcaaf5', brightCyan: '#80e6e6', brightWhite: '#ffffff',
 };
 const FONT_FAMILY = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
-const STATUS_LABEL = {
-  working: '작업 중', idle: '대기', error: '오류 감지', exited: '종료됨',
-};
+const CLAUDE_LABEL = { working: '작업 중', waiting: '승인 대기', idle: '대기', error: '오류' };
+const SHELL_LABEL = { error: '오류 감지', exited: '종료됨' };
 
 const $ = (sel) => document.querySelector(sel);
 const els = {
@@ -86,21 +85,31 @@ function addAgent(info) {
   term.onData((data) => api.write(info.id, data));
   term.attachCustomKeyEventHandler((e) => !isShortcut(e));
   term.onResize(({ cols, rows }) => api.resize(info.id, cols, rows));
+  // The shell integration reports its folder before each prompt.
+  term.parser.registerOscHandler(7, (data) => { api.reportCwd(info.id, 7, data); return true; });
+  term.parser.registerOscHandler(9, (data) => {
+    if (!data.startsWith('9;')) return false;
+    api.reportCwd(info.id, 9, data);
+    return true;
+  });
 
   const item = document.createElement('li');
   item.className = 'agent';
-  item.tabIndex = 0;
   item.innerHTML = `
-    <span class="led" data-status="${info.status}"></span>
-    <span class="agent-meta">
-      <div class="agent-name ellipsis"></div>
-      <div class="agent-sub ellipsis"></div>
-    </span>
-    <button class="agent-close" title="터미널 닫기" aria-label="터미널 닫기">✕</button>`;
-  item.querySelector('.agent-name').textContent = info.name;
-  item.querySelector('.agent-sub').textContent = info.cwd;
-  item.addEventListener('click', () => select(info.id));
-  item.addEventListener('keydown', (e) => { if (e.key === 'Enter') select(info.id); });
+    <div class="agent-row" tabindex="0">
+      <span class="led"></span>
+      <span class="agent-meta">
+        <div class="agent-name ellipsis"></div>
+        <div class="agent-sub ellipsis"></div>
+        <div class="agent-claude ellipsis"></div>
+      </span>
+      <button class="agent-close" title="터미널 닫기 (Ctrl+Shift+W)" aria-label="터미널 닫기">✕</button>
+    </div>
+    <ul class="agent-children"></ul>
+    <div class="agent-tasks ellipsis"></div>`;
+  const row = item.querySelector('.agent-row');
+  row.addEventListener('click', () => select(info.id));
+  row.addEventListener('keydown', (e) => { if (e.key === 'Enter') select(info.id); });
   item.querySelector('.agent-close').addEventListener('click', (e) => {
     e.stopPropagation();
     closeTerminal(info.id);
@@ -108,6 +117,7 @@ function addAgent(info) {
   els.list.appendChild(item);
 
   agents.set(info.id, { info, term, fit, el, item });
+  renderItem(info.id);
   renderList();
 }
 
@@ -156,6 +166,70 @@ function renderList() {
   els.count.textContent = String(agents.size);
 }
 
+const baseName = (p) => (p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
+const displayName = (info) => info.name || baseName(info.cwd) || `터미널 ${info.id}`;
+
+// The LED shows Claude's own state (from hooks) while it runs in the terminal,
+// and the shell's otherwise.
+function ledStatus(info) {
+  if (info.claude && info.claude.status) return info.claude.status;
+  if (info.status === 'error' || info.status === 'exited') return info.status;
+  return 'shell';
+}
+
+function claudeSummary(c) {
+  if (!c || !c.status) return '';
+  if (c.status === 'working' && c.tool) return `Claude · ${c.tool} 실행 중`;
+  return `Claude · ${CLAUDE_LABEL[c.status] || ''}`;
+}
+
+function h(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function renderItem(id) {
+  const a = agents.get(id);
+  if (!a) return;
+  const { info, item } = a;
+  const c = info.claude || {};
+  item.querySelector('.led').dataset.status = ledStatus(info);
+  item.querySelector('.agent-name').textContent = displayName(info);
+  item.querySelector('.agent-sub').textContent = info.branch ? `⎇ ${info.branch}` : info.cwd;
+  const claudeLine = item.querySelector('.agent-claude');
+  claudeLine.textContent = claudeSummary(c);
+  claudeLine.dataset.status = c.status || '';
+  item.title = info.cwd;
+
+  // Subagents and teammates, live from hooks and the team config.
+  const children = item.querySelector('.agent-children');
+  children.replaceChildren(...(c.agents || []).map((ag) => {
+    const li = h('li', 'child');
+    const led = h('span', 'led small');
+    led.dataset.status = ag.status || 'working';
+    const kind = ag.teammate ? '팀원' : '서브에이전트';
+    li.append(
+      led,
+      h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'),
+      h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind),
+    );
+    li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ');
+    return li;
+  }));
+
+  const tasks = item.querySelector('.agent-tasks');
+  const t = c.tasks;
+  tasks.hidden = !t;
+  if (t) {
+    const now = t.inProgress && t.inProgress[0];
+    const head = `${c.team ? '팀 작업' : '작업'} ${t.done}/${t.total}`;
+    tasks.textContent = now ? `${head} · ${now.owner ? `${now.owner}: ` : ''}${now.subject}` : head;
+  }
+  if (id === activeId) renderActive();
+}
+
 function renderActive() {
   const a = agents.get(activeId);
   if (!a) {
@@ -167,22 +241,25 @@ function renderActive() {
     return;
   }
   const { info } = a;
-  els.activeLed.dataset.status = info.status;
-  els.activeName.textContent = info.name;
-  els.activeCwd.textContent = info.cwd;
-  els.activeStatus.textContent = STATUS_LABEL[info.status] || '';
-  els.banner.hidden = !info.error;
-  els.banner.textContent = info.error ? `⚠ ${info.error}` : '';
+  const c = info.claude || {};
+  els.activeLed.dataset.status = ledStatus(info);
+  els.activeName.textContent = displayName(info);
+  els.activeCwd.textContent = [info.cwd, info.branch ? `⎇ ${info.branch}` : ''].filter(Boolean).join('  ');
+  els.activeStatus.textContent = claudeSummary(c) || SHELL_LABEL[info.status] || '';
+  // Claude waiting for the user takes the banner over a shell error line.
+  const claudeMsg = (c.status === 'waiting' || c.status === 'error') && c.message;
+  const banner = claudeMsg || info.error;
+  const waiting = Boolean(claudeMsg) && c.status === 'waiting';
+  els.banner.hidden = !banner;
+  els.banner.dataset.kind = waiting ? 'waiting' : 'error';
+  els.banner.textContent = banner ? `${waiting ? '⏳' : '⚠'} ${banner}` : '';
 }
 
-function setStatus(id, status, error) {
+function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
-  a.info.status = status;
-  a.info.error = error;
-  a.item.querySelector('.led').dataset.status = status;
-  a.item.title = error ? `오류: ${error}` : STATUS_LABEL[status] || '';
-  if (id === activeId) renderActive();
+  Object.assign(a.info, patch);
+  renderItem(id);
 }
 
 // ---------- UI -> terminal ----------
@@ -207,12 +284,14 @@ els.fontSize.addEventListener('input', () => applyFontSize(Number(els.fontSize.v
 // ---------- terminal -> UI ----------
 
 api.onData(({ id, data }) => agents.get(id)?.term.write(data));
-api.onStatus(({ id, status, error }) => setStatus(id, status, error));
+api.onStatus(({ id, status, error }) => update(id, { status, error }));
+api.onAgent(({ id, claude }) => update(id, { claude }));
+api.onMeta(({ id, cwd, branch }) => update(id, { cwd, branch }));
 api.onExit(({ id, exitCode }) => {
   const a = agents.get(id);
   if (!a) return;
   a.term.write(`\r\n\x1b[90m[프로세스 종료: 코드 ${exitCode}]\x1b[0m\r\n`);
-  setStatus(id, 'exited', a.info.error);
+  update(id, { status: 'exited' });
 });
 api.onRemoved(({ id }) => removeAgent(id));
 
