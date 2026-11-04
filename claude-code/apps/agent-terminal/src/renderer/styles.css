@@ -11,6 +11,7 @@
   --ok: #4fc08d;
   --busy: #e6b450;
   --err: #f0616d;
+  --wait: #f08c3a;
   --off: #545a68;
   --mono: "D2Coding", "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
   --radius: 6px;
@@ -36,6 +37,7 @@ body {
   gap: 2px;
   border-right: 1px solid var(--line);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 .brand {
   display: flex; align-items: center; gap: 8px;
@@ -60,23 +62,42 @@ body {
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hint { margin: 0; color: var(--muted); font-size: 12px; }
 
-.agent-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.agent-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .agent {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
   border-radius: var(--radius);
-  cursor: pointer;
   border: 1px solid transparent;
 }
 .agent:hover { background: var(--panel); }
 .agent.active { background: var(--panel); border-color: var(--line); }
+.agent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.agent-children { list-style: none; margin: -2px 0 0; padding: 0 10px 6px 29px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.agent-children:empty { display: none; }
+.child {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  font-size: 12px; padding: 2px 0;
+  border-left: 1px solid var(--line); padding-left: 10px; margin-left: -6px;
+}
+.child-name { color: var(--text); }
+.child-meta { color: var(--muted); font-size: 11px; max-width: 110px; }
+.agent-tasks { font-size: 11px; color: var(--muted); padding: 0 10px 8px 29px; }
+.agent-tasks[hidden] { display: none; }
 .agent.active .agent-name { color: #fff; }
 .agent-meta { min-width: 0; }
 .agent-name { font-weight: 600; }
 .agent-sub { font-size: 11px; color: var(--muted); }
+.agent-claude { font-size: 11px; color: var(--busy); }
+.agent-claude:empty { display: none; }
+.agent-claude[data-status="waiting"] { color: var(--wait); }
+.agent-claude[data-status="idle"] { color: var(--ok); }
+.agent-claude[data-status="error"] { color: var(--err); }
 .agent-close {
   background: none; border: 0; color: var(--muted);
   font: inherit; cursor: pointer; padding: 2px 4px; border-radius: 4px;
@@ -92,6 +113,9 @@ body {
 .led[data-status="working"] { background: var(--busy); box-shadow: 0 0 8px var(--busy); animation: pulse 1s ease-in-out infinite; }
 .led[data-status="error"]   { background: var(--err); box-shadow: 0 0 10px var(--err); }
 .led[data-status="exited"]  { background: var(--off); }
+.led[data-status="waiting"] { background: var(--wait); box-shadow: 0 0 10px var(--wait); animation: pulse 1.6s ease-in-out infinite; }
+.led[data-status="shell"]   { background: transparent; box-shadow: inset 0 0 0 2px var(--off); }
+.led.small { width: 7px; height: 7px; }
 @keyframes pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
 
@@ -110,7 +134,7 @@ body {
 .btn:active { transform: translateY(1px); }
 .new-terminal { width: 100%; margin-top: 8px; border-style: dashed; color: var(--muted); }
 .new-terminal:hover { color: var(--text); border-color: var(--accent); }
-.btn:focus-visible, .agent:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn:focus-visible, .agent-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .slider { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 12px; color: var(--muted); }
 .slider input { grid-column: span 2; accent-color: var(--accent); }
@@ -126,6 +150,7 @@ body {
 .active-name { font-weight: 700; }
 .status-text { margin-left: auto; font-size: 12px; color: var(--muted); }
 
+.error-banner[data-kind="waiting"] { background: #2b2116; color: #ffcf9e; border-bottom-color: #4d3518; }
 .error-banner {
   background: #2a1a1e;
   color: #ffb3ba;
