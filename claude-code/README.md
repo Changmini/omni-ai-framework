@@ -6,10 +6,11 @@ Claude Code의 플러그인·스킬·훅 체계로 여러 프로젝트에 같은
 Anthropic 공식 문서(code.claude.com/docs, platform.claude.com/docs)의 구조와 규칙을 그대로 따릅니다.
 각 설계 결정의 근거 문서는 [ARCHITECTURE.md](ARCHITECTURE.md)에 정리되어 있습니다.
 
-이 폴더는 두 가지 역할을 합니다.
+이 폴더는 세 가지 역할을 합니다.
 
 1. **플러그인 마켓플레이스** — `claude-code/` 자체가 마켓플레이스 루트입니다(`.claude-plugin/marketplace.json`). 모든 프로젝트가 공유하는 스킬·서브에이전트·훅을 플러그인으로 배포합니다. 자체 플러그인 2개와, 커밋으로 고정한 외부 플러그인 2개(**superpowers**, **playwright-cli**)를 기본 탑재합니다.
 2. **프로젝트 템플릿** — 각 프로젝트에 넣을 `CLAUDE.md`, `.claude/settings.json`, `.claude/rules/` 뼈대
+3. **데스크톱 앱** — [`apps/agent-terminal/`](apps/agent-terminal/): 여러 Claude Code 세션을 커스텀 UI와 실제 터미널을 한 창에 합친 Electron 앱에서 관리합니다
 
 ## 구조
 
