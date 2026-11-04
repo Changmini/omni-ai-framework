@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:">
+  <title>Omni Agent Terminal</title>
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header class="brand">
+        <span class="brand-mark" aria-hidden="true">▍</span>
+        <span>Omni Agent Terminal</span>
+      </header>
+
+      <section class="panel">
+        <h2>에이전트 <span id="agent-count" class="count">0</span></h2>
+        <ul id="agent-list" class="agent-list" aria-label="에이전트 목록"></ul>
+        <p id="agent-empty" class="hint">아직 실행 중인 에이전트가 없습니다.</p>
+      </section>
+
+      <section class="panel">
+        <h2>새 에이전트</h2>
+        <form id="new-agent" class="form" autocomplete="off">
+          <label>이름
+            <input name="name" placeholder="예: backend-fix" maxlength="80">
+          </label>
+          <label>작업 폴더
+            <span class="row">
+              <input name="cwd" placeholder="비우면 홈 폴더">
+              <button type="button" id="pick-folder" class="btn ghost" title="폴더 선택">…</button>
+            </span>
+          </label>
+          <label>실행 명령
+            <input name="command" value="claude" spellcheck="false">
+          </label>
+          <button type="submit" class="btn primary">＋ 에이전트 시작</button>
+        </form>
+      </section>
+
+      <section class="panel" id="controls" aria-disabled="true">
+        <h2>제어 <span id="control-target" class="muted"></span></h2>
+        <div class="quick">
+          <button class="btn" data-line="claude" title="셸에서 claude 다시 실행">claude 실행</button>
+          <button class="btn" data-line="/compact" title="대화 요약으로 컨텍스트 줄이기">/compact</button>
+          <button class="btn" data-line="/clear" title="대화 초기화">/clear</button>
+          <button class="btn warn" data-key="&#27;" title="현재 작업 중단 (Esc)">Esc 중단</button>
+          <button class="btn danger" data-key="&#3;" title="Ctrl+C">Ctrl+C</button>
+        </div>
+        <form id="prompt-form" class="form">
+          <textarea id="prompt" rows="4" placeholder="에이전트에게 보낼 내용 (Ctrl+Enter 전송)"></textarea>
+          <button type="submit" class="btn primary">보내기</button>
+        </form>
+      </section>
+
+      <section class="panel settings">
+        <label class="slider">글자 크기 <output id="font-size-value">14</output>
+          <input type="range" id="font-size" min="10" max="22" value="14">
+        </label>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <span id="active-led" class="led" data-status="none"></span>
+        <span id="active-name" class="active-name">에이전트를 시작하세요</span>
+        <span id="active-cwd" class="muted ellipsis"></span>
+        <span id="active-status" class="status-text"></span>
+      </div>
+      <div id="error-banner" class="error-banner" hidden></div>
+      <div id="terminals" class="terminals">
+        <div class="welcome" id="welcome">
+          <p>왼쪽 <b>새 에이전트</b>에서 작업 폴더를 고르고 시작하면<br>여기에 실제 터미널이 열리고 <code>claude</code>가 실행됩니다.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
