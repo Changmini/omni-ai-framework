@@ -23,16 +23,9 @@ const STATUS_LABEL = {
 const $ = (sel) => document.querySelector(sel);
 const els = {
   list: $('#agent-list'),
-  empty: $('#agent-empty'),
   count: $('#agent-count'),
   terminals: $('#terminals'),
-  welcome: $('#welcome'),
-  form: $('#new-agent'),
-  pick: $('#pick-folder'),
-  controls: $('#controls'),
-  controlTarget: $('#control-target'),
-  promptForm: $('#prompt-form'),
-  prompt: $('#prompt'),
+  newTerminal: $('#new-terminal'),
   fontSize: $('#font-size'),
   fontSizeValue: $('#font-size-value'),
   activeLed: $('#active-led'),
@@ -53,12 +46,24 @@ function writePref(key, value) {
   try { localStorage.setItem(key, String(value)); } catch { /* ignore */ }
 }
 
-// ---------- agent lifecycle ----------
+// ---------- terminal lifecycle ----------
 
-async function startAgent({ name, cwd, command }) {
-  const info = await api.create({ name, cwd, command, cols: 100, rows: 30 });
+// A plain shell in the home folder; the user cds and runs claude as usual.
+async function newTerminal() {
+  const info = await api.create({ cols: 100, rows: 30 });
   addAgent(info);
   select(info.id);
+}
+
+function closeTerminal(id) {
+  if (id) api.kill(id);
+}
+
+// Ctrl+Shift+T / Ctrl+Shift+W. Handled once, on document; xterm only has to
+// leave these keys alone (see attachCustomKeyEventHandler below).
+const SHORTCUTS = { KeyT: () => newTerminal(), KeyW: () => closeTerminal(activeId) };
+function isShortcut(e) {
+  return e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS;
 }
 
 function addAgent(info) {
@@ -79,6 +84,7 @@ function addAgent(info) {
   term.loadAddon(fit);
   term.open(el);
   term.onData((data) => api.write(info.id, data));
+  term.attachCustomKeyEventHandler((e) => !isShortcut(e));
   term.onResize(({ cols, rows }) => api.resize(info.id, cols, rows));
 
   const item = document.createElement('li');
@@ -90,14 +96,14 @@ function addAgent(info) {
       <div class="agent-name ellipsis"></div>
       <div class="agent-sub ellipsis"></div>
     </span>
-    <button class="agent-close" title="에이전트 종료" aria-label="에이전트 종료">✕</button>`;
+    <button class="agent-close" title="터미널 닫기" aria-label="터미널 닫기">✕</button>`;
   item.querySelector('.agent-name').textContent = info.name;
   item.querySelector('.agent-sub').textContent = info.cwd;
   item.addEventListener('click', () => select(info.id));
   item.addEventListener('keydown', (e) => { if (e.key === 'Enter') select(info.id); });
   item.querySelector('.agent-close').addEventListener('click', (e) => {
     e.stopPropagation();
-    api.kill(info.id);
+    closeTerminal(info.id);
   });
   els.list.appendChild(item);
 
@@ -112,10 +118,11 @@ function removeAgent(id) {
   a.el.remove();
   a.item.remove();
   agents.delete(id);
+  // Closing the last terminal closes the window, like a regular terminal app.
+  if (agents.size === 0) { window.close(); return; }
   if (activeId === id) {
     activeId = null;
-    const next = agents.keys().next();
-    if (!next.done) select(next.value);
+    select([...agents.keys()].at(-1));
   }
   renderList();
   renderActive();
@@ -147,19 +154,15 @@ function fitActive() {
 
 function renderList() {
   els.count.textContent = String(agents.size);
-  els.empty.hidden = agents.size > 0;
-  els.welcome.hidden = agents.size > 0;
 }
 
 function renderActive() {
   const a = agents.get(activeId);
-  els.controls.setAttribute('aria-disabled', a && a.info.status !== 'exited' ? 'false' : 'true');
   if (!a) {
     els.activeLed.dataset.status = 'none';
-    els.activeName.textContent = '에이전트를 시작하세요';
+    els.activeName.textContent = '';
     els.activeCwd.textContent = '';
     els.activeStatus.textContent = '';
-    els.controlTarget.textContent = '';
     els.banner.hidden = true;
     return;
   }
@@ -168,7 +171,6 @@ function renderActive() {
   els.activeName.textContent = info.name;
   els.activeCwd.textContent = info.cwd;
   els.activeStatus.textContent = STATUS_LABEL[info.status] || '';
-  els.controlTarget.textContent = `→ ${info.name}`;
   els.banner.hidden = !info.error;
   els.banner.textContent = info.error ? `⚠ ${info.error}` : '';
 }
@@ -185,36 +187,11 @@ function setStatus(id, status, error) {
 
 // ---------- UI -> terminal ----------
 
-els.form.addEventListener('submit', async (e) => {
+els.newTerminal.addEventListener('click', () => newTerminal());
+document.addEventListener('keydown', (e) => {
+  if (!isShortcut(e) || e.repeat) return;
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(els.form));
-  await startAgent(data);
-  els.form.elements.name.value = '';
-});
-
-els.pick.addEventListener('click', async () => {
-  const dir = await api.pickFolder();
-  if (dir) els.form.elements.cwd.value = dir;
-});
-
-els.controls.querySelector('.quick').addEventListener('click', (e) => {
-  const btn = e.target.closest('button');
-  if (!btn || !activeId) return;
-  if (btn.dataset.line) api.sendLine(activeId, btn.dataset.line);
-  else if (btn.dataset.key) api.write(activeId, btn.dataset.key);
-  agents.get(activeId).term.focus();
-});
-
-function sendPrompt() {
-  const text = els.prompt.value.trim();
-  if (!text || !activeId) return;
-  api.sendLine(activeId, text);
-  els.prompt.value = '';
-  agents.get(activeId).term.focus();
-}
-els.promptForm.addEventListener('submit', (e) => { e.preventDefault(); sendPrompt(); });
-els.prompt.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPrompt(); }
+  SHORTCUTS[e.code]();
 });
 
 function applyFontSize(size) {
@@ -246,7 +223,7 @@ new ResizeObserver(() => fitActive()).observe(els.terminals);
 (async () => {
   applyFontSize(fontSize);
   for (const info of await api.list()) addAgent(info);
-  const first = agents.keys().next();
-  if (!first.done) select(first.value);
-  renderActive();
+  // Open straight into a shell; nothing to set up first.
+  if (agents.size === 0) await newTerminal();
+  else select(agents.keys().next().value);
 })();

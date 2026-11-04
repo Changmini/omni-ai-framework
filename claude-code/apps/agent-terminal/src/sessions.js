@@ -22,7 +22,7 @@ class SessionManager {
     if (this.timer && this.timer.unref) this.timer.unref();
   }
 
-  create({ name, cwd, command = 'claude', cols = 100, rows = 30 } = {}) {
+  create({ name, cwd, command = '', cols = 100, rows = 30 } = {}) {
     const id = String(this.nextId++);
     const dir = cwd && cwd.trim() ? cwd.trim() : os.homedir();
     const pty = this.spawn(this.shell.file, this.shell.args, {
@@ -35,7 +35,7 @@ class SessionManager {
     const tracker = new StatusTracker({ now: this.now });
     const session = {
       id,
-      name: name && name.trim() ? name.trim() : `agent-${id}`,
+      name: name && name.trim() ? name.trim() : `터미널 ${id}`,
       cwd: dir,
       command: command.trim(),
       pty,
