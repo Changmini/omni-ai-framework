@@ -741,39 +741,59 @@ cfgEls.refresh.addEventListener('click', () => loadConfig(0));
 window.addEventListener('focus', () => loadConfig());
 
 // ---------- terminals | config height ----------
+// Drag the border between the terminal list and the config list. Dragging to
+// within SNAP px of either end hides that side completely (the other one
+// takes the whole height); the border stays as a grip to drag it back, and a
+// double-click restores the default split. The state is remembered.
 const split = $('#sidebar-split');
 const splitResizer = $('#split-resizer');
-function setTerminalsHeight(px, save = true) {
-  if (px == null) {
-    document.documentElement.style.removeProperty('--terminals-h');
-    if (save) writePref('terminalsHeight', '');
-    return;
-  }
-  const max = split.getBoundingClientRect().height - 60;
-  const v = Math.round(Math.max(80, Math.min(max, px)));
-  document.documentElement.style.setProperty('--terminals-h', `${v}px`);
-  if (save) writePref('terminalsHeight', v);
+const SNAP = 40;
+
+function applySplit(state) {
+  // state: null (default) | 'top' (terminals hidden) | 'bottom' (config hidden) | px
+  split.classList.toggle('top-collapsed', state === 'top');
+  split.classList.toggle('bottom-collapsed', state === 'bottom');
+  if (typeof state === 'number') document.documentElement.style.setProperty('--terminals-h', `${state}px`);
+  else if (state === null) document.documentElement.style.removeProperty('--terminals-h');
+  splitResizer.title = state === 'top' || state === 'bottom'
+    ? '끌거나 더블클릭해서 다시 펼치기'
+    : '끌어서 높이 조절 (끝까지 끌면 한쪽 숨기기) · 더블클릭: 기본 높이';
 }
+
+function splitStateAt(y) {
+  const total = split.getBoundingClientRect().height;
+  if (y < SNAP) return 'top';
+  if (y > total - SNAP) return 'bottom';
+  return Math.round(y);
+}
+
+function saveSplit(state) {
+  writePref('terminalsHeight', state === null ? '' : String(state));
+}
+
 splitResizer.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   splitResizer.setPointerCapture(e.pointerId);
   document.body.classList.add('resizing-v');
   const top = split.getBoundingClientRect().top;
-  const move = (ev) => setTerminalsHeight(ev.clientY - top, false);
+  const move = (ev) => applySplit(splitStateAt(ev.clientY - top));
   const up = (ev) => {
     splitResizer.releasePointerCapture(ev.pointerId);
     splitResizer.removeEventListener('pointermove', move);
     splitResizer.removeEventListener('pointerup', up);
     document.body.classList.remove('resizing-v');
-    setTerminalsHeight(ev.clientY - top);
+    const state = splitStateAt(ev.clientY - top);
+    applySplit(state);
+    saveSplit(state);
   };
   splitResizer.addEventListener('pointermove', move);
   splitResizer.addEventListener('pointerup', up);
 });
-splitResizer.addEventListener('dblclick', () => setTerminalsHeight(null));
+splitResizer.addEventListener('dblclick', () => { applySplit(null); saveSplit(null); });
 {
-  const saved = Number(readPref('terminalsHeight', ''));
-  if (saved > 0) setTerminalsHeight(saved, false);
+  const saved = readPref('terminalsHeight', '');
+  if (saved === 'top' || saved === 'bottom') applySplit(saved);
+  else if (Number(saved) > 0) applySplit(Number(saved));
 }
 
 // ---------- terminal -> UI ----------
