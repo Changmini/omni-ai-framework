@@ -162,6 +162,9 @@ body.resizing .terminals { pointer-events: none; }
 .shortcut:hover .shortcut-btn, .shortcut:focus-within .shortcut-btn { visibility: visible; }
 .shortcut-btn:hover { color: var(--text); background: var(--bg); }
 .shortcut-form { display: grid; gap: 6px; margin-top: 6px; }
+.shortcut.editing { background: var(--panel); border-color: var(--accent); }
+.shortcut-edit-slot { list-style: none; padding: 0 0 8px 8px; margin-left: 12px; border-left: 2px solid var(--accent); }
+.shortcut-edit-slot .shortcut-form { margin-top: 2px; }
 .shortcut-form[hidden] { display: none; }
 .shortcut-form input, .shortcut-form textarea {
   width: 100%; font: 12px var(--mono); color: var(--text); background: var(--bg);
