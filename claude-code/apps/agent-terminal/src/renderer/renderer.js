@@ -62,7 +62,12 @@ function closeTerminal(id) {
 
 // Ctrl+Shift+T / Ctrl+Shift+W. Handled once, on document; xterm only has to
 // leave these keys alone (see attachCustomKeyEventHandler below).
-const SHORTCUTS = { KeyT: () => newTerminal(), KeyW: () => closeTerminal(activeId) };
+const SHORTCUTS = {
+  KeyT: () => newTerminal(),
+  KeyW: () => closeTerminal(activeId),
+  PageUp: () => moveTerminal(activeId, -1), // like moving a browser tab
+  PageDown: () => moveTerminal(activeId, 1),
+};
 function isShortcut(e) {
   return e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS;
 }
@@ -101,6 +106,8 @@ function addAgent(info) {
 
   const item = document.createElement('li');
   item.className = 'agent';
+  item.dataset.id = info.id;
+  item.draggable = true;
   item.innerHTML = `
     <div class="agent-row" tabindex="0">
       <span class="led"></span>
@@ -119,6 +126,11 @@ function addAgent(info) {
     if (e.target !== row) return; // typing in the rename box
     if (e.key === 'Enter') select(info.id);
     if (e.key === 'F2') { e.preventDefault(); startRename(info.id); }
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      moveTerminal(info.id, e.key === 'ArrowUp' ? -1 : 1);
+      row.focus();
+    }
   });
   const nameEl = item.querySelector('.agent-name');
   nameEl.title = '더블클릭(또는 F2)해서 이름 바꾸기';
@@ -127,6 +139,7 @@ function addAgent(info) {
     e.stopPropagation();
     closeTerminal(info.id);
   });
+  enableDrag(item, info.id);
   els.list.appendChild(item);
 
   agents.set(info.id, { info, term, fit, el, item, preedit });
@@ -274,6 +287,64 @@ function renderActive() {
   els.banner.hidden = !banner;
   els.banner.dataset.kind = waiting ? 'waiting' : 'error';
   els.banner.textContent = banner ? `${waiting ? '⏳' : '⚠'} ${banner}` : '';
+}
+
+// ---------- reorder ----------
+// Drag a terminal in the sidebar, or Ctrl+Shift+PageUp/PageDown (Alt+Up/Down
+// on a focused row). The main process keeps the order for page reloads.
+let dragId = null;
+
+function saveOrder() {
+  const ids = [...els.list.children].map((li) => li.dataset.id).filter((id) => agents.has(id));
+  const reordered = new Map(ids.map((id) => [id, agents.get(id)]));
+  agents.clear();
+  for (const [id, a] of reordered) agents.set(id, a);
+  api.reorder(ids);
+}
+
+function moveTerminal(id, delta) {
+  const li = agents.get(id)?.item;
+  if (!li) return;
+  if (delta < 0 && li.previousElementSibling) els.list.insertBefore(li, li.previousElementSibling);
+  else if (delta > 0 && li.nextElementSibling) els.list.insertBefore(li.nextElementSibling, li);
+  else return;
+  saveOrder();
+}
+
+function clearDropMarks() {
+  for (const li of els.list.children) li.classList.remove('drop-before', 'drop-after');
+}
+
+function enableDrag(item, id) {
+  item.addEventListener('dragstart', (e) => {
+    if (agents.get(id)?.renaming) { e.preventDefault(); return; }
+    dragId = id;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  });
+  item.addEventListener('dragend', () => {
+    dragId = null;
+    item.classList.remove('dragging');
+    clearDropMarks();
+  });
+  item.addEventListener('dragover', (e) => {
+    if (!dragId || dragId === id) return;
+    e.preventDefault();
+    const r = item.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    clearDropMarks();
+    item.classList.add(after ? 'drop-after' : 'drop-before');
+  });
+  item.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const moving = dragId && dragId !== id ? agents.get(dragId)?.item : null;
+    const after = item.classList.contains('drop-after');
+    clearDropMarks();
+    if (!moving) return;
+    els.list.insertBefore(moving, after ? item.nextSibling : item);
+    saveOrder();
+  });
 }
 
 // ---------- rename ----------
