@@ -29,20 +29,20 @@
         <label class="slider">글자 크기 <output id="font-size-value">14</output>
           <input type="range" id="font-size" min="10" max="22" value="14">
         </label>
-        <label class="check" title="시스템 한글 입력기가 앱에 닿지 않을 때(예: WSL 안의 앱) 앱이 직접 두벌식으로 조합합니다">
-          <input type="checkbox" id="ime-enabled"> 내장 한글 입력
-        </label>
-        <p class="hint ime-hint">한/영 전환: 한/영 키 · 오른쪽 Alt · Shift+Space</p>
       </section>
     </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical"
+         title="끌어서 사이드바 너비 조절 · 더블클릭: 기본 너비"></div>
 
     <main class="main">
       <div class="topbar">
+        <button id="sidebar-toggle" class="icon-btn" title="사이드바 접기/펴기 (Ctrl+Shift+B)" aria-label="사이드바 접기/펴기">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="6" y1="2.5" x2="6" y2="13.5" stroke="currentColor"/></svg>
+        </button>
         <span id="active-led" class="led" data-status="none"></span>
         <span id="active-name" class="active-name"></span>
         <span id="active-cwd" class="muted ellipsis"></span>
         <span id="active-status" class="status-text"></span>
-        <button id="ime-toggle" class="ime-toggle" hidden title="한/영 전환 (한/영 키, 오른쪽 Alt, Shift+Space)">A</button>
       </div>
       <div id="error-banner" class="error-banner" hidden></div>
       <div id="terminals" class="terminals">
@@ -52,7 +52,6 @@
 
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
-  <script src="hangul.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -19,8 +19,8 @@
 | 🔔 **알림 배너** | 승인 대기 메시지, API 오류, 셸 출력의 오류 줄(`Error: ...`, `command not found` 등)을 상단에 표시 |
 | 🪟 **tmux 지원** | 앱 터미널에서 접속한 tmux 안의 `claude`도 상태 표시(앱보다 먼저 만든 세션, 창 분할 팀 포함). 설정은 자동 |
 | 🐧 **WSL·Linux** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 · Linux/WSL에서 앱을 직접 실행하는 설치 스크립트 |
-| ⌨️ **한글 입력** | 시스템 입력기가 닿지 않는 환경(WSL 안의 앱 등)을 위한 내장 두벌식 입력. 조합 중인 글자를 커서 위치에 표시하고, 상단의 `한`/`A` 표시로 상태를 보여 줌 |
-| ⚙️ **설정** | 글자 크기 슬라이더 · 내장 한글 입력 켜기/끄기(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
+| ↔️ **사이드바 크기** | 오른쪽 경계를 끌어 너비 조절(200~600px, 더블클릭: 기본 너비) · 상단 바 버튼이나 `Ctrl+Shift+B`로 접기/펴기. 둘 다 기억 |
+| ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
 | 🔒 **안전** | 훅은 앱에서 연 터미널의 `claude`에만 적용(사용자 설정 파일은 수정하지 않음) · 신호 수신기는 `127.0.0.1` 전용이고 실행마다 새 토큰 확인 · 앱은 한 번에 하나만 실행 |
 
 ### 단축키
@@ -30,8 +30,8 @@
 | `Ctrl+Shift+T` | 새 터미널 |
 | `Ctrl+Shift+W` | 현재 터미널 닫기(마지막 터미널이면 창도 닫힘) |
 | `F2` / 이름 더블클릭 | 터미널 이름 바꾸기(`Enter` 저장, `Esc` 취소) |
+| `Ctrl+Shift+B` | 사이드바 접기/펴기 |
 | `Ctrl+Shift+PageUp` / `PageDown` | 선택한 터미널을 위·아래로 이동(사이드바 항목에 포커스가 있으면 `Alt+↑` / `Alt+↓`도 가능) |
-| 한/영 키 · 오른쪽 `Alt` · `Shift+Space` | 한/영 전환(내장 한글 입력을 켰을 때) |
 
 ### LED 색
 
@@ -72,7 +72,7 @@ omni-agent-terminal
 
 **한글 글꼴:** 앱에 Nanum Gothic Coding(OFL-1.1, npm `@fontsource/nanum-gothic-coding`)이 들어 있어, 시스템에 한글 글꼴이 없어도 깨지지 않습니다.
 
-**한글 입력:** WSLg에서 띄운 Linux 앱에는 Windows 한글 입력기가 전달되지 않아, 앱이 두벌식 한글을 직접 조합합니다. Linux에서는 기본으로 켜져 있고, 사이드바 아래 **내장 한글 입력**으로 끄고 켤 수 있습니다(Windows·macOS는 시스템 입력기를 쓰므로 기본 꺼짐). 전환은 한/영 키, 오른쪽 `Alt`(한국어 키보드에서 한/영 키가 이렇게 들어오는 경우가 많음), `Shift+Space`, 또는 상단의 `한`/`A` 표시를 클릭하면 됩니다. 겹모음·겹받침·받침 넘김을 지원하고, 조합 중에는 백스페이스가 자모를 하나씩 지웁니다. fcitx 같은 Linux 입력기를 따로 쓰면 그 입력이 우선합니다.
+**한글 입력:** WSLg에서 띄운 Linux 앱에는 Windows 한글 입력기가 전달되지 않습니다. 한글을 쓰려면 WSL 안에 Linux 입력기(fcitx5 등)를 따로 설정하거나, Windows용 앱에서 `wsl`로 들어가는 방식(아래 "WSL에서 쓰기"의 A)을 쓰세요.
 
 **WSL에서:** Windows 11(WSLg)이면 앱 창이 Windows 바탕화면에 뜨고, 메뉴 항목이 Windows 시작 메뉴에 나타날 수 있습니다. 이때 프로젝트는 `/mnt/c/...`가 아니라 **WSL 홈에 따로 clone**하세요. Windows용 `node_modules`는 Linux에서 동작하지 않습니다.
 
@@ -141,7 +141,7 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 - **확인함:** tmux 안의 실제 `claude` → 사용자 설정 command 훅 → 앱 터미널로 전달(앱보다 먼저 만든 세션 포함), `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
 - **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
 - **사용자 환경에서 확인함:** WSLg에서 Electron 창 실행
-- **확인 못 함:** WSLg에서 내장 한글 입력과 한/영 키(Chromium에서 실제 bash로만 확인), `setup-linux.sh`의 실제 설치 단계(`--dry-run`과 실행기 생성만 확인), Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
+- **확인 못 함:** `setup-linux.sh`의 실제 설치 단계(`--dry-run`과 실행기 생성만 확인), Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
 - **문서화되지 않은 형식:** 팀 설정과 작업 파일 형식은 공식 문서에 없어서 실제 파일을 보고 맞췄습니다. 버전이 바뀌면 달라질 수 있습니다
 
 ## 구조
@@ -162,7 +162,6 @@ src/
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
 ├── status.js          # 셸 출력의 오류 줄 감지
 └── renderer/          # index.html · styles.css · renderer.js (xterm.js 화면, 사이드바 트리, 단축키)
-                       #   · hangul.js (내장 두벌식 한글 조합기)
 scripts/setup-linux.sh # Linux·WSL 설치 자동화 (패키지, npm install, 샌드박스, 실행기)
 test/                  # node --test
 ```
