@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require('electron');
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
@@ -43,6 +43,16 @@ function registerIpc() {
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
   ipcMain.handle('session:reorder', (_e, ids) =>
     manager.reorder(Array.isArray(ids) ? ids.slice(0, 500).map((x) => str(x, 20)).filter(Boolean) : []));
+  // Clipboard and links go through here: the page itself stays sandboxed.
+  ipcMain.handle('clipboard:read', () => clipboard.readText());
+  ipcMain.handle('clipboard:write', (_e, text) => {
+    const t = str(text, 10 * 1024 * 1024);
+    if (t !== null) clipboard.writeText(t);
+  });
+  ipcMain.handle('open-external', (_e, url) => {
+    const u = str(url, 4000);
+    if (u && /^https?:\/\//i.test(u)) shell.openExternal(u);
+  });
   ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));
   ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.

@@ -66,6 +66,10 @@ const SHORTCUTS = {
   PageUp: () => moveTerminal(activeId, -1), // like moving a browser tab
   PageDown: () => moveTerminal(activeId, 1),
   KeyB: () => setSidebarCollapsed(!app.classList.contains('collapsed')),
+  KeyC: () => copySelection(activeId),
+  KeyV: () => pasteInto(activeId),
+  KeyA: () => agents.get(activeId)?.term.selectAll(),
+  KeyF: () => openSearch(),
 };
 function isShortcut(e) {
   return e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS;
@@ -82,14 +86,41 @@ function addAgent(info) {
     lineHeight: 1.15,
     cursorBlink: true,
     scrollback: 10000,
-    allowProposedApi: false,
+    allowProposedApi: true, // search result decorations and counts
     theme: TERMINAL_THEME,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+  const search = new SearchAddon.SearchAddon();
+  term.loadAddon(search);
+  search.onDidChangeResults((r) => { if (info.id === activeId) showSearchCount(r); });
+  // URLs: underline on hover, open in the browser with Ctrl+click (a plain
+  // click is often just focusing or selecting).
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => {
+    if (event.ctrlKey || event.metaKey) api.openExternal(uri);
+  }, {
+    hover: () => { el.title = 'Ctrl+클릭으로 열기'; },
+    leave: () => { el.title = ''; },
+  }));
   term.open(el);
   term.onData((data) => api.write(info.id, data));
-  term.attachCustomKeyEventHandler((e) => !isShortcut(e));
+  term.attachCustomKeyEventHandler((e) => {
+    if (isShortcut(e)) return false;
+    // Ctrl+C copies while text is selected (like Windows Terminal); otherwise
+    // it reaches the shell as ^C.
+    if (e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyC' && term.hasSelection()) {
+      e.preventDefault();
+      copySelection(info.id);
+      return false;
+    }
+    return true;
+  });
+  // Right-click: copy the selection, or paste when nothing is selected.
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (term.hasSelection()) copySelection(info.id);
+    else pasteInto(info.id);
+  });
   term.onResize(({ cols, rows }) => api.resize(info.id, cols, rows));
   // The shell integration reports its folder before each prompt.
   term.parser.registerOscHandler(7, (data) => { api.reportCwd(info.id, 7, data); return true; });
@@ -137,7 +168,7 @@ function addAgent(info) {
   enableDrag(item, info.id);
   els.list.appendChild(item);
 
-  agents.set(info.id, { info, term, fit, el, item });
+  agents.set(info.id, { info, term, fit, el, item, search });
   renderItem(info.id);
   renderList();
 }
@@ -161,6 +192,7 @@ function removeAgent(id) {
 
 function select(id) {
   if (!agents.has(id)) return;
+  if (activeId !== id) closeSearch(false);
   activeId = id;
   loadConfig();
   for (const [aid, a] of agents) {
@@ -454,6 +486,82 @@ sidebarToggle.addEventListener('click', () => {
 });
 setSidebarWidth(Number(readPref('sidebarWidth', SIDEBAR.def)) || SIDEBAR.def, false);
 setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
+
+// ---------- copy, paste, search ----------
+function copySelection(id) {
+  const a = agents.get(id);
+  if (!a || !a.term.hasSelection()) return;
+  api.clipboardWrite(a.term.getSelection());
+  a.term.clearSelection();
+}
+
+async function pasteInto(id) {
+  const a = agents.get(id);
+  if (!a) return;
+  let text = '';
+  try { text = await api.clipboardRead(); } catch { return; }
+  if (text) a.term.paste(text); // honours bracketed paste, like typing it
+  a.term.focus();
+}
+
+const searchEls = {
+  bar: $('#search-bar'), input: $('#search-input'), count: $('#search-count'),
+  prev: $('#search-prev'), next: $('#search-next'), close: $('#search-close'),
+};
+const SEARCH_LOOK = {
+  decorations: {
+    // Distinct from the selection colour (#3a3f4f), which also marks the active match.
+    matchBackground: '#2b4a6b',
+    matchOverviewRuler: '#6ea8fe',
+    activeMatchBackground: '#7a3d26',
+    activeMatchBorder: '#d97757',
+    activeMatchColorOverviewRuler: '#d97757',
+  },
+};
+
+function openSearch() {
+  const a = agents.get(activeId);
+  if (!a) return;
+  const sel = a.term.hasSelection() ? a.term.getSelection() : '';
+  if (sel && !sel.includes('\n')) searchEls.input.value = sel;
+  searchEls.bar.hidden = false;
+  searchEls.input.focus();
+  searchEls.input.select();
+  if (searchEls.input.value) findInTerminal(1, true);
+}
+
+function closeSearch(focus = true) {
+  if (searchEls.bar.hidden) return;
+  searchEls.bar.hidden = true;
+  searchEls.count.textContent = '';
+  for (const a of agents.values()) a.search.clearDecorations();
+  if (focus) agents.get(activeId)?.term.focus();
+}
+
+function findInTerminal(dir, incremental = false) {
+  const a = agents.get(activeId);
+  const q = searchEls.input.value;
+  if (!a) return;
+  if (!q) { a.search.clearDecorations(); searchEls.count.textContent = ''; return; }
+  const opts = { ...SEARCH_LOOK, incremental };
+  const found = dir < 0 ? a.search.findPrevious(q, opts) : a.search.findNext(q, opts);
+  if (!found) searchEls.count.textContent = '없음';
+}
+
+function showSearchCount({ resultIndex, resultCount }) {
+  if (searchEls.bar.hidden) return;
+  searchEls.count.textContent = resultCount === 0 ? '없음'
+    : resultIndex >= 0 ? `${resultIndex + 1}/${resultCount}` : `${resultCount}건`;
+}
+
+searchEls.input.addEventListener('input', () => findInTerminal(1, true));
+searchEls.input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); findInTerminal(e.shiftKey ? -1 : 1); }
+  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+});
+searchEls.next.addEventListener('click', () => findInTerminal(1));
+searchEls.prev.addEventListener('click', () => findInTerminal(-1));
+searchEls.close.addEventListener('click', () => closeSearch());
 
 // ---------- Claude config list ----------
 // Skills, plugins, hooks, subagents and MCP servers for the active terminal's
