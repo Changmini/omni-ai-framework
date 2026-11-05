@@ -558,6 +558,7 @@ async function runShortcut(sc) {
 
 function renderShortcuts() {
   scEls.empty.hidden = shortcuts.length > 0 || !scEls.form.hidden;
+  $('#shortcut-count').textContent = String(shortcuts.length);
   scEls.list.replaceChildren(...shortcuts.map((sc) => {
     const li = h('li', 'shortcut');
     li.tabIndex = 0;
@@ -569,7 +570,9 @@ function renderShortcuts() {
     edit.title = '편집';
     const del = h('button', 'shortcut-btn', '✕');
     del.title = '삭제';
-    li.append(h('span', 'shortcut-icon', sc.newTerminal ? '⧉' : '›'), meta, edit, del);
+    const icon = h('span', 'shortcut-icon', sc.newTerminal ? '⧉' : '▶');
+    icon.title = sc.newTerminal ? '새 터미널에서 실행' : '현재 터미널에서 실행';
+    li.append(icon, meta, edit, del);
     li.title = `${sc.newTerminal ? '새 터미널에서' : '현재 터미널에서'} 실행:\n${sc.command}`;
     li.addEventListener('click', () => runShortcut(sc));
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) runShortcut(sc); });
