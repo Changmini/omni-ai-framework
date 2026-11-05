@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:">
+  <title>Omni Agent Terminal</title>
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+  <!-- Bundled Korean coding font (OFL-1.1), so Hangul renders without system fonts -->
+  <link rel="stylesheet" href="../../node_modules/@fontsource/nanum-gothic-coding/400.css">
+  <link rel="stylesheet" href="../../node_modules/@fontsource/nanum-gothic-coding/700.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header class="brand">
+        <span class="brand-mark" aria-hidden="true">▍</span>
+        <span>Omni Agent Terminal</span>
+      </header>
+
+      <div class="sidebar-split" id="sidebar-split">
+        <section class="panel terminals-panel">
+          <h2>터미널 <span id="agent-count" class="count">0</span></h2>
+          <ul id="agent-list" class="agent-list" aria-label="터미널 목록"></ul>
+          <button id="new-terminal" class="btn new-terminal" title="새 터미널 (Ctrl+Shift+T)">＋ 새 터미널</button>
+
+        </section>
+        <div class="split-resizer" id="split-resizer" role="separator" aria-orientation="horizontal"
+             title="끌어서 높이 조절 · 더블클릭: 기본 높이"></div>
+        <section class="panel shortcuts-panel" aria-label="바로가기">
+          <div class="shortcuts">
+            <h2>바로가기 <span id="shortcut-count" class="count">0</span>
+              <button id="shortcut-add" class="mini-btn" title="바로가기 추가" aria-label="바로가기 추가">＋</button>
+            </h2>
+            <ul id="shortcut-list" class="shortcut-list" aria-label="바로가기"></ul>
+            <p id="shortcut-empty" class="hint">＋로 자주 쓰는 명령을 저장하세요. 클릭하면 실행합니다.</p>
+            <form id="shortcut-form" class="shortcut-form" hidden autocomplete="off">
+              <input name="name" placeholder="이름 (예: sample-app 팀)" maxlength="80" required>
+              <textarea name="command" rows="3" spellcheck="false" required
+                        placeholder="한 줄에 명령 하나&#10;예) wsl ~&#10;    cd sample-app&#10;    tmux attach -t sample-app"></textarea>
+              <label class="check"><input type="checkbox" name="newTerminal" checked> 새 터미널에서 실행</label>
+              <div class="row">
+                <button type="submit" class="btn primary">저장</button>
+                <button type="button" id="shortcut-cancel" class="btn">취소</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel settings">
+        <label class="slider">글자 크기 <output id="font-size-value">14</output>
+          <input type="range" id="font-size" min="10" max="22" value="14">
+        </label>
+      </section>
+    </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical"
+         title="끌어서 사이드바 너비 조절 · 더블클릭: 기본 너비"></div>
+
+    <main class="main">
+      <div class="topbar">
+        <button id="sidebar-toggle" class="icon-btn" title="사이드바 접기/펴기 (Ctrl+Shift+B)" aria-label="사이드바 접기/펴기">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="6" y1="2.5" x2="6" y2="13.5" stroke="currentColor"/></svg>
+        </button>
+        <span id="active-led" class="led" data-status="none"></span>
+        <span id="active-name" class="active-name"></span>
+        <span id="active-cwd" class="muted ellipsis"></span>
+        <span id="active-status" class="status-text"></span>
+        <button id="inspector-toggle" class="icon-btn" title="상세 패널 접기/펴기 (Ctrl+Shift+I)" aria-label="상세 패널 접기/펴기">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor"/></svg>
+        </button>
+      </div>
+      <div id="error-banner" class="error-banner" hidden></div>
+      <div id="terminals" class="terminals">
+        <div id="search-bar" class="search-bar" hidden role="search">
+          <input id="search-input" placeholder="검색" spellcheck="false" aria-label="터미널 출력 검색">
+          <span id="search-count" class="search-count"></span>
+          <button id="search-prev" class="icon-btn" title="이전 (Shift+Enter)" aria-label="이전">↑</button>
+          <button id="search-next" class="icon-btn" title="다음 (Enter)" aria-label="다음">↓</button>
+          <button id="search-close" class="icon-btn" title="닫기 (Esc)" aria-label="닫기">✕</button>
+        </div>
+      </div>
+    </main>
+    <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"
+         title="끌어서 상세 패널 너비 조절 · 더블클릭: 기본 너비"></div>
+    <aside class="inspector" id="inspector" aria-label="상세 패널">
+      <div class="inspector-head" role="tablist">
+        <button class="tab" role="tab" data-tab="activity">활동</button>
+        <button class="tab" role="tab" data-tab="config">Claude 구성</button>
+        <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
+      </div>
+      <section class="tab-body" data-tab="activity">
+        <div id="ctx-detail" class="ctx-detail"></div>
+        <h2 class="inspector-h">최근 활동</h2>
+        <ol id="activity-list" class="activity-list" aria-label="최근 활동"></ol>
+        <p id="activity-empty" class="hint">Claude가 이 터미널에서 일하면 프롬프트, 도구 실행, 수정한 파일이 여기에 쌓입니다.</p>
+      </section>
+      <section class="tab-body" data-tab="config">
+        <div id="config-project" class="hint ellipsis"></div>
+        <div id="config-body"></div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="../../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
+  <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
