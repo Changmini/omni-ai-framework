@@ -117,3 +117,13 @@ test('rename sets a custom name; empty goes back to the folder name', () => {
   m.rename(id, 'x'.repeat(200));
   assert.strictEqual(m.list()[0].name.length, 80);
 });
+
+test('reorder changes the listed order and ignores unknown ids', () => {
+  const { m } = setup();
+  const ids = [m.create({}).id, m.create({}).id, m.create({}).id];
+  assert.strictEqual(m.reorder([ids[2], 'nope', ids[0]]), true);
+  assert.deepStrictEqual(m.list().map((s) => s.id), [ids[2], ids[0], ids[1]]);
+  assert.strictEqual(m.reorder('x'), false);
+  m.kill(ids[0]);
+  assert.deepStrictEqual(m.list().map((s) => s.id), [ids[2], ids[1]]);
+});
