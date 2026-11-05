@@ -27,7 +27,8 @@ input="$(cat)"
 pane="${TMUX_PANE:-}"
 title="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)"
 esc() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
-body="{\"omni\":{\"pane\":\"$(esc "$pane")\",\"title\":\"$(esc "$title")\"},\"event\":$input}"
+socket="${TMUX%%,*}" # tmux server socket, so the app can select this pane
+body="{\"omni\":{\"pane\":\"$(esc "$pane")\",\"title\":\"$(esc "$title")\",\"socket\":\"$(esc "$socket")\"},\"event\":$input}"
 for pid in $clients; do
   [ -r "/proc/$pid/environ" ] || continue
   envs="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null)" || continue

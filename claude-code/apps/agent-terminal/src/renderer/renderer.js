@@ -172,6 +172,11 @@ function addAgent(info) {
     <div class="agent-tasks ellipsis"></div>`;
   const row = item.querySelector('.agent-row');
   row.addEventListener('click', () => select(info.id));
+  item.querySelector('.agent-claude').addEventListener('click', (e) => {
+    if (!e.currentTarget.classList.contains('focusable')) return;
+    e.stopPropagation();
+    focusPane(info.id, 'main');
+  });
   row.addEventListener('keydown', (e) => {
     if (e.target !== row) return; // typing in the rename box
     if (e.key === 'Enter') select(info.id);
@@ -299,6 +304,8 @@ function renderItem(id) {
   const claudeLine = item.querySelector('.agent-claude');
   claudeLine.textContent = claudeSummary(c);
   claudeLine.dataset.status = c.status || '';
+  claudeLine.classList.toggle('focusable', Boolean(c.focusable));
+  claudeLine.title = c.focusable ? '클릭: 이 Claude의 tmux 창으로 이동' : '';
   item.title = info.cwd;
 
   // Subagents and teammates, live from hooks and the team config.
@@ -314,6 +321,12 @@ function renderItem(id) {
       h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind),
     );
     li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ');
+    if (ag.focusable) {
+      // Split-pane teammate: jump to its tmux pane.
+      li.classList.add('focusable');
+      li.title += '\n클릭: tmux 창으로 이동';
+      li.addEventListener('click', (e) => { e.stopPropagation(); focusPane(id, ag.id); });
+    }
     return li;
   }));
 
@@ -412,6 +425,17 @@ function enableDrag(item, id) {
     els.list.insertBefore(moving, after ? item.nextSibling : item);
     saveOrder();
   });
+}
+
+// ---------- tmux pane focus ----------
+async function focusPane(id, target) {
+  select(id);
+  const ok = await api.focusPane(id, target).catch(() => false);
+  const a = agents.get(id);
+  if (!ok && a) {
+    a.item.classList.add('focus-failed');
+    setTimeout(() => a.item.classList.remove('focus-failed'), 600);
+  }
 }
 
 // ---------- rename ----------

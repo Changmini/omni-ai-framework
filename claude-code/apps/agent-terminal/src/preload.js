@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   resize: (id, cols, rows) => ipcRenderer.send('session:resize', id, cols, rows),
   rename: (id, name) => ipcRenderer.invoke('session:rename', id, name),
   claudeConfig: (id) => ipcRenderer.invoke('session:config', id),
+  focusPane: (id, target) => ipcRenderer.invoke('session:focusPane', id, target),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   clipboardWrite: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),

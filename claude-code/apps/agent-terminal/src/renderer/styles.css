@@ -105,6 +105,10 @@ body {
   border-left: 1px solid var(--line); padding-left: 10px; margin-left: -6px;
 }
 .child-name { color: var(--text); }
+.child.focusable, .agent-claude.focusable { cursor: pointer; }
+.child.focusable:hover .child-name, .agent-claude.focusable:hover { text-decoration: underline; text-underline-offset: 2px; }
+.agent.focus-failed { animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 .child-meta { color: var(--muted); font-size: 11px; max-width: 110px; }
 .agent-tasks { font-size: 11px; color: var(--muted); padding: 0 10px 8px 29px; }
 .agent-tasks[hidden] { display: none; }
