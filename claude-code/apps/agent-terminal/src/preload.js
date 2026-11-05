@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   platform: process.platform,
   create: (opts) => ipcRenderer.invoke('session:create', opts),
   list: () => ipcRenderer.invoke('session:list'),
+  planUsage: () => ipcRenderer.invoke('plan:get'),
   kill: (id) => ipcRenderer.invoke('session:kill', id),
   sendLine: (id, text) => ipcRenderer.invoke('session:sendLine', id, text),
   write: (id, data) => ipcRenderer.send('session:write', id, data),
@@ -36,4 +37,5 @@ contextBridge.exposeInMainWorld('agentApi', {
   onAgent: on('session:agent'),
   onMeta: on('session:meta'),
   onActivity: on('session:activity'),
+  onPlanUsage: on('plan:usage'),
 });

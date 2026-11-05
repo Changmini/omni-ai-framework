@@ -2,10 +2,23 @@
 # app (passed with -EncodedCommand, so execution policy does not apply).
 
 # 1. `claude` gets --settings with the app's hooks. Outside the app, plain claude.
+#    Those settings replace the status line (it reports plan usage to the app)
+#    and run the user's own statusLine command after it: found here, in
+#    Claude Code's order (local, project, user settings).
+function global:__omniUserStatusLine {
+  $dir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+  $here = (Get-Location).Path
+  foreach ($f in @((Join-Path $here '.claude\settings.local.json'), (Join-Path $here '.claude\settings.json'), (Join-Path $dir 'settings.json'))) {
+    try { $s = (Get-Content -Raw -LiteralPath $f -ErrorAction Stop | ConvertFrom-Json).statusLine } catch { continue }
+    if ($s -and $s.command -and (-not $s.type -or $s.type -eq 'command')) { return [string]$s.command }
+  }
+  return ''
+}
 if ($env:OMNI_CLAUDE_SETTINGS) {
   function global:claude {
     $cmd = Get-Command claude -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd) { Write-Error 'claude was not found in PATH.'; return }
+    $env:OMNI_USER_STATUSLINE = __omniUserStatusLine
     & $cmd.Source --settings $env:OMNI_CLAUDE_SETTINGS @args
   }
 }
