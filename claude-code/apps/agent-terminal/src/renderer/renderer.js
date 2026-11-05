@@ -14,6 +14,10 @@ const TERMINAL_THEME = {
   blue: '#6ea8fe', magenta: '#c792ea', cyan: '#5fd4d4', white: '#d7dae0',
   brightBlack: '#545a68', brightRed: '#ff7a85', brightGreen: '#6fdcaa', brightYellow: '#f5ca6e',
   brightBlue: '#8fbcff', brightMagenta: '#dcaaf5', brightCyan: '#80e6e6', brightWhite: '#ffffff',
+  scrollbarSliderBackground: 'rgba(125, 132, 148, 0.28)',
+  scrollbarSliderHoverBackground: 'rgba(125, 132, 148, 0.5)',
+  scrollbarSliderActiveBackground: 'rgba(217, 119, 87, 0.7)',
+  overviewRulerBorder: 'transparent',
 };
 const FONT_FAMILY = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
 const CLAUDE_LABEL = { working: '작업 중', waiting: '승인 대기', idle: '대기', error: '오류' };
@@ -88,6 +92,9 @@ function addAgent(info) {
     cursorBlink: true,
     scrollback: 10000,
     allowProposedApi: true, // search result decorations and counts
+    // xterm 6 sizes its vertical scrollbar from the overview ruler width
+    // (default 14px); the ruler also marks search matches.
+    overviewRuler: { width: 6 },
     theme: TERMINAL_THEME,
   });
   const fit = new FitAddon.FitAddon();
