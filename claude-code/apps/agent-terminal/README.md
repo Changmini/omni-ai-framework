@@ -17,6 +17,7 @@
 | 🌳 **서브에이전트·팀** | Claude가 띄운 서브에이전트와 에이전트 팀 팀원을 트리로 표시하고, 각자의 상태와 도구를 보여 줌 |
 | ✅ **작업 진행률** | Claude의 작업 목록 진행률(`작업 1/4 · 담당자: 작업명`) 표시 |
 | 🔔 **알림 배너** | 승인 대기 메시지, API 오류, 셸 출력의 오류 줄(`Error: ...`, `command not found` 등)을 상단에 표시 |
+| 🪟 **tmux 지원** | 앱 터미널에서 접속한 tmux 안의 `claude`도 상태 표시(앱보다 먼저 만든 tmux 세션 포함, 1회 설정 필요) |
 | 🐧 **WSL·Linux** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 · Linux/WSL에서 앱을 직접 실행하는 설치 스크립트 |
 | ⌨️ **한글 입력** | 시스템 입력기가 닿지 않는 환경(WSL 안의 앱 등)을 위한 내장 두벌식 입력. 조합 중인 글자를 커서 위치에 표시하고, 상단의 `한`/`A` 표시로 상태를 보여 줌 |
 | ⚙️ **설정** | 글자 크기 슬라이더 · 내장 한글 입력 켜기/끄기(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
@@ -100,6 +101,23 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **필요한 것: curl.** WSL 안에 `curl`이 있어야 합니다(`sudo apt install curl`).
 - **WSL 안에서 쓰는 Claude:** WSL에 설치된 `claude`가 실행됩니다. Windows의 `claude.exe`가 아닙니다.
 
+## tmux 안에서 쓰기
+
+앱 터미널에서 tmux에 접속해(`tmux attach` 등) 그 안에서 `claude`를 실행해도 LED와 상태가 표시됩니다. 앱보다 먼저 만들어 둔 tmux 세션도 됩니다. **처음 한 번** 설정이 필요합니다.
+
+```bash
+bash <앱 폴더>/src/shell-init/omni-tmux-setup.sh
+```
+- **실행할 위치:** tmux가 돌아가는 곳(WSL이면 WSL bash, tmux 창 안이어도 됨)에서 실행합니다. Windows에 받은 저장소라면 경로는 `/mnt/c/Users/<사용자>/omni-ai-framework/claude-code/apps/agent-terminal/src/shell-init/omni-tmux-setup.sh`입니다. 앱 터미널의 bash에서는 `omni-tmux-setup`만 입력해도 됩니다.
+- **설치 내용:** 훅 스크립트를 `~/.local/share/omni-agent-terminal/claude-hook.sh`에 복사하고, Claude 사용자 설정(`~/.claude/settings.json`)에 command 훅으로 추가합니다. 원래 설정은 `settings.json.omni-backup-<시각>`으로 백업하고, 다른 설정과 훅은 건드리지 않습니다. 다시 실행해도 중복되지 않습니다.
+- **적용 시점:** 이미 실행 중인 `claude`에는 적용되지 않으니 다시 시작하세요(`claude --continue`로 대화 유지).
+- **제거:** `--remove`를 붙여 실행하면 훅만 깨끗이 지우고 원래 설정으로 돌아갑니다.
+
+**동작 원리:** tmux 창의 셸에는 앱 정보가 없지만, 그 세션을 화면에 띄우는 tmux 클라이언트는 앱 터미널에서 실행됐으므로 앱 주소·토큰·터미널 번호를 환경 변수로 갖고 있습니다. 훅은 현재 세션에 붙은 클라이언트의 환경(`/proc/<pid>/environ`)에서 이 값을 찾아 그 앱 터미널로 신호를 보냅니다. 세션을 앱 터미널 두 곳에서 띄우고 있으면 두 곳 모두에 표시됩니다.
+- **앱과 무관한 경우:** 앱 밖의 tmux나 일반 터미널, 또는 앱의 `claude` 래퍼로 실행한 `claude`(이미 `--settings`로 보고함)에서는 아무 출력 없이 바로 끝납니다.
+- **필요한 것:** `curl`, `python3`(설치 때만)이 필요합니다.
+- **Linux 전용:** `/proc`를 쓰는 방식이라 Linux·WSL 전용입니다.
+
 ## 기능 상세
 
 | 영역 | 동작 |
@@ -122,7 +140,7 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 4. 팀원 목록은 `~/.claude/teams/session-<세션 앞 8자리>/config.json`, 작업 진행률은 `~/.claude/tasks/`를 2초마다 읽어 합칩니다.
 
 검증한 범위(Linux, Claude Code 2.1.318):
-- **확인함:** `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
+- **확인함:** tmux 안의 실제 `claude` → 사용자 설정 command 훅 → 앱 터미널로 전달(앱보다 먼저 만든 세션 포함), `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
 - **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
 - **사용자 환경에서 확인함:** WSLg에서 Electron 창 실행
 - **확인 못 함:** WSLg에서 내장 한글 입력과 한/영 키(Chromium에서 실제 bash로만 확인), `setup-linux.sh`의 실제 설치 단계(`--dry-run`과 실행기 생성만 확인), Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
@@ -139,7 +157,8 @@ src/
 ├── hook-server.js     # 127.0.0.1 HTTP 훅 수신기 (토큰 확인)
 ├── claude-settings.js # --settings로 넘길 훅 설정 생성
 ├── shell.js           # 셸 실행 방법(PowerShell/bash/zsh) + 현재 폴더 보고 파싱
-├── shell-init/        # 앱 터미널 전용 셸 연동: claude 래퍼, 프롬프트마다 현재 폴더 보고
+├── shell-init/        # 앱 터미널 전용 셸 연동: claude 래퍼, 프롬프트마다 현재 폴더 보고,
+│                      #   tmux용 훅(claude-hook.sh)과 설치 스크립트(omni-tmux-setup.sh)
 ├── git.js             # .git/HEAD로 브랜치 읽기 (git 프로세스 없음)
 ├── wsl.js             # WSL 경로 ↔ Windows 경로 변환, WSLENV 구성
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
