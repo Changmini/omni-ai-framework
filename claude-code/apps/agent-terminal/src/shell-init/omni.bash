@@ -1,6 +1,25 @@
 # Omni Agent Terminal shell integration (bash --rcfile, app terminals only).
 # Also loaded inside WSL when `wsl` is typed in an app PowerShell terminal;
 # the OMNI_* variables then arrive through WSLENV.
+__omni_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Install or refresh the tmux hook (omni-tmux-setup.sh) automatically, so
+# claude inside tmux reports too. Runs before ~/.bashrc, which may start tmux.
+# Cheap when already current (one file compare). OMNI_NO_AUTO_SETUP=1 skips it.
+if [ -z "${OMNI_NO_AUTO_SETUP:-}" ] && [ -n "${OMNI_CWD_URL:-}" ] && command -v tmux >/dev/null 2>&1; then
+  __omni_hook_dst="$HOME/.local/share/omni-agent-terminal/claude-hook.sh"
+  __omni_settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+  if ! tr -d '\r' < "$__omni_dir/claude-hook.sh" | cmp -s - "$__omni_hook_dst" 2>/dev/null \
+     || ! grep -q 'omni-agent-terminal/claude-hook.sh' "$__omni_settings" 2>/dev/null; then
+    if __omni_out="$(bash "$__omni_dir/omni-tmux-setup.sh" 2>&1)"; then
+      printf '\033[36m[Omni] tmux 안의 claude도 상태가 표시되도록 설정했습니다 (%s, 백업 있음).\033[0m\n' "$__omni_settings"
+      printf '\033[36m       이미 실행 중인 claude는 다시 시작하세요 (claude --continue).\033[0m\n'
+    else
+      printf '\033[33m[Omni] tmux 자동 설정 실패: %s\033[0m\n' "$__omni_out"
+    fi
+  fi
+fi
+
 [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
@@ -8,8 +27,7 @@ if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
   claude() { OMNI_HOOKED=1 command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
 fi
 
-# One-time setup so claude inside tmux reports too (see omni-tmux-setup.sh).
-__omni_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Manual run of the same setup (e.g. --remove).
 omni-tmux-setup() { bash "$__omni_dir/omni-tmux-setup.sh" "$@"; }
 
 __omni_json() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }

@@ -102,3 +102,26 @@ test('omni-tmux-setup adds the hook once, keeps other settings, and removes clea
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(settings, 'utf8')), original);
   assert.ok(!fs.existsSync(path.join(home, '.local/share/omni-agent-terminal/claude-hook.sh')));
 });
+
+test('the app bash installs the tmux hook by itself once, then stays quiet', { skip: (!has('tmux') || !has('python3')) && 'needs tmux and python3' }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-auto-home-'));
+  const run = (extra = {}) => spawnSync('bash', ['--rcfile', path.join(INIT_DIR, 'omni.bash'), '-i'], {
+    input: 'exit\n', encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: home, OMNI_CWD_URL: 'http://127.0.0.1:9/cwd', OMNI_HOOK_TOKEN: 't', OMNI_TERMINAL_ID: '1', ...extra },
+  });
+  const settings = path.join(home, '.claude', 'settings.json');
+
+  const skipped = run({ OMNI_NO_AUTO_SETUP: '1' });
+  assert.ok(!fs.existsSync(settings), 'opt-out respected');
+  assert.doesNotMatch(skipped.stdout + skipped.stderr, /\[Omni\] tmux/);
+
+  const first = run();
+  assert.match(first.stdout + first.stderr, /tmux 안의 claude도 상태가 표시되도록 설정했습니다/);
+  assert.ok(fs.readFileSync(settings, 'utf8').includes('omni-agent-terminal/claude-hook.sh'));
+
+  const backups = () => fs.readdirSync(path.dirname(settings)).filter((f) => f.includes('omni-backup')).length;
+  const before = backups();
+  const second = run();
+  assert.doesNotMatch(second.stdout + second.stderr, /\[Omni\] tmux/);
+  assert.strictEqual(backups(), before, 'already current: nothing rewritten');
+});
