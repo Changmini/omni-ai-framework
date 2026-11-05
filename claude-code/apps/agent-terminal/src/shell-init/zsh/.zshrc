@@ -2,7 +2,7 @@
 [ -f "$HOME/.zshrc" ] && . "$HOME/.zshrc"
 
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
-  claude() { command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
+  claude() { OMNI_HOOKED=1 command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
 fi
 
 __omni_cwd() { printf '\033]7;file://%s%s\033\\' "${HOST:-localhost}" "$PWD"; }
