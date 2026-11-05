@@ -229,8 +229,21 @@ const displayName = (info) => info.name || baseName(info.cwd) || `터미널 ${in
 // and the shell's otherwise.
 function ledStatus(info) {
   if (info.claude && info.claude.status) return info.claude.status;
-  if (info.status === 'error' || info.status === 'exited') return info.status;
+  if (info.status === 'exited') return 'exited';
+  if (shellError(info)) return 'error';
   return 'shell';
+}
+
+// The output-pattern error (status.js) is meant for plain shells, e.g. a dev
+// server failing. It is ignored while Claude runs in the terminal (its own
+// errors come through hooks, and its screen often shows the word "Error:"),
+// while a full-screen program such as tmux or vim is up, or once dismissed.
+function shellError(info) {
+  if (!info.error || info.errorDismissed === info.error) return null;
+  if (info.claude && info.claude.status) return null;
+  const a = agents.get(info.id);
+  if (a && a.term.buffer.active.type === 'alternate') return null;
+  return info.error;
 }
 
 function claudeSummary(c) {
@@ -304,7 +317,7 @@ function renderActive() {
   els.activeStatus.textContent = claudeSummary(c) || SHELL_LABEL[info.status] || '';
   // Claude waiting for the user takes the banner over a shell error line.
   const claudeMsg = (c.status === 'waiting' || c.status === 'error') && c.message;
-  const banner = claudeMsg || info.error;
+  const banner = claudeMsg || shellError(info);
   const waiting = Boolean(claudeMsg) && c.status === 'waiting';
   els.banner.hidden = !banner;
   els.banner.dataset.kind = waiting ? 'waiting' : 'error';
@@ -414,6 +427,15 @@ function startRename(id) {
 
 els.activeName.title = '더블클릭해서 이름 바꾸기';
 els.activeName.addEventListener('dblclick', () => { if (activeId) startRename(activeId); });
+
+els.banner.title = '클릭해서 닫기';
+els.banner.addEventListener('click', () => {
+  const a = agents.get(activeId);
+  if (!a) return;
+  a.info.errorDismissed = a.info.error;
+  if (a.info.claude && a.info.claude.message) a.info.claude = { ...a.info.claude, message: null };
+  renderItem(activeId);
+});
 
 function update(id, patch) {
   const a = agents.get(id);
