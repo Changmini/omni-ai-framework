@@ -546,50 +546,109 @@ function applyFontSize(size) {
 }
 els.fontSize.addEventListener('input', () => applyFontSize(Number(els.fontSize.value)));
 
+// ---------- drag handles ----------
+// The borders between areas. `start` runs on pointerdown and returns
+// { move(ev), end(ev) }; end gets the last pointer position, also when the
+// drag is cancelled (e.g. the window loses the pointer).
+function dragResize(handle, bodyClass, start) {
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add(bodyClass);
+    const { move, end } = start();
+    let last = e;
+    const onMove = (ev) => { last = ev; move(ev); };
+    const finish = (ev) => {
+      if (ev.type === 'pointerup') last = ev;
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', finish);
+      handle.removeEventListener('pointercancel', finish);
+      if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId);
+      document.body.classList.remove(bodyClass);
+      end(last);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
+  });
+}
+
+// ---------- side panel widths ----------
+// The sidebar (left) and the inspector (right) each have a chosen width, but
+// the terminal always keeps MIN_TERMINAL_W: a panel being dragged stops at
+// that limit, and a narrower window shrinks the inspector first, then the
+// sidebar, without changing the chosen widths.
+const app = document.querySelector('.app');
+const SIDEBAR = { def: 300, min: 200, max: 600 };
+const INSPECTOR = { def: 320, min: 240, max: 640 };
+const MIN_TERMINAL_W = 360;
+const clampTo = (lim, w) => {
+  const n = Number(w);
+  return Math.round(Math.min(lim.max, Math.max(lim.min, Number.isFinite(n) && w !== '' ? n : lim.def)));
+};
+const panelW = {
+  sidebar: clampTo(SIDEBAR, readPref('sidebarWidth', SIDEBAR.def)),
+  inspector: clampTo(INSPECTOR, readPref('inspectorWidth', INSPECTOR.def)),
+};
+const shownW = { ...panelW };
+const sidebarOpen = () => !app.classList.contains('collapsed');
+const inspectorOpen = () => !app.classList.contains('inspector-closed');
+
+function applyPanelWidths() {
+  let side = sidebarOpen() ? panelW.sidebar : 0;
+  let insp = inspectorOpen() ? panelW.inspector : 0;
+  let over = side + insp + MIN_TERMINAL_W - window.innerWidth;
+  if (over > 0 && insp) { const cut = Math.min(over, insp - INSPECTOR.min); insp -= cut; over -= cut; }
+  if (over > 0 && side) side -= Math.min(over, side - SIDEBAR.min);
+  if (side) shownW.sidebar = side;
+  if (insp) shownW.inspector = insp;
+  document.documentElement.style.setProperty('--sidebar-w', `${shownW.sidebar}px`);
+  document.documentElement.style.setProperty('--inspector-w', `${shownW.inspector}px`);
+  requestAnimationFrame(fitActive);
+}
+
+// A new chosen width for one panel, limited by the other one as shown now.
+function setPanelWidth(which, w, save) {
+  const lim = which === 'sidebar' ? SIDEBAR : INSPECTOR;
+  const otherOpen = which === 'sidebar' ? inspectorOpen() : sidebarOpen();
+  const other = otherOpen ? shownW[which === 'sidebar' ? 'inspector' : 'sidebar'] : 0;
+  const room = window.innerWidth - MIN_TERMINAL_W - other;
+  panelW[which] = Math.max(lim.min, Math.min(clampTo(lim, w), Math.floor(room)));
+  if (save) writePref(which === 'sidebar' ? 'sidebarWidth' : 'inspectorWidth', panelW[which]);
+  applyPanelWidths();
+}
+
+window.addEventListener('resize', applyPanelWidths);
+
 // ---------- sidebar width and collapse ----------
 // Drag the sidebar's right edge (double-click: default width), or collapse it
 // with the top-bar button / Ctrl+Shift+B. Both are remembered.
-const app = document.querySelector('.app');
-const SIDEBAR = { def: 300, min: 200, max: 600 };
 const sidebarToggle = $('#sidebar-toggle');
 const resizer = $('#sidebar-resizer');
 
 function setSidebarWidth(w, save = true) {
-  const width = Math.round(Math.min(SIDEBAR.max, Math.max(SIDEBAR.min, w)));
-  document.documentElement.style.setProperty('--sidebar-w', `${width}px`);
-  if (save) writePref('sidebarWidth', width);
-  requestAnimationFrame(fitActive);
+  setPanelWidth('sidebar', w, save);
 }
 
 function setSidebarCollapsed(on) {
   app.classList.toggle('collapsed', on);
   sidebarToggle.setAttribute('aria-pressed', String(on));
   writePref('sidebarCollapsed', on);
-  requestAnimationFrame(fitActive);
+  applyPanelWidths();
 }
 
-resizer.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  resizer.setPointerCapture(e.pointerId);
-  document.body.classList.add('resizing');
+dragResize(resizer, 'resizing', () => {
   const left = app.getBoundingClientRect().left;
-  const move = (ev) => setSidebarWidth(ev.clientX - left, false);
-  const up = (ev) => {
-    resizer.releasePointerCapture(ev.pointerId);
-    resizer.removeEventListener('pointermove', move);
-    resizer.removeEventListener('pointerup', up);
-    document.body.classList.remove('resizing');
-    setSidebarWidth(ev.clientX - left);
+  return {
+    move: (ev) => setSidebarWidth(ev.clientX - left, false),
+    end: (ev) => setSidebarWidth(ev.clientX - left),
   };
-  resizer.addEventListener('pointermove', move);
-  resizer.addEventListener('pointerup', up);
 });
 resizer.addEventListener('dblclick', () => setSidebarWidth(SIDEBAR.def));
 sidebarToggle.addEventListener('click', () => {
   setSidebarCollapsed(!app.classList.contains('collapsed'));
   agents.get(activeId)?.term.focus();
 });
-setSidebarWidth(Number(readPref('sidebarWidth', SIDEBAR.def)) || SIDEBAR.def, false);
 setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
 
 // ---------- shortcuts ----------
@@ -899,7 +958,6 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-const INSPECTOR = { def: 320, min: 240, max: 640 };
 let inspectorTab = readPref('inspectorTab', 'activity') === 'config' ? 'config' : 'activity';
 
 function configVisible() {
@@ -911,7 +969,7 @@ function setInspectorOpen(on) {
   insp.toggle.setAttribute('aria-pressed', String(on));
   writePref('inspectorOpen', on);
   if (on && inspectorTab === 'config' && cfgStale) loadConfig(0);
-  requestAnimationFrame(fitActive);
+  applyPanelWidths();
 }
 
 function setInspectorTab(tab) {
@@ -924,10 +982,7 @@ function setInspectorTab(tab) {
 }
 
 function setInspectorWidth(w, save = true) {
-  const width = Math.round(Math.min(INSPECTOR.max, Math.max(INSPECTOR.min, w)));
-  document.documentElement.style.setProperty('--inspector-w', `${width}px`);
-  if (save) writePref('inspectorWidth', width);
-  requestAnimationFrame(fitActive);
+  setPanelWidth('inspector', w, save);
 }
 
 for (const t of insp.tabs) t.addEventListener('click', () => setInspectorTab(t.dataset.tab));
@@ -935,21 +990,12 @@ insp.toggle.addEventListener('click', () => {
   setInspectorOpen(app.classList.contains('inspector-closed'));
   agents.get(activeId)?.term.focus();
 });
-insp.resizer.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  insp.resizer.setPointerCapture(e.pointerId);
-  document.body.classList.add('resizing');
+dragResize(insp.resizer, 'resizing', () => {
   const right = app.getBoundingClientRect().right;
-  const move = (ev) => setInspectorWidth(right - ev.clientX, false);
-  const up = (ev) => {
-    insp.resizer.releasePointerCapture(ev.pointerId);
-    insp.resizer.removeEventListener('pointermove', move);
-    insp.resizer.removeEventListener('pointerup', up);
-    document.body.classList.remove('resizing');
-    setInspectorWidth(right - ev.clientX);
+  return {
+    move: (ev) => setInspectorWidth(right - ev.clientX, false),
+    end: (ev) => setInspectorWidth(right - ev.clientX),
   };
-  insp.resizer.addEventListener('pointermove', move);
-  insp.resizer.addEventListener('pointerup', up);
 });
 insp.resizer.addEventListener('dblclick', () => setInspectorWidth(INSPECTOR.def));
 
@@ -1023,13 +1069,25 @@ function renderInspector() {
   renderActivity();
 }
 
+let activityMax = 200; // the main process says how many lines it keeps
+
+function trimActivity(list) {
+  if (list.length > activityMax) list.splice(0, list.length - activityMax);
+}
+
+// The log so far, merged with lines that arrived while it was loading: those
+// are newer, or a line from the snapshot re-sent as failed, so they win.
 async function loadActivity(id) {
   const a = agents.get(id);
   if (!a || !api.activity) return;
-  const list = await api.activity(id).catch(() => []);
-  // Lines that arrived while loading are newer than the loaded ones.
-  const seen = new Set(list.map((e) => e.n));
-  a.activity = [...list, ...a.activity.filter((e) => !seen.has(e.n))];
+  const got = await api.activity(id).catch(() => null);
+  if (!got || !agents.has(id)) return;
+  if (got.max > 0) activityMax = got.max;
+  const live = new Map(a.activity.map((e) => [e.n, e]));
+  const merged = got.entries.map((e) => live.get(e.n) || e);
+  const seen = new Set(merged.map((e) => e.n));
+  a.activity = [...merged, ...a.activity.filter((e) => !seen.has(e.n))].sort((x, y) => x.n - y.n);
+  trimActivity(a.activity);
   if (id === activeId) renderActivity();
 }
 
@@ -1041,7 +1099,7 @@ function onActivity(id, entry) {
   if (i !== -1) a.activity[i] = entry;
   else {
     a.activity.push(entry);
-    if (a.activity.length > 200) a.activity.splice(0, a.activity.length - 200);
+    trimActivity(a.activity);
   }
   if (id !== activeId) return;
   if (i !== -1) {
@@ -1049,12 +1107,11 @@ function onActivity(id, entry) {
     return;
   }
   insp.list.prepend(activityRow(id, entry));
-  while (insp.list.children.length > 200) insp.list.lastElementChild.remove();
+  while (insp.list.children.length > activityMax) insp.list.lastElementChild.remove();
   insp.empty.hidden = true;
 }
 
 setInspectorTab(inspectorTab);
-setInspectorWidth(Number(readPref('inspectorWidth', INSPECTOR.def)) || INSPECTOR.def, false);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
 
 // ---------- terminals | config height ----------
@@ -1088,23 +1145,16 @@ function saveSplit(state) {
   writePref('terminalsHeight', state === null ? '' : String(state));
 }
 
-splitResizer.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  splitResizer.setPointerCapture(e.pointerId);
-  document.body.classList.add('resizing-v');
+dragResize(splitResizer, 'resizing-v', () => {
   const top = split.getBoundingClientRect().top;
-  const move = (ev) => applySplit(splitStateAt(ev.clientY - top));
-  const up = (ev) => {
-    splitResizer.releasePointerCapture(ev.pointerId);
-    splitResizer.removeEventListener('pointermove', move);
-    splitResizer.removeEventListener('pointerup', up);
-    document.body.classList.remove('resizing-v');
-    const state = splitStateAt(ev.clientY - top);
-    applySplit(state);
-    saveSplit(state);
+  return {
+    move: (ev) => applySplit(splitStateAt(ev.clientY - top)),
+    end: (ev) => {
+      const state = splitStateAt(ev.clientY - top);
+      applySplit(state);
+      saveSplit(state);
+    },
   };
-  splitResizer.addEventListener('pointermove', move);
-  splitResizer.addEventListener('pointerup', up);
 });
 splitResizer.addEventListener('dblclick', () => { applySplit(null); saveSplit(null); });
 {

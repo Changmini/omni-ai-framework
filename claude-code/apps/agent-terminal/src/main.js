@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard } = require('electron');
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
@@ -56,9 +56,11 @@ function registerIpc() {
     if (u && /^https?:\/\//i.test(u)) shell.openExternal(u);
   });
   // A file from the activity log, in VS Code.
+  // Without a vscode:// handler Windows would show its own "get an app"
+  // dialog and still report success, so check for one first.
   ipcMain.handle('open-file', async (_e, id, file) => {
     const url = manager.editorUrl(str(id, 20), str(file, 4000));
-    if (!url) return false;
+    if (!url || !app.getApplicationNameForProtocol('vscode://')) return false;
     try { await shell.openExternal(url); return true; } catch { return false; }
   });
   ipcMain.handle('session:activity', (_e, id) => manager.activity(str(id, 20)));
@@ -100,6 +102,10 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  // F12 keeps developer tools reachable without the default menu.
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') { win.webContents.toggleDevTools(); e.preventDefault(); }
+  });
 }
 
 // One app instance. A second launch only focuses the first window and does
@@ -115,6 +121,11 @@ let hooks = null;
 let settingsFile = null;
 
 if (primaryInstance) app.whenReady().then(async () => {
+  // Electron's default menu binds Ctrl+Shift+I (developer tools), Ctrl+R
+  // (reload, which drops every terminal's scrollback) and others that clash
+  // with the app's shortcuts. Windows and Linux need no menu; macOS keeps it
+  // for Cmd+C / Cmd+V in text fields.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   // Claude Code hooks for app terminals only: a local receiver plus a settings
   // file that the shell integration passes to claude with --settings.
   hooks = await startHookServer({

@@ -185,6 +185,18 @@ test('a teammate that reported first is moved beside the lead once it says Teamm
   assert.deepStrictEqual(view.agents.map((a) => [a.name, a.teammate]), [['alpha', true]]);
 });
 
+test('a demoted teammate takes its pane along: the next main session is not focusable through it', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'T', tool_name: 'Read' }, { pane: '%1', socket: '/tmp/tmux-1000/default' });
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'T', teammate_name: 'alpha' }, { pane: '%1' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'L' }); // app wrapper claude: no pane
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.strictEqual(view.status, 'working');
+  assert.strictEqual(view.focusable, false);
+  assert.strictEqual(view.agents[0].focusable, true);
+});
+
 test('a session promoted to main is no longer listed beside it', () => {
   const { m, events } = setup();
   const { id } = m.create({});

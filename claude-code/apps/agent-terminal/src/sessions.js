@@ -4,14 +4,16 @@ const os = require('node:os');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
-const { activityEntry } = require('./activity');
+const { activityEntry, ACTIVITY_MAX } = require('./activity');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
-const ACTIVITY_MAX = 200; // activity log lines kept per terminal
 
 const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
+
+// How a claude session listed beside the main one is named (sidebar and log).
+const otherName = (o, sid) => o.name || (o.teammate ? o.type : null) || `claude ${o.pane || sid.slice(0, 8)}`;
 
 // Owns one PTY per terminal plus what Claude reports from inside it.
 // `spawn` is node-pty's spawn (injected for tests); `emit(channel, payload)`
@@ -31,6 +33,7 @@ class SessionManager {
     claudePaths = { dir: null, json: null },
     runTmux = () => Promise.resolve(false),
     readUsage = () => Promise.resolve(null),
+    platform = process.platform,
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -43,6 +46,7 @@ class SessionManager {
     this.scanConfig = scanConfig;
     this.runTmux = runTmux;
     this.readUsage = readUsage;
+    this.platform = platform;
     this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
@@ -137,10 +141,13 @@ class SessionManager {
 
   // A folder report from the shell integration (POST /cwd). Inside WSL it
   // also names the distro and home, so Linux paths can be read from Windows.
+  // Only the Windows app needs that: an app running inside WSL itself (WSLg)
+  // reads the same paths directly.
   reportShellCwd(id, { cwd, wslDistro, home } = {}) {
     const s = this.sessions.get(id);
     if (!s || typeof cwd !== 'string' || !cwd) return;
-    s.wsl = wslDistro ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
+    s.wsl = wslDistro && this.platform === 'win32'
+      ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
     this.setCwd(id, cwd, true);
   }
 
@@ -220,7 +227,7 @@ class SessionManager {
     if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
       this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
       const o = s.others.get(sid);
-      this.recordActivity(s, ev, (o && (o.name || o.type)) || `claude ${(o && o.pane) || sid.slice(0, 8)}`);
+      this.recordActivity(s, ev, o ? otherName(o, sid) : `claude ${sid.slice(0, 8)}`);
       this.emitAgent(s);
       return;
     }
@@ -269,7 +276,7 @@ class SessionManager {
 
   activity(id) {
     const s = this.sessions.get(id);
-    return s ? s.activity.slice() : [];
+    return { max: ACTIVITY_MAX, entries: s ? s.activity.slice() : [] };
   }
 
   // A vscode:// link for a file from this terminal's activity log (only
@@ -289,20 +296,31 @@ class SessionManager {
   }
 
   // Context usage from the session's transcript: read asynchronously, at most
-  // every USAGE_MIN_MS per session (always at the end of a turn), then the
-  // sidebar is updated.
+  // every USAGE_MIN_MS per session, then the sidebar is updated. The end of a
+  // turn (Stop) and SessionStart (e.g. after /compact) always read; when a
+  // read is already running then, one more follows it.
   scheduleUsage(s, sid, transcript, eventName) {
     const prev = s.usage.get(sid) || { readAt: -Infinity, pending: false }; // never read yet
-    const due = eventName === 'Stop' || eventName === 'SessionStart' || this.now() - prev.readAt >= USAGE_MIN_MS;
-    if (prev.pending || !due) return;
-    s.usage.set(sid, { ...prev, pending: true, readAt: this.now() });
-    Promise.resolve(this.readUsage(this.hostPath(s, transcript)))
+    const forced = eventName === 'Stop' || eventName === 'SessionStart';
+    if (prev.pending) {
+      if (forced) s.usage.set(sid, { ...prev, again: transcript });
+      return;
+    }
+    if (!forced && this.now() - prev.readAt < USAGE_MIN_MS) return;
+    s.usage.set(sid, { ...prev, pending: true, again: null, readAt: this.now() });
+    Promise.resolve()
+      .then(() => this.readUsage(this.hostPath(s, transcript)))
       .catch(() => null)
       .then((u) => {
-        if (!this.sessions.has(s.id)) return;
-        const cur = s.usage.get(sid) || {};
-        s.usage.set(sid, { ...cur, ...(u || {}), pending: false });
+        const cur = s.usage.get(sid);
+        // Terminal closed, or the session ended while reading.
+        if (!this.sessions.has(s.id) || !cur) return;
+        // A session once seen past 200k keeps its 1M window (e.g. after /compact).
+        const next = u && cur.window > u.window
+          ? { ...u, window: cur.window, pct: Math.min(100, Math.round((u.tokens / cur.window) * 100)) } : u;
+        s.usage.set(sid, { ...cur, ...(next || {}), pending: false, again: null });
         this.emitAgent(s);
+        if (cur.again) this.scheduleUsage(s, sid, cur.again, 'Stop');
       });
   }
 
@@ -319,6 +337,7 @@ class SessionManager {
     });
     s.claude = emptyState();
     s.primarySid = null;
+    s.primaryPane = null;
     s.team = null;
     s.tasks = null;
   }
@@ -348,7 +367,7 @@ class SessionManager {
   agentView(s) {
     const others = [...s.others].map(([sid, o]) => ({
       id: `session:${sid}`,
-      name: o.name || (o.teammate ? o.type : null) || `claude ${o.pane || sid.slice(0, 8)}`,
+      name: otherName(o, sid),
       type: o.type,
       status: o.state.status || 'idle',
       tool: o.state.tool,
