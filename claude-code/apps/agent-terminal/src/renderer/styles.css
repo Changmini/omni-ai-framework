@@ -13,7 +13,9 @@
   --err: #f0616d;
   --wait: #f08c3a;
   --off: #545a68;
-  --mono: "D2Coding", "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  /* Installed coding fonts first; the bundled Nanum Gothic Coding covers Hangul
+     (and everything, on systems without the others, e.g. Linux/WSL). */
+  --mono: "D2Coding", "Cascadia Code", "Fira Code", Consolas, "Nanum Gothic Coding", "DejaVu Sans Mono", monospace;
   --radius: 6px;
 }
 

@@ -300,6 +300,14 @@ new ResizeObserver(() => fitActive()).observe(els.terminals);
 
 // Restore agents still running in the main process (e.g. after a reload).
 (async () => {
+  // xterm measures the font when a terminal opens: load the bundled font
+  // (Latin and Hangul subsets) first. Local files, so this is quick.
+  try {
+    await Promise.race([
+      document.fonts.load(`${fontSize}px "Nanum Gothic Coding"`, 'W가'),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+  } catch { /* fall back to whatever is installed */ }
   applyFontSize(fontSize);
   for (const info of await api.list()) addAgent(info);
   // Open straight into a shell; nothing to set up first.
