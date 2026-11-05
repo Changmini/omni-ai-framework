@@ -1,0 +1,4 @@
+# Shell scripts run by bash/zsh (also inside WSL from a Windows checkout) must
+# keep LF line endings even with core.autocrlf=true.
+*.bash text eol=lf
+src/shell-init/zsh/* text eol=lf

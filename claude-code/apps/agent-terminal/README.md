@@ -20,6 +20,21 @@ npm start
 - Windows에서는 별도 빌드 도구가 필요 없습니다. node-pty 1.1 패키지에 `prebuilds/win32-x64`, `win32-arm64` 바이너리가 들어 있습니다.
 - macOS와 Linux에서는 `$SHELL`을 사용합니다. Linux에는 node-pty prebuild가 없으므로 `npm install` 뒤 `cd node_modules/node-pty && npx node-gyp rebuild`로 빌드하세요. Python, make, C++ 컴파일러가 필요합니다.
 
+## WSL에서 쓰기
+
+앱의 PowerShell 터미널에서 `wsl`을 입력하면 Ubuntu bash로 들어가고, 그 안에서도 경로 표시와 Claude 상태 표시가 동작합니다.
+
+- **`wsl` 입력 방식:** `wsl`, `wsl ~`, `wsl -d <배포판>`처럼 명령 없이 들어가는 경우에만 연동된 bash가 열립니다. `wsl ls`처럼 명령을 붙이면 평소의 `wsl.exe`가 그대로 실행됩니다.
+- **환경 변수 전달:** 앱이 `WSLENV`로 필요한 값을 넘기고, 파일 경로는 `/mnt/c/...`로 자동 변환됩니다.
+- **Linux 경로 읽기:** WSL 안의 경로(`/home/...`)는 `\\wsl.localhost\<배포판>\...`로 읽어 git 브랜치를 표시합니다. 팀 파일(`~/.claude`)도 WSL 쪽 홈에서 읽습니다.
+- **필요한 것: mirrored 네트워킹.** WSL2 기본 모드(NAT)에서는 WSL 안의 `127.0.0.1`이 Windows를 가리키지 않아 앱에 신호가 닿지 않습니다. 이때는 WSL에 들어갈 때 노란 경고가 뜹니다. `%UserProfile%\.wslconfig`에 아래를 넣고 PowerShell에서 `wsl --shutdown`을 실행한 뒤 다시 들어가세요(Windows 11 22H2 이상).
+  ```ini
+  [wsl2]
+  networkingMode=mirrored
+  ```
+- **필요한 것: curl.** WSL 안에 `curl`이 있어야 합니다(`sudo apt install curl`).
+- **WSL 안에서 쓰는 Claude:** WSL에 설치된 `claude`가 실행됩니다. Windows의 `claude.exe`가 아닙니다.
+
 ## 기능
 
 | 영역 | 동작 |
@@ -45,7 +60,8 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 
 검증한 범위(Linux, Claude Code 2.1.318):
 - **확인함:** `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
-- **확인 못 함:** Windows PowerShell 연동(`omni.ps1`), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
+- **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
+- **확인 못 함:** Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
 - **문서화되지 않은 형식:** 팀 설정과 작업 파일 형식은 공식 문서에 없어서 실제 파일을 보고 맞췄습니다. 버전이 바뀌면 달라질 수 있습니다
 
 ## 구조
