@@ -166,8 +166,8 @@ test('runTmux goes through wsl.exe on Windows and checks the distro name', async
   await runTmux(['select-pane', '-t', '%3'], 'bad name; rm', 'win32', exec);
   await runTmux(['select-pane', '-t', '%3'], null, 'linux', exec);
   assert.deepStrictEqual(calls, [
-    ['wsl.exe', ['-d', 'Ubuntu-24.04', '--', 'tmux', 'select-pane', '-t', '%3']],
-    ['wsl.exe', ['--', 'tmux', 'select-pane', '-t', '%3']],
+    ['wsl.exe', ['-d', 'Ubuntu-24.04', '-e', 'tmux', 'select-pane', '-t', '%3']],
+    ['wsl.exe', ['-e', 'tmux', 'select-pane', '-t', '%3']],
     ['tmux', ['select-pane', '-t', '%3']],
   ]);
 });

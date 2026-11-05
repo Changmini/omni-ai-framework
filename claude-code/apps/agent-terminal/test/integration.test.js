@@ -94,11 +94,18 @@ test('hook server answers 200 to an oversized event and still passes its key fie
     method: 'POST', headers: { 'x-omni-token': 'tok', 'x-omni-terminal': '2' }, body,
   }).then((r) => r.status);
   try {
-    const plain = JSON.stringify({ session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { content: big } });
+    const plain = JSON.stringify({
+      session_id: 's1', transcript_path: '/h/.claude/projects/p/s1.jsonl', hook_event_name: 'PreToolUse',
+      tool_name: 'Write', tool_use_id: 'toolu_1', tool_input: { file_path: '/r/big.txt', content: big },
+    });
     assert.strictEqual(await post(plain), 200);
     const wrapped = `{"omni":{"pane":"%3","title":"@builder"},"event":${JSON.stringify({ session_id: 's2', hook_event_name: 'PostToolUse', agent_type: 'general-purpose', tool_name: 'Write', tool_response: big })}}`;
     assert.strictEqual(await post(wrapped), 200);
-    assert.deepStrictEqual(got[0], ['2', { session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write' }, { pane: '', title: '', socket: '' }]);
+    // Enough for the status, the activity line (file, failure mark) and the usage read.
+    assert.deepStrictEqual(got[0], ['2', {
+      session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write', tool_use_id: 'toolu_1',
+      transcript_path: '/h/.claude/projects/p/s1.jsonl', tool_input: { file_path: '/r/big.txt' },
+    }, { pane: '', title: '', socket: '' }]);
     assert.deepStrictEqual(got[1][1], { session_id: 's2', hook_event_name: 'PostToolUse', agent_type: 'general-purpose', tool_name: 'Write' });
     assert.deepStrictEqual(got[1][2], { pane: '%3', title: '@builder', socket: '' });
   } finally { srv.close(); }

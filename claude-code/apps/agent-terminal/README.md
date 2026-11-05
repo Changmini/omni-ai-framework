@@ -55,6 +55,7 @@
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 다음 / 이전 터미널 |
 | `Ctrl+Shift+B` | 사이드바 접기/펴기 |
 | `Ctrl+Shift+I` | 상세 패널(활동 · Claude 구성) 접기/펴기 |
+| `F12` | 개발자 도구(문제 확인용). Windows·Linux에서는 Electron 기본 메뉴를 없애서 `Ctrl+R`(새로고침) 같은 메뉴 단축키는 동작하지 않습니다 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 복사 / 붙여넣기 |
 | `Ctrl+C` | 선택한 글자가 있으면 복사, 없으면 평소처럼 실행 중단(`^C`) |
 | 우클릭 | 선택이 있으면 복사, 없으면 붙여넣기(Windows Terminal과 같음) |
@@ -140,7 +141,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **설치 내용:** 훅 스크립트를 `~/.local/share/omni-agent-terminal/claude-hook.sh`에 복사하고, Claude 사용자 설정(`~/.claude/settings.json`)에 command 훅으로 추가합니다. 기존 설정은 `settings.json.omni-backup-<시각>`으로 백업하고, 다른 설정과 훅은 건드리지 않습니다.
 - **끄기·제거:** 자동 설정을 끄려면 `OMNI_NO_AUTO_SETUP=1`로 두세요. 제거는 앱 bash에서 `omni-tmux-setup --remove`(또는 `bash <앱 폴더>/src/shell-init/omni-tmux-setup.sh --remove`)입니다.
 - **창 분할 팀 표시:** 리더가 메인 LED를 쓰고, 각 창의 팀원은 그 아래 목록에 이름(`alpha`, `planner` 등)과 상태로 표시됩니다. 같은 tmux 세션에 다른 `claude`가 하나 더 있으면 `claude %5`처럼 따로 표시됩니다.
-- **창으로 이동:** 목록의 팀원을 클릭하면 앱이 그 tmux 서버에 `select-window`·`select-pane`을 보내 해당 창을 선택합니다(Windows 앱이면 `wsl.exe -d <배포판> -- tmux ...`). 이동할 수 없으면 카드가 잠깐 흔들립니다.
+- **창으로 이동:** 목록의 팀원을 클릭하면 앱이 그 tmux 서버에 `select-window`·`select-pane`을 보내 해당 창을 선택합니다(Windows 앱이면 셸을 거치지 않도록 `wsl.exe -d <배포판> -e tmux ...`). 이동할 수 없으면 카드가 잠깐 흔들립니다.
 
 **동작 원리:** tmux 창의 셸에는 앱 정보가 없지만, 그 세션을 화면에 띄우는 tmux 클라이언트는 앱 터미널에서 실행됐으므로 앱 주소·토큰·터미널 번호를 환경 변수로 갖고 있습니다. 훅은 현재 세션에 붙은 클라이언트의 환경(`/proc/<pid>/environ`)에서 이 값을 찾아 그 앱 터미널로 신호를 보냅니다. 세션을 앱 터미널 두 곳에서 띄우고 있으면 두 곳 모두에 표시됩니다.
 - **앱과 무관한 경우:** 앱 밖의 tmux나 일반 터미널, 또는 앱의 `claude` 래퍼로 실행한 `claude`(이미 `--settings`로 보고함)에서는 아무 출력 없이 바로 끝납니다.
@@ -192,9 +193,10 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 | `에이전트` · `팀원` | 서브에이전트 시작·종료, 팀원 대기 |
 
 - 서브에이전트나 팀원이 한 일은 줄 앞에 이름(`builder ·`)이 붙습니다.
-- 파일 경로를 클릭하면 VS Code에서 엽니다(`vscode://file/...`, WSL 터미널이면 `vscode://vscode-remote/wsl+<배포판>/...`로 WSL 원격 연결). 앱은 활동 기록에 나온 파일만 열어 줍니다. VS Code가 없으면 경로가 잠깐 빨갛게 바뀝니다.
+- 파일 경로를 클릭하면 VS Code에서 엽니다(`vscode://file/...`, WSL 터미널이면 `vscode://vscode-remote/wsl+<배포판>/...`로 WSL 원격 연결). 앱은 활동 기록에 나온 파일만 열어 줍니다. `vscode://` 링크를 처리할 앱(VS Code)이 없으면 열지 않고 경로가 잠깐 빨갛게 바뀝니다.
+- 승인 요청은 `PermissionRequest` 한 줄만 남깁니다(같은 내용의 `permission_prompt` 알림은 생략).
 
-**컨텍스트 사용량**은 훅 신호에 들어 있는 대화 기록 파일(`transcript_path`, JSONL)의 마지막 응답 `usage`에서 계산합니다: `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`. 파일 끝 512KB만 읽고, 세션마다 3초에 한 번 이하(응답이 끝나면 바로) 읽습니다. 컨텍스트 창 크기는 기록에 없어서 **추정값**입니다: 200k로 보고, 그보다 많이 쓰면 1M 창으로 봅니다. 상세 패널 맨 위에는 메인과 팀원 각각의 사용량이 `142k/200k`처럼 표시됩니다.
+**컨텍스트 사용량**은 훅 신호에 들어 있는 대화 기록 파일(`transcript_path`, JSONL)의 마지막 응답 `usage`에서 계산합니다: `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`. 파일 끝 64KB를 먼저 읽고, 거기에 응답이 없을 때만 512KB까지 읽습니다. 세션마다 3초에 한 번 이하로 읽고, 응답이 끝나면(`Stop`) 항상 읽습니다(그때 읽기가 진행 중이면 끝난 뒤 한 번 더). `/compact`나 자동 압축 직후에는 기록의 `compact_boundary` 줄에 적힌 압축 후 크기(`postTokens`)를 씁니다. 컨텍스트 창 크기는 기록에 없어서 **추정값**입니다: 200k로 보고, 그보다 많이 쓰면 1M 창으로 보며, 한 번 1M으로 본 세션은 압축 후에도 1M으로 봅니다. 상세 패널 맨 위에는 메인과 팀원 각각의 사용량이 `142k/200k`처럼 표시됩니다.
 
 ## 기능 상세
 

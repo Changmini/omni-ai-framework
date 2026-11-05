@@ -15,10 +15,14 @@ function salvage(head) {
     try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
   };
   const ev = {};
-  for (const k of ['hook_event_name', 'session_id', 'agent_id', 'agent_type', 'tool_name', 'notification_type', 'cwd']) {
+  for (const k of ['hook_event_name', 'session_id', 'agent_id', 'agent_type', 'tool_name', 'tool_use_id',
+    'notification_type', 'cwd', 'transcript_path']) {
     const v = field(k);
     if (v !== undefined) ev[k] = v;
   }
+  // For the activity log: the file a Write/Edit is about (before its content).
+  const file = field('file_path');
+  if (file !== undefined) ev.tool_input = { file_path: file };
   const meta = { pane: field('pane') || '', title: field('title') || '', socket: field('socket') || '' };
   return [ev.hook_event_name ? ev : null, meta];
 }

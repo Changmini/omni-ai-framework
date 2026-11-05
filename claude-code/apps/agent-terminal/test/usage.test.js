@@ -56,3 +56,45 @@ test('sessions read usage asynchronously, at most every 3s, always at Stop', asy
   const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
   assert.deepStrictEqual(view.context, { tokens: 50000, window: 200000, pct: 25, model: 'm' });
 });
+
+test('after /compact the boundary line gives the usage, and a 1M session keeps its window', () => {
+  const boundary = line({ type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 902792, postTokens: 16851 } });
+  const before = assistant({ cache_read_input_tokens: 900000 });
+  assert.deepStrictEqual(usageFromTail(`${before}\n${boundary}\n`), { tokens: 16851, window: 1000000, pct: 2, model: null });
+  // The next answer is newer than the boundary again.
+  assert.strictEqual(usageFromTail(`${boundary}\n${assistant({ input_tokens: 30000 })}\n`).tokens, 30000);
+  assert.strictEqual(usageFromTail(`${before}\n${line({ type: 'system', subtype: 'compact_boundary' })}\n`), null);
+});
+
+test('readContextUsage widens the tail when the last answer is further back', async () => {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'omni-usage-')), 't.jsonl');
+  // A 200 KB tool result after the answer: beyond the first 64 KB read.
+  fs.writeFileSync(f, `${assistant({ input_tokens: 70000 })}\n${line({ type: 'user', message: { content: 'y'.repeat(200000) } })}\n`);
+  assert.strictEqual((await readContextUsage(f)).tokens, 70000);
+});
+
+test('a Stop during a running read reads once more; a 1M window is kept', async () => {
+  const reads = [];
+  let release;
+  const answers = [
+    { tokens: 600000, window: 1000000, pct: 60, model: 'm' },
+    { tokens: 20000, window: 200000, pct: 10, model: 'm' },
+  ];
+  const fake = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
+  const events = [];
+  const m = new SessionManager({
+    spawn: fake, emit: (c, p) => events.push([c, p]), shell: { file: 'sh', args: [] }, pollMs: 0, now: () => 0,
+    readUsage: (file) => { reads.push(file); const a = answers[reads.length - 1]; return reads.length === 1 ? new Promise((r) => { release = () => r(a); }) : Promise.resolve(a); },
+  });
+  const { id } = m.create({});
+  const ev = (name) => m.onHookEvent(id, { hook_event_name: name, session_id: 'A', transcript_path: '/t/A.jsonl' });
+  ev('UserPromptSubmit');
+  await new Promise((r) => setImmediate(r));
+  ev('Stop'); // first read still running
+  assert.strictEqual(reads.length, 1);
+  release();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(reads.length, 2, 'the Stop read runs after the pending one');
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.deepStrictEqual(view.context, { tokens: 20000, window: 1000000, pct: 2, model: 'm' });
+});

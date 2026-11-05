@@ -29,7 +29,7 @@ test('a WSL folder report maps git and ~/.claude lookups through \\\\wsl.localho
   const seen = { git: [], team: [] };
   const fake = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
   const m = new SessionManager({
-    spawn: fake, emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    spawn: fake, emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, platform: 'win32',
     gitBranch: (d) => { seen.git.push(d); return null; },
     readTeam: (sid, base) => { seen.team.push(base); return null; },
   });
@@ -75,4 +75,21 @@ test('omni.bash inside WSL reports folder, distro and home, and warns when unrea
   const bad = await runBash({ OMNI_CWD_URL: 'http://127.0.0.1:9/cwd', OMNI_HOOK_TOKEN: 'x', OMNI_TERMINAL_ID: '1', WSL_DISTRO_NAME: 'Ubuntu' }, 'exit\n');
   assert.match(bad, /연결할 수 없습니다/);
   assert.match(bad, /networkingMode=mirrored/);
+});
+
+test('the app running inside WSL itself reads Linux paths directly', async () => {
+  const seen = [];
+  const read = [];
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {},
+    shell: { file: 'sh', args: [] }, pollMs: 0, platform: 'linux',
+    gitBranch: (d) => { seen.push(d); return null; },
+    readUsage: async (f) => { read.push(f); return null; },
+  });
+  const { id } = m.create({ cwd: '/home/limaw' });
+  m.reportShellCwd(id, { cwd: '/home/limaw/proj', wslDistro: 'Ubuntu', home: '/home/limaw' });
+  assert.strictEqual(seen.at(-1), '/home/limaw/proj');
+  m.onHookEvent(id, { hook_event_name: 'Stop', session_id: 's', transcript_path: '/home/limaw/.claude/projects/p/s.jsonl' });
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(read, ['/home/limaw/.claude/projects/p/s.jsonl']);
 });
