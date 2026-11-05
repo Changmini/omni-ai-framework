@@ -77,7 +77,22 @@ const SHORTCUTS = {
   KeyF: () => openSearch(),
 };
 function isShortcut(e) {
-  return e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS;
+  return (e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS) || navTarget(e) !== null;
+}
+
+// Ctrl+1..9: n-th terminal in the sidebar order; Ctrl+Tab / Ctrl+Shift+Tab:
+// next / previous (wrapping). Returns the terminal id to show, or null.
+function navTarget(e) {
+  if (!e.ctrlKey || e.altKey || e.metaKey) return null;
+  const ids = [...agents.keys()];
+  if (!ids.length) return null;
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && !e.shiftKey) return ids[Number(digit[1]) - 1] ?? null;
+  if (e.code === 'Tab') {
+    const i = Math.max(0, ids.indexOf(activeId));
+    return ids[(i + (e.shiftKey ? -1 : 1) + ids.length) % ids.length];
+  }
+  return null;
 }
 
 function addAgent(info) {
@@ -144,6 +159,7 @@ function addAgent(info) {
   item.draggable = true;
   item.innerHTML = `
     <div class="agent-row" tabindex="0">
+      <span class="agent-num" aria-hidden="true"></span>
       <span class="led"></span>
       <span class="agent-meta">
         <div class="agent-name ellipsis"></div>
@@ -227,6 +243,12 @@ function fitActive() {
 
 function renderList() {
   els.count.textContent = String(agents.size);
+  // Position badges for Ctrl+1..9, in sidebar order.
+  [...agents.values()].forEach((a, i) => {
+    const n = a.item.querySelector('.agent-num');
+    n.textContent = i < 9 ? String(i + 1) : '';
+    n.title = i < 9 ? `Ctrl+${i + 1}` : '';
+  });
 }
 
 const baseName = (p) => (p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
@@ -344,6 +366,7 @@ function saveOrder() {
   agents.clear();
   for (const [id, a] of reordered) agents.set(id, a);
   api.reorder(ids);
+  renderList();
 }
 
 function moveTerminal(id, delta) {
@@ -458,9 +481,11 @@ function update(id, patch) {
 
 els.newTerminal.addEventListener('click', () => newTerminal());
 document.addEventListener('keydown', (e) => {
-  if (!isShortcut(e) || e.repeat) return;
+  if (!isShortcut(e)) return;
   e.preventDefault();
-  SHORTCUTS[e.code]();
+  const target = navTarget(e);
+  if (target !== null) { select(target); return; } // repeat allowed: hold Ctrl+Tab to cycle
+  if (!e.repeat) SHORTCUTS[e.code]();
 });
 
 function applyFontSize(size) {
