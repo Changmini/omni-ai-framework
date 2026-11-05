@@ -52,6 +52,7 @@ async function newTerminal() {
   const info = await api.create({ cols: 100, rows: 30 });
   addAgent(info);
   select(info.id);
+  return info.id;
 }
 
 function closeTerminal(id) {
@@ -487,6 +488,118 @@ sidebarToggle.addEventListener('click', () => {
 setSidebarWidth(Number(readPref('sidebarWidth', SIDEBAR.def)) || SIDEBAR.def, false);
 setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
 
+// ---------- shortcuts ----------
+// A saved list of commands. Clicking one types them into a terminal, one line
+// at a time: each line waits until the previous one's output has settled, so
+// a line like `wsl` gets its new shell before the next line arrives. Works the
+// same on Windows, WSL and Linux because it is just typing.
+const scEls = {
+  list: $('#shortcut-list'), empty: $('#shortcut-empty'), add: $('#shortcut-add'),
+  form: $('#shortcut-form'), cancel: $('#shortcut-cancel'),
+};
+let shortcuts = [];
+try { shortcuts = JSON.parse(readPref('shortcuts', '[]')); } catch { shortcuts = []; }
+if (!Array.isArray(shortcuts)) shortcuts = [];
+let editingShortcut = null; // id being edited, or 'new'
+
+const saveShortcuts = () => writePref('shortcuts', JSON.stringify(shortcuts));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Resolves once the terminal printed nothing for `quietMs` (or after `maxMs`).
+async function waitQuiet(id, quietMs = 500, maxMs = 8000) {
+  const start = Date.now();
+  await sleep(quietMs);
+  for (;;) {
+    const a = agents.get(id);
+    if (!a) return;
+    if (Date.now() - (a.lastDataAt || 0) >= quietMs || Date.now() - start >= maxMs) return;
+    await sleep(100);
+  }
+}
+
+async function runShortcut(sc) {
+  const lines = sc.command.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim());
+  if (!lines.length) return;
+  let id = activeId;
+  if (sc.newTerminal || !id) {
+    id = await newTerminal();
+    if (sc.name) { agents.get(id).info.name = sc.name; api.rename(id, sc.name); renderItem(id); }
+    await waitQuiet(id, 700); // first prompt
+  }
+  for (const line of lines) {
+    if (!agents.has(id)) return;
+    api.sendLine(id, line);
+    await waitQuiet(id);
+  }
+  agents.get(id)?.term.focus();
+}
+
+function renderShortcuts() {
+  scEls.empty.hidden = shortcuts.length > 0 || !scEls.form.hidden;
+  scEls.list.replaceChildren(...shortcuts.map((sc) => {
+    const li = h('li', 'shortcut');
+    li.tabIndex = 0;
+    const first = sc.command.split(/\r?\n/).find((l) => l.trim()) || '';
+    const more = sc.command.split(/\r?\n/).filter((l) => l.trim()).length - 1;
+    const meta = h('span', 'shortcut-meta');
+    meta.append(h('div', 'shortcut-name ellipsis', sc.name), h('div', 'shortcut-cmd ellipsis', more > 0 ? `${first}  (+${more})` : first));
+    const edit = h('button', 'shortcut-btn', '✎');
+    edit.title = '편집';
+    const del = h('button', 'shortcut-btn', '✕');
+    del.title = '삭제';
+    li.append(h('span', 'shortcut-icon', sc.newTerminal ? '⧉' : '›'), meta, edit, del);
+    li.title = `${sc.newTerminal ? '새 터미널에서' : '현재 터미널에서'} 실행:\n${sc.command}`;
+    li.addEventListener('click', () => runShortcut(sc));
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) runShortcut(sc); });
+    edit.addEventListener('click', (e) => { e.stopPropagation(); openShortcutForm(sc); });
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!window.confirm(`바로가기 "${sc.name}"을(를) 삭제할까요?`)) return;
+      shortcuts = shortcuts.filter((x) => x.id !== sc.id);
+      saveShortcuts();
+      renderShortcuts();
+    });
+    return li;
+  }));
+}
+
+function openShortcutForm(sc) {
+  editingShortcut = sc ? sc.id : 'new';
+  const f = scEls.form.elements;
+  f.name.value = sc ? sc.name : '';
+  f.command.value = sc ? sc.command : '';
+  f.newTerminal.checked = sc ? sc.newTerminal : true;
+  scEls.form.hidden = false;
+  renderShortcuts();
+  f.name.focus();
+}
+
+function closeShortcutForm() {
+  editingShortcut = null;
+  scEls.form.hidden = true;
+  renderShortcuts();
+}
+
+scEls.add.addEventListener('click', () => openShortcutForm(null));
+scEls.cancel.addEventListener('click', () => closeShortcutForm());
+scEls.form.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeShortcutForm(); });
+scEls.form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = scEls.form.elements;
+  const item = {
+    id: editingShortcut === 'new' ? `sc-${Date.now().toString(36)}` : editingShortcut,
+    name: f.name.value.trim().slice(0, 80),
+    command: f.command.value.replace(/\s+$/, ''),
+    newTerminal: f.newTerminal.checked,
+  };
+  if (!item.name || !item.command.trim()) return;
+  const i = shortcuts.findIndex((x) => x.id === item.id);
+  if (i >= 0) shortcuts[i] = item; else shortcuts.push(item);
+  saveShortcuts();
+  closeShortcutForm();
+});
+renderShortcuts();
+
 // ---------- copy, paste, search ----------
 function copySelection(id) {
   const a = agents.get(id);
@@ -665,7 +778,12 @@ splitResizer.addEventListener('dblclick', () => setTerminalsHeight(null));
 
 // ---------- terminal -> UI ----------
 
-api.onData(({ id, data }) => agents.get(id)?.term.write(data));
+api.onData(({ id, data }) => {
+  const a = agents.get(id);
+  if (!a) return;
+  a.lastDataAt = Date.now();
+  a.term.write(data);
+});
 api.onStatus(({ id, status, error }) => update(id, { status, error }));
 api.onAgent(({ id, claude }) => update(id, { claude }));
 api.onMeta(({ id, ...patch }) => update(id, patch)); // cwd/branch, or name
