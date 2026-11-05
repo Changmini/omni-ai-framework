@@ -44,3 +44,31 @@ function global:prompt {
   }
   $osc + (& $global:__omniPrompt)
 }
+
+# 3. `wsl` (optionally with -d/-u/--cd/~) opens bash inside WSL with the same
+#    integration (omni.bash). The OMNI_* variables reach WSL through WSLENV,
+#    set by the app. With a command or any other option, plain wsl.exe runs.
+#    The -c text has no inner quotes (IFS= instead), so Windows PowerShell 5.1
+#    passes it to wsl.exe intact.
+function global:wsl {
+  $pre = @()
+  $i = 0
+  while ($i -lt $args.Count) {
+    $a = [string]$args[$i]
+    if ($a -in @('-d', '--distribution', '-u', '--user', '--cd')) {
+      if ($i + 1 -ge $args.Count) { break }
+      $pre += $a, [string]$args[$i + 1]
+      $i += 2
+      continue
+    }
+    if ($a -eq '~') { $pre += '--cd', '~'; $i++; continue }
+    break
+  }
+  if ($i -lt $args.Count -or -not $env:OMNI_INIT_BASH) {
+    & wsl.exe @args
+  } else {
+    & wsl.exe @pre -e bash -c 'IFS=; exec bash --rcfile $OMNI_INIT_BASH -i'
+  }
+  # Back in PowerShell: report the folder again at the next prompt.
+  $global:__omniLastCwd = $null
+}

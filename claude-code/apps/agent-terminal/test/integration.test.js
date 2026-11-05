@@ -23,7 +23,7 @@ test('hook server accepts only token-bearing POSTs and passes the terminal id', 
     assert.deepStrictEqual(got, [['3', 'Stop']]);
     assert.deepStrictEqual(await post({ 'x-omni-token': 'tok', 'x-omni-terminal': '3' }, '{"cwd":"C:\\\\work\\\\proj"}', 'cwd'), [200, '']);
     assert.deepStrictEqual(await post({ 'x-omni-token': 'bad', 'x-omni-terminal': '3' }, '{"cwd":"/x"}', 'cwd'), [403, '']);
-    assert.deepStrictEqual(cwds, [['3', 'C:\\work\\proj']]);
+    assert.deepStrictEqual(cwds, [['3', { cwd: 'C:\\work\\proj' }]]);
     assert.strictEqual(srv.cwdUrl, `http://127.0.0.1:${srv.port}/cwd`);
   } finally { srv.close(); }
 });
@@ -43,6 +43,8 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   assert.match(script, /function global:claude/);
   assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS/);
   assert.match(script, /OMNI_CWD_URL/);
+  assert.match(script, /function global:wsl/);
+  assert.match(script, /IFS=; exec bash --rcfile \$OMNI_INIT_BASH -i/);
   assert.deepStrictEqual(shellLaunch('linux', { SHELL: '/bin/bash' }).args.slice(0, 1), ['--rcfile']);
   assert.match(shellLaunch('darwin', { SHELL: '/bin/zsh' }).env.ZDOTDIR, /shell-init[\\/]zsh$/);
 });

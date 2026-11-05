@@ -7,7 +7,7 @@ const MAX_BODY = 1024 * 1024;
 
 // Receives, on 127.0.0.1:
 //   POST /hook - Claude Code HTTP hooks (type "http" POSTs the event JSON)
-//   POST /cwd  - {"cwd": "..."} from the app's shell integration (PowerShell)
+//   POST /cwd  - {"cwd", "wslDistro"?, "home"?} from the app's shell integration
 // Requests must carry the per-run token; the terminal id header says which
 // terminal sent them.
 function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
@@ -31,7 +31,7 @@ function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes
       try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return; }
       if (!ev || typeof ev !== 'object' || !terminalId) return;
       if (req.url === '/cwd') {
-        if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev.cwd);
+        if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
       } else {
         onEvent(terminalId, ev);
       }
