@@ -164,3 +164,66 @@ test('a second, unrelated claude session in the same terminal is listed, not mer
   m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 'B' }, { pane: '%5' });
   assert.deepStrictEqual(events.filter(([c]) => c === 'session:agent').at(-1)[1].claude.agents, []);
 });
+
+test('`claude --agent` (agent_type, no agent_id) is the main session, not a teammate', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A', agent_type: 'reviewer' });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'A', agent_type: 'reviewer', tool_name: 'Read' });
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.deepStrictEqual([view.status, view.tool, view.agents.length], ['working', 'Read', 0]);
+});
+
+test('a teammate that reported first is moved beside the lead once it says TeammateIdle', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'T', agent_type: 'general-purpose', tool_name: 'Read' }, { pane: '%1' });
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'T', agent_type: 'general-purpose', teammate_name: 'alpha' }, { pane: '%1' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'L' }, { pane: '%0' });
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.strictEqual(view.status, 'working', 'the lead is now the main session');
+  assert.deepStrictEqual(view.agents.map((a) => [a.name, a.teammate]), [['alpha', true]]);
+});
+
+test('a session promoted to main is no longer listed beside it', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'B' }, { pane: '%5' });
+  m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 'A' });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'B', tool_name: 'Bash' }, { pane: '%5' });
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.deepStrictEqual([view.status, view.tool, view.agents.length], ['working', 'Bash', 0]);
+});
+
+test('git branch is looked up only when the folder changes or a recheck is asked', () => {
+  let lookups = 0;
+  const fake = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
+  const m = new SessionManager({ spawn: fake, emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, gitBranch: () => { lookups++; return 'main'; } });
+  const { id } = m.create({ cwd: '/repo' });
+  const base = lookups;
+  for (let i = 0; i < 20; i++) m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'A', cwd: '/repo', tool_name: 'Read' });
+  assert.strictEqual(lookups, base, 'no lookups for repeated events in the same folder');
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'A', cwd: '/repo/sub' });
+  assert.strictEqual(lookups, base + 1);
+  m.onHookEvent(id, { hook_event_name: 'Stop', session_id: 'A' });
+  assert.strictEqual(lookups, base + 2, 'end of turn rechecks the branch');
+});
+
+test('shell exit clears the team and tasks', () => {
+  let exit;
+  const fake = () => ({ onData() {}, onExit(fn) { exit = fn; }, write() {}, kill() {} });
+  const events = [];
+  const m = new SessionManager({
+    spawn: fake, emit: (c, p) => events.push([c, p]), shell: { file: 'sh', args: [] }, pollMs: 0,
+    readTeam: () => ({ name: 'session-x', members: [{ name: 'lead', agentType: 'team-lead' }, { name: 'dev', agentId: 'd' }] }),
+    readTasks: () => ({ total: 2, done: 1, inProgress: [] }),
+  });
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'x' });
+  m.onHookEvent(id, { hook_event_name: 'TaskCreated', session_id: 'x' });
+  assert.ok(events.filter(([c]) => c === 'session:agent').at(-1)[1].claude.team);
+  exit({ exitCode: 0 });
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.deepStrictEqual([view.team, view.tasks, view.agents.length], [null, null, 0]);
+});
