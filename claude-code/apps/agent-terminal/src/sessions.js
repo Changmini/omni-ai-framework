@@ -24,6 +24,7 @@ class SessionManager {
     gitBranch = () => null,
     scanConfig = () => null,
     claudePaths = { dir: null, json: null },
+    runTmux = () => Promise.resolve(false),
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -34,6 +35,7 @@ class SessionManager {
     this.readTasks = readTasks;
     this.gitBranch = gitBranch;
     this.scanConfig = scanConfig;
+    this.runTmux = runTmux;
     this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
@@ -72,6 +74,8 @@ class SessionManager {
       primarySid: null,
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       teammateSids: new Set(), // sessions known to be split-pane teammates
+      tmuxSocket: null, // from claude-hook.sh, to select a pane on click
+      primaryPane: null,
       teamReadAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
@@ -191,6 +195,7 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s) return;
     const sid = ev.session_id || '';
+    if (meta.socket) s.tmuxSocket = meta.socket;
     // Several claude sessions can report into one terminal through tmux. The
     // first one is the main session (LED, banner); later ones are listed
     // beside it. A split-pane teammate is its own session, recognised by a
@@ -209,11 +214,13 @@ class SessionManager {
       s.primarySid = sid;
       s.others.delete(sid); // was listed beside the previous main session
     }
+    if (meta.pane) s.primaryPane = meta.pane;
     s.claude = reduce(s.claude, ev, this.now());
     if (ev.hook_event_name === 'SessionEnd') {
       s.team = null;
       s.tasks = null;
       s.primarySid = null;
+      s.primaryPane = null;
     }
     // The main agent's turn ended with nothing left running: teammates are gone.
     if (ev.hook_event_name === 'Stop' && !ev.agent_id && Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) {
@@ -267,6 +274,7 @@ class SessionManager {
       status: o.state.status || 'idle',
       tool: o.state.tool,
       teammate: o.teammate,
+      focusable: Boolean(o.pane && s.tmuxSocket),
     }));
     // Teammates already listed as their own sessions are not repeated from the config.
     const names = new Set(others.map((o) => o.name));
@@ -281,6 +289,7 @@ class SessionManager {
       team: hasTeammates ? (s.team ? s.team.name : `session-${(s.primarySid || '').slice(0, 8)}`) : null,
       agents: [...Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })), ...others],
       tasks: s.tasks,
+      focusable: Boolean(view.status && s.primaryPane && s.tmuxSocket),
     };
   }
 
@@ -290,6 +299,19 @@ class SessionManager {
     if (key === s.lastAgent) return;
     s.lastAgent = key;
     this.emit('session:agent', { id: s.id, claude: view });
+  }
+
+  // Selects the tmux pane of the main session ('main') or of a session listed
+  // beside it ('session:<id>'), in the tmux server that reported it.
+  async focusPane(id, target) {
+    const s = this.sessions.get(id);
+    if (!s || !s.tmuxSocket) return false;
+    let pane = null;
+    if (target === 'main') pane = s.primaryPane;
+    else if (typeof target === 'string' && target.startsWith('session:')) pane = s.others.get(target.slice(8))?.pane;
+    if (!pane || !/^%\d+$/.test(pane) || !/^\/[\w./@:+-]+$/.test(s.tmuxSocket)) return false;
+    const args = ['-S', s.tmuxSocket, 'select-window', '-t', pane, ';', 'select-pane', '-t', pane];
+    return this.runTmux(args, s.wsl ? s.wsl.distro : null);
   }
 
   kill(id) {

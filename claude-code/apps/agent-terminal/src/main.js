@@ -12,6 +12,7 @@ const { withWslEnv } = require('./wsl');
 const { gitBranch } = require('./git');
 const { readTeam, readTasks, claudeDir } = require('./teams');
 const { scanClaudeConfig } = require('./claude-config');
+const { runTmux } = require('./tmux');
 
 let win = null;
 let manager = null;
@@ -53,6 +54,7 @@ function registerIpc() {
     const u = str(url, 4000);
     if (u && /^https?:\/\//i.test(u)) shell.openExternal(u);
   });
+  ipcMain.handle('session:focusPane', (_e, id, target) => manager.focusPane(str(id, 20), str(target, 200)));
   ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));
   ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
@@ -133,6 +135,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     readTasks,
     gitBranch,
     scanConfig: scanClaudeConfig,
+    runTmux,
     claudePaths: {
       dir: claudeDir(),
       json: process.env.CLAUDE_CONFIG_DIR
