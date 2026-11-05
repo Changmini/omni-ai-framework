@@ -3,22 +3,6 @@
 일반 터미널처럼 쓰면서 여러 Claude Code 세션을 **한 창**에서 오가는 Electron 데스크톱 앱입니다.
 왼쪽은 직접 만든 UI(터미널 목록, Claude 상태, 서브에이전트와 팀원 트리, 바로가기), 가운데는 실제 터미널, 오른쪽은 상세 패널(활동 기록, 컨텍스트, Claude 구성)입니다. 터미널 화면은 xterm.js가 그리고, 실제 PowerShell 프로세스는 node-pty가 연결합니다.
 
-![전체 화면: 터미널 3개, 팀원 트리, 바로가기, 상세 패널](docs/screenshots/1-overview.png)
-
-<details>
-<summary>예시 화면 더 보기</summary>
-
-| 승인 대기 | 출력 검색 | 바로가기 추가 |
-|---|---|---|
-| ![승인 대기 배너](docs/screenshots/2-approval.png) | ![검색](docs/screenshots/3-search.png) | ![바로가기 편집](docs/screenshots/4-shortcut.png) |
-
-| 상세 패널: 활동 | 상세 패널: Claude 구성 |
-|---|---|
-| ![활동 기록과 컨텍스트](docs/screenshots/5-activity.png) | ![Claude 구성](docs/screenshots/6-config.png) |
-
-예시 화면은 실제 앱 화면과 실제 셸로 찍었고, Claude 상태는 실제와 같은 형식의 훅 신호를 넣어 재현했습니다.
-</details>
-
 ## 한눈에 보는 기능
 
 | 분류 | 기능 |
@@ -158,7 +142,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
   ```
   wsl ~
   cd sample-app
-  tmux attach -t sample-app
+  tmux attach -t sample
   ```
 - **현재 터미널에서 실행:** 체크를 끄면 지금 선택된 터미널에 입력합니다. 자주 보내는 Claude 명령(예: `/compact`)에 쓸 수 있습니다.
 - **편집·삭제:** 항목에 마우스를 올리면 나오는 ✎ / ✕로 합니다. 바로가기는 앱을 다시 켜도 유지됩니다.
