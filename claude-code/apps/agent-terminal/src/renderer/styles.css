@@ -34,6 +34,7 @@ body {
 .sidebar {
   width: var(--sidebar-w, 300px);
   flex: none;
+  overflow: hidden !important;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -169,7 +170,41 @@ body.resizing .terminals { pointer-events: none; }
 
 .slider { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 12px; color: var(--muted); }
 .slider input { grid-column: span 2; accent-color: var(--accent); }
-.settings { margin-top: auto; }
+.settings { flex: none; }
+
+/* terminals | Claude config, split vertically */
+.sidebar-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.terminals-panel { flex: 0 0 var(--terminals-h, 45%); min-height: 80px; overflow-y: auto; }
+.config-panel { flex: 1 1 0; min-height: 60px; overflow-y: auto; }
+.split-resizer { flex: none; height: 6px; margin: -3px 0; position: relative; z-index: 2; cursor: row-resize; }
+.split-resizer::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 2px; height: 2px;
+  background: transparent; transition: background .12s;
+}
+.split-resizer:hover::after, body.resizing-v .split-resizer::after { background: var(--accent); }
+body.resizing-v { cursor: row-resize; user-select: none; }
+.mini-btn {
+  margin-left: auto; background: none; border: 0; color: var(--muted);
+  font: inherit; font-size: 13px; cursor: pointer; padding: 0 2px; letter-spacing: 0;
+}
+.mini-btn:hover { color: var(--text); }
+#config-project { margin: -4px 0 6px; font-size: 11px; }
+.cfg-group { margin: 2px 0; }
+.cfg-group > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+  padding: 4px 2px; font-size: 12px; color: var(--text); border-radius: 4px;
+}
+.cfg-group > summary::-webkit-details-marker { display: none; }
+.cfg-group > summary::before { content: "▸"; color: var(--muted); width: 10px; }
+.cfg-group[open] > summary::before { content: "▾"; }
+.cfg-group > summary:hover { background: var(--panel); }
+.cfg-list { list-style: none; margin: 0 0 4px; padding: 0 0 0 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.cfg-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; font-size: 11.5px; padding: 2px 0; }
+.cfg-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-src { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.cfg-item.off .cfg-name { color: var(--muted); text-decoration: line-through; }
+.cfg-item.omni .cfg-src { color: var(--accent); }
+.cfg-empty { color: var(--muted); font-size: 11px; padding: 2px 0 4px 16px; }
 
 /* ---------- main ---------- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

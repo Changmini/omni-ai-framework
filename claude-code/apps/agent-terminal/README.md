@@ -19,7 +19,8 @@
 | 🔔 **알림 배너** | 승인 대기 메시지, API 오류, 셸 출력의 오류 줄(`Error: ...`, `command not found` 등)을 상단에 표시 |
 | 🪟 **tmux 지원** | 앱 터미널에서 접속한 tmux 안의 `claude`도 상태 표시(앱보다 먼저 만든 세션, 창 분할 팀 포함). 설정은 자동 |
 | 🐧 **WSL·Linux** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 · Linux/WSL에서 앱을 직접 실행하는 설치 스크립트 |
-| ↔️ **사이드바 크기** | 오른쪽 경계를 끌어 너비 조절(200~600px, 더블클릭: 기본 너비) · 상단 바 버튼이나 `Ctrl+Shift+B`로 접기/펴기. 둘 다 기억 |
+| 🧩 **Claude 구성** | 선택한 터미널의 프로젝트에서 Claude가 불러오는 스킬·플러그인(켜짐/꺼짐)·훅·서브에이전트·MCP 서버 목록. 사용자·프로젝트·로컬 설정과 켜진 플러그인을 합쳐 보여 주고, WSL 터미널은 WSL 쪽 설정을 읽음 |
+| ↔️ **사이드바 크기** | 오른쪽 경계를 끌어 너비 조절(200~600px, 더블클릭: 기본 너비) · 터미널 목록과 Claude 구성 사이 경계를 위아래로 끌어 높이 조절(더블클릭: 기본) · 상단 바 버튼이나 `Ctrl+Shift+B`로 접기/펴기. 모두 기억 |
 | ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
 | 🔒 **안전** | 훅은 앱에서 연 터미널의 `claude`에만 적용(사용자 설정 파일은 수정하지 않음) · 신호 수신기는 `127.0.0.1` 전용이고 실행마다 새 토큰 확인 · 앱은 한 번에 하나만 실행 |
 
@@ -116,6 +117,22 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **필요한 것:** `curl`, `python3`(설치 때만)이 필요합니다.
 - **Linux 전용:** `/proc`를 쓰는 방식이라 Linux·WSL 전용입니다.
 
+## Claude 구성 목록
+
+사이드바 가운데 영역은 **선택한 터미널의 현재 프로젝트**에서 Claude Code가 불러올 구성을 보여 줍니다. 프로젝트는 현재 폴더에서 위로 올라가며 처음 만나는 `.git` 또는 `.claude` 폴더 기준입니다. 터미널을 바꾸거나 `cd`할 때, 앱 창으로 돌아올 때, ⟳ 버튼을 누를 때 다시 읽습니다. 파일을 읽기만 하고 아무것도 실행하지 않습니다.
+
+| 항목 | 읽는 곳 |
+|---|---|
+| 스킬 | `~/.claude/skills/*/SKILL.md`, `<프로젝트>/.claude/skills/`, `commands/*.md`, 켜진 플러그인의 `skills/`·`commands/` |
+| 플러그인 | `~/.claude/plugins/installed_plugins.json`(설치)과 `enabledPlugins`(사용자 → 프로젝트 → 로컬 순으로 덮어씀). 꺼진 플러그인은 취소선, 켜져 있지만 설치되지 않은 것은 `미설치` |
+| 훅 | 사용자·프로젝트·로컬 설정의 `hooks`와 켜진 플러그인의 `hooks/hooks.json`. 이 앱의 tmux 훅은 `Omni`로 표시 |
+| 서브에이전트 | `~/.claude/agents/`, `<프로젝트>/.claude/agents/`, 켜진 플러그인의 `agents/` |
+| MCP 서버 | `~/.claude.json`의 `mcpServers`(사용자)와 `projects.<경로>.mcpServers`(로컬), `<프로젝트>/.mcp.json`, 켜진 플러그인의 `.mcp.json` |
+
+- 항목에 마우스를 올리면 설명, 명령, 전체 이름이 보입니다.
+- 그룹 펼침 상태는 기억됩니다.
+- `installed_plugins.json`과 플러그인 캐시 형식은 Claude Code 2.1.318에서 실제 파일을 보고 맞췄고, 공식 문서에는 없습니다.
+
 ## 기능 상세
 
 | 영역 | 동작 |
@@ -160,6 +177,7 @@ src/
 ├── git.js             # .git/HEAD로 브랜치 읽기 (git 프로세스 없음)
 ├── wsl.js             # WSL 경로 ↔ Windows 경로 변환, WSLENV 구성
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
+├── claude-config.js   # 스킬·플러그인·훅·서브에이전트·MCP 목록 읽기
 ├── status.js          # 셸 출력의 오류 줄 감지
 └── renderer/          # index.html · styles.css · renderer.js (xterm.js 화면, 사이드바 트리, 단축키)
 scripts/setup-linux.sh # Linux·WSL 설치 자동화 (패키지, npm install, 샌드박스, 실행기)
