@@ -82,4 +82,27 @@ test('TeammateIdle after SubagentStop does not bring the teammate back', () => {
   );
   assert.deepStrictEqual(s.agents, {});
   assert.strictEqual(withTeam(s, null).agents, s.agents);
+  assert.deepStrictEqual(s.teammates, { beta: { status: 'idle' } }, 'name still marked idle');
+});
+
+test('late events from a stopped subagent do not bring it back', () => {
+  let s = run(
+    { hook_event_name: 'SubagentStart', agent_id: 'a1', agent_type: 'Explore' },
+    { hook_event_name: 'PreToolUse', agent_id: 'a1', tool_name: 'Bash' },
+    { hook_event_name: 'SubagentStop', agent_id: 'a1' },
+  );
+  const after = reduce(s, { hook_event_name: 'PostToolUse', agent_id: 'a1', tool_name: 'Bash' });
+  assert.deepStrictEqual(after.agents, {});
+  assert.strictEqual(after, s, 'state unchanged');
+});
+
+test('main Stop with no background tasks clears leftover agents', () => {
+  const s = run(
+    { hook_event_name: 'PreToolUse', agent_id: 'lost', tool_name: 'Bash' },
+    { hook_event_name: 'SubagentStart', agent_id: 'bg', agent_type: 'worker' },
+  );
+  assert.strictEqual(Object.keys(s.agents).length, 2);
+  assert.strictEqual(Object.keys(reduce(s, { hook_event_name: 'Stop', background_tasks: [{ id: 't', status: 'running' }] }).agents).length, 2);
+  assert.deepStrictEqual(reduce(s, { hook_event_name: 'Stop', background_tasks: [] }).agents, {});
+  assert.strictEqual(Object.keys(reduce(s, { hook_event_name: 'Stop' }).agents).length, 2, 'no field: keep');
 });
