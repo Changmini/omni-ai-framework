@@ -258,7 +258,8 @@ body.resizing .terminals { pointer-events: none; }
 
 /* bottom docks of the sidebar (plan usage, font size) */
 .dock { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-top: 1px solid var(--line); }
-.dock.open { height: var(--dock-h, auto); }
+/* An open dock may shrink down to its title in a short window. */
+.dock.open { flex: 0 1 var(--dock-h, auto); min-height: 35px; }
 .dock-head {
   flex: none; display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 9px 16px; background: none; border: 0; cursor: pointer; text-align: left;
@@ -295,7 +296,10 @@ body.resizing .terminals { pointer-events: none; }
 .sidebar-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .terminals-panel { border-top: 0; flex: 0 1 var(--terminals-h, 45%); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .terminals-panel > * { flex: none; }
-.shortcuts-panel { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 0; background: #191c24; }
+/* The terminal list keeps its chosen height only while it fits: in a shorter
+   window it gives way, so the shortcuts keep at least their title and a row
+   or two (unless hidden on purpose with the border). */
+.shortcuts-panel { flex: 1 1 0; min-height: min(96px, 45%); overflow-y: auto; padding: 0; background: #191c24; }
 /* one side hidden: the other takes the whole height */
 .sidebar-split.top-collapsed .terminals-panel { display: none; }
 .sidebar-split.bottom-collapsed .shortcuts-panel { display: none; }
