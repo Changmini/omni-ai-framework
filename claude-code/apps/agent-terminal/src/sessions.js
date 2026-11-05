@@ -133,6 +133,17 @@ class SessionManager {
   }
 
   // A name the user gave the terminal; empty goes back to the folder name.
+  // The sidebar order, so a page reload lists terminals the same way.
+  // Unknown ids are ignored; terminals missing from `ids` keep their place at the end.
+  reorder(ids) {
+    if (!Array.isArray(ids)) return false;
+    const next = new Map();
+    for (const id of ids) if (this.sessions.has(id) && !next.has(id)) next.set(id, this.sessions.get(id));
+    for (const [id, s] of this.sessions) if (!next.has(id)) next.set(id, s);
+    this.sessions = next;
+    return true;
+  }
+
   rename(id, name) {
     const s = this.sessions.get(id);
     if (!s) return false;
