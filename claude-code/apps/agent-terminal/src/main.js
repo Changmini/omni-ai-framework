@@ -55,6 +55,13 @@ function registerIpc() {
     const u = str(url, 4000);
     if (u && /^https?:\/\//i.test(u)) shell.openExternal(u);
   });
+  // A file from the activity log, in VS Code.
+  ipcMain.handle('open-file', async (_e, id, file) => {
+    const url = manager.editorUrl(str(id, 20), str(file, 4000));
+    if (!url) return false;
+    try { await shell.openExternal(url); return true; } catch { return false; }
+  });
+  ipcMain.handle('session:activity', (_e, id) => manager.activity(str(id, 20)));
   ipcMain.handle('session:focusPane', (_e, id, target) => manager.focusPane(str(id, 20), str(target, 200)));
   ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));
   ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));

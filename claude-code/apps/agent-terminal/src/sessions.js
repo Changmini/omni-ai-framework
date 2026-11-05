@@ -4,10 +4,14 @@ const os = require('node:os');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
+const { activityEntry } = require('./activity');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
+const ACTIVITY_MAX = 200; // activity log lines kept per terminal
+
+const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
 
 // Owns one PTY per terminal plus what Claude reports from inside it.
 // `spawn` is node-pty's spawn (injected for tests); `emit(channel, payload)`
@@ -85,6 +89,8 @@ class SessionManager {
       team: null,
       tasks: null,
       lastAgent: null,
+      activity: [], // inspector log, oldest first
+      activitySeq: 0,
     };
     this.sessions.set(id, session);
 
@@ -213,6 +219,8 @@ class SessionManager {
     }
     if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
       this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
+      const o = s.others.get(sid);
+      this.recordActivity(s, ev, (o && (o.name || o.type)) || `claude ${(o && o.pane) || sid.slice(0, 8)}`);
       this.emitAgent(s);
       return;
     }
@@ -221,6 +229,7 @@ class SessionManager {
       s.others.delete(sid); // was listed beside the previous main session
     }
     if (meta.pane) s.primaryPane = meta.pane;
+    this.recordActivity(s, ev, ev.agent_id ? ev.agent_type || 'subagent' : null);
     s.claude = reduce(s.claude, ev, this.now());
     if (ev.hook_event_name === 'SessionEnd') {
       s.usage.delete(sid);
@@ -237,6 +246,46 @@ class SessionManager {
     if (ev.cwd) this.setCwd(id, ev.cwd);
     if (ev.hook_event_name === 'Stop') this.setCwd(id, s.cwd, true); // branch may have changed
     this.emitAgent(s);
+  }
+
+  // One line of the inspector's log. A failed tool call marks the line of
+  // that call instead of adding one.
+  recordActivity(s, ev, who) {
+    const entry = activityEntry(ev, this.now(), who);
+    if (!entry) return;
+    if (entry.kind === 'fail' && entry.useId) {
+      const i = s.activity.findIndex((a) => a.useId === entry.useId);
+      if (i !== -1) {
+        s.activity[i] = { ...s.activity[i], kind: 'fail', error: entry.text };
+        this.emit('session:activity', { id: s.id, entry: s.activity[i] });
+        return;
+      }
+    }
+    const e = { ...entry, n: ++s.activitySeq };
+    s.activity.push(e);
+    if (s.activity.length > ACTIVITY_MAX) s.activity.splice(0, s.activity.length - ACTIVITY_MAX);
+    this.emit('session:activity', { id: s.id, entry: e });
+  }
+
+  activity(id) {
+    const s = this.sessions.get(id);
+    return s ? s.activity.slice() : [];
+  }
+
+  // A vscode:// link for a file from this terminal's activity log (only
+  // those: the page cannot make the app open arbitrary paths). Inside WSL it
+  // opens through VS Code's WSL remote. URL forms from
+  // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
+  editorUrl(id, file) {
+    const s = this.sessions.get(id);
+    if (!s || typeof file !== 'string' || !s.activity.some((a) => a.file === file)) return null;
+    if (s.wsl) {
+      const p = file.startsWith('/') ? file : `${s.cwd.replace(/\/$/, '')}/${file}`;
+      return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(p)}`;
+    }
+    const abs = /^([a-zA-Z]:[\\/]|\/)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
+    const p = abs.replace(/\\/g, '/');
+    return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
   }
 
   // Context usage from the session's transcript: read asynchronously, at most
