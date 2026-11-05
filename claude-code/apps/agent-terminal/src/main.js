@@ -10,7 +10,8 @@ const { buildClaudeSettings } = require('./claude-settings');
 const { shellLaunch, parseCwdReport, INIT_DIR } = require('./shell');
 const { withWslEnv } = require('./wsl');
 const { gitBranch } = require('./git');
-const { readTeam, readTasks } = require('./teams');
+const { readTeam, readTasks, claudeDir } = require('./teams');
+const { scanClaudeConfig } = require('./claude-config');
 
 let win = null;
 let manager = null;
@@ -42,6 +43,7 @@ function registerIpc() {
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
   ipcMain.handle('session:reorder', (_e, ids) =>
     manager.reorder(Array.isArray(ids) ? ids.slice(0, 500).map((x) => str(x, 20)).filter(Boolean) : []));
+  ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));
   ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
   ipcMain.on('session:cwd', (_e, id, kind, data) => {
@@ -115,6 +117,13 @@ app.whenReady().then(async () => {
     readTeam,
     readTasks,
     gitBranch,
+    scanConfig: scanClaudeConfig,
+    claudePaths: {
+      dir: claudeDir(),
+      json: process.env.CLAUDE_CONFIG_DIR
+        ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')
+        : path.join(require('node:os').homedir(), '.claude.json'),
+    },
   });
   registerIpc();
   createWindow();
