@@ -24,6 +24,24 @@
           <h2>터미널 <span id="agent-count" class="count">0</span></h2>
           <ul id="agent-list" class="agent-list" aria-label="터미널 목록"></ul>
           <button id="new-terminal" class="btn new-terminal" title="새 터미널 (Ctrl+Shift+T)">＋ 새 터미널</button>
+
+          <div class="shortcuts">
+            <h2>바로가기
+              <button id="shortcut-add" class="mini-btn" title="바로가기 추가" aria-label="바로가기 추가">＋</button>
+            </h2>
+            <ul id="shortcut-list" class="shortcut-list" aria-label="바로가기"></ul>
+            <p id="shortcut-empty" class="hint">＋로 자주 쓰는 명령을 저장하세요. 클릭하면 실행합니다.</p>
+            <form id="shortcut-form" class="shortcut-form" hidden autocomplete="off">
+              <input name="name" placeholder="이름 (예: sample-app 팀)" maxlength="80" required>
+              <textarea name="command" rows="3" spellcheck="false" required
+                        placeholder="한 줄에 명령 하나&#10;예) wsl ~&#10;    cd sample-app&#10;    tmux attach -t sample-app"></textarea>
+              <label class="check"><input type="checkbox" name="newTerminal" checked> 새 터미널에서 실행</label>
+              <div class="row">
+                <button type="submit" class="btn primary">저장</button>
+                <button type="button" id="shortcut-cancel" class="btn">취소</button>
+              </div>
+            </form>
+          </div>
         </section>
         <div class="split-resizer" id="split-resizer" role="separator" aria-orientation="horizontal"
              title="끌어서 높이 조절 · 더블클릭: 기본 높이"></div>

@@ -124,6 +124,35 @@ body.resizing .terminals { pointer-events: none; }
 }
 .icon-btn:hover { color: var(--text); background: var(--panel); border-color: var(--line); }
 .app.collapsed .icon-btn { color: var(--accent); }
+.shortcuts { margin-top: 14px; }
+.shortcuts h2 { display: flex; }
+.shortcut-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.shortcut {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent;
+}
+.shortcut:hover, .shortcut:focus-visible { background: var(--panel); border-color: var(--line); outline: none; }
+.shortcut-icon { color: var(--accent); width: 12px; text-align: center; }
+.shortcut-name { font-size: 12.5px; font-weight: 600; }
+.shortcut-cmd { font-size: 11px; color: var(--muted); }
+.shortcut-btn {
+  visibility: hidden; background: none; border: 0; color: var(--muted);
+  font: inherit; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+}
+.shortcut:hover .shortcut-btn, .shortcut:focus-within .shortcut-btn { visibility: visible; }
+.shortcut-btn:hover { color: var(--text); background: var(--bg); }
+.shortcut-form { display: grid; gap: 6px; margin-top: 6px; }
+.shortcut-form[hidden] { display: none; }
+.shortcut-form input, .shortcut-form textarea {
+  width: 100%; font: 12px var(--mono); color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; outline: none; resize: vertical;
+}
+.shortcut-form input:focus, .shortcut-form textarea:focus { border-color: var(--accent); }
+.shortcut-form .row { display: flex; gap: 6px; }
+.shortcut-form .btn { flex: 1; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0f0a; font-weight: 700; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.check input { accent-color: var(--accent); margin: 0; width: auto; }
 .search-bar {
   position: absolute; top: 8px; right: 18px; z-index: 10;
   display: flex; align-items: center; gap: 4px;
