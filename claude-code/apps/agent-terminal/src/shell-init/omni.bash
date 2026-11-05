@@ -9,8 +9,11 @@ __omni_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "${OMNI_NO_AUTO_SETUP:-}" ] && [ -n "${OMNI_CWD_URL:-}" ] && command -v tmux >/dev/null 2>&1; then
   __omni_hook_dst="$HOME/.local/share/omni-agent-terminal/claude-hook.sh"
   __omni_settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+  __omni_sl_dst="$HOME/.local/share/omni-agent-terminal/claude-statusline.sh"
   if ! tr -d '\r' < "$__omni_dir/claude-hook.sh" | cmp -s - "$__omni_hook_dst" 2>/dev/null \
-     || ! grep -q 'omni-agent-terminal/claude-hook.sh' "$__omni_settings" 2>/dev/null; then
+     || ! tr -d '\r' < "$__omni_dir/claude-statusline.sh" | cmp -s - "$__omni_sl_dst" 2>/dev/null \
+     || ! grep -q 'omni-agent-terminal/claude-hook.sh' "$__omni_settings" 2>/dev/null \
+     || ! grep -q 'omni-agent-terminal/claude-statusline.sh' "$__omni_settings" 2>/dev/null; then
     if __omni_out="$(bash "$__omni_dir/omni-tmux-setup.sh" 2>&1)"; then
       printf '\033[36m[Omni] tmux 안의 claude도 상태가 표시되도록 설정했습니다 (%s, 백업 있음).\033[0m\n' "$__omni_settings"
       printf '\033[36m       이미 실행 중인 claude는 다시 시작하세요 (claude --continue).\033[0m\n'

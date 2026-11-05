@@ -12,6 +12,7 @@ const { INIT_DIR } = require('../src/shell');
 
 const HOOK = path.join(INIT_DIR, 'claude-hook.sh');
 const SETUP = path.join(INIT_DIR, 'omni-tmux-setup.sh');
+const STATUSLINE = path.join(INIT_DIR, 'claude-statusline.sh');
 const has = (bin) => spawnSync('which', [bin]).status === 0;
 let pty = null;
 try { pty = require('node-pty'); } catch { /* not built for this node */ }
@@ -98,9 +99,68 @@ test('omni-tmux-setup adds the hook once, keeps other settings, and removes clea
   assert.ok(fs.statSync(path.join(home, '.local/share/omni-agent-terminal/claude-hook.sh')).mode & 0o111);
   assert.ok(fs.readdirSync(path.dirname(settings)).some((f) => f.startsWith('settings.json.omni-backup-')));
 
+  assert.deepStrictEqual(s.statusLine, { type: 'command', command: path.join(home, '.local/share/omni-agent-terminal/claude-statusline.sh') });
+
   assert.strictEqual(run('--remove').status, 0);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(settings, 'utf8')), original);
   assert.ok(!fs.existsSync(path.join(home, '.local/share/omni-agent-terminal/claude-hook.sh')));
+  assert.ok(!fs.existsSync(path.join(home, '.local/share/omni-agent-terminal/claude-statusline.sh')));
+});
+
+test('omni-tmux-setup wraps the user status line and gives it back on --remove', { skip: !has('python3') && 'needs python3' }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-setup-sl-'));
+  const settings = path.join(home, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(settings));
+  const mine = { type: 'command', command: 'echo "mine $(cat | wc -c)"', padding: 1, refreshInterval: 30 };
+  const original = { statusLine: mine };
+  fs.writeFileSync(settings, JSON.stringify(original));
+  const run = (...args) => spawnSync('bash', [SETUP, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home } });
+  const dest = path.join(home, '.local/share/omni-agent-terminal');
+
+  for (let i = 0; i < 2; i++) assert.strictEqual(run().status, 0); // the second run must not save ours as the original
+  const s = JSON.parse(fs.readFileSync(settings, 'utf8'));
+  assert.deepStrictEqual(s.statusLine, { ...mine, command: path.join(dest, 'claude-statusline.sh') }, 'padding and refreshInterval kept');
+  assert.strictEqual(fs.readFileSync(path.join(dest, 'statusline-orig.cmd'), 'utf8'), mine.command);
+  // Outside tmux it only runs the user's line, with the same input.
+  const out = spawnSync('bash', [path.join(dest, 'claude-statusline.sh')], { input: '12345', encoding: 'utf8', env: { PATH: process.env.PATH } });
+  assert.deepStrictEqual([out.status, out.stdout], [0, 'mine 5\n']);
+
+  assert.strictEqual(run('--remove').status, 0);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(settings, 'utf8')), original);
+  assert.ok(!fs.existsSync(path.join(dest, 'statusline-orig.cmd')));
+});
+
+test('the tmux status line reports to the app terminal showing the session', { skip }, async () => {
+  const got = [];
+  const srv = await startHookServer({ onEvent() {}, onStatusLine: (id, d) => got.push([id, d]), token: 'tok' });
+  const sock = `omni-test-sl-${process.pid}`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-sl-'));
+  const script = path.join(dir, 'claude-statusline.sh');
+  fs.copyFileSync(STATUSLINE, script);
+  fs.writeFileSync(path.join(dir, 'statusline-orig.cmd'), 'cat > ' + path.join(dir, 'orig-ran'));
+  spawnSync('tmux', ['-L', sock, '-f', '/dev/null', 'new-session', '-d', '-s', 'sl', '-x', '100', '-y', '30']);
+  const client = pty.spawn('tmux', ['-L', sock, 'attach', '-t', 'sl'], {
+    cols: 100, rows: 30, env: { ...process.env, OMNI_TERMINAL_ID: '4', OMNI_CWD_URL: srv.cwdUrl, OMNI_HOOK_TOKEN: 'tok' },
+  });
+  const input = { session_id: 's', rate_limits: { five_hour: { used_percentage: 12, resets_at: 1793893800 } } };
+  const send = (extraEnv = '') => spawnSync('tmux', ['-L', sock, 'send-keys', '-t', 'sl',
+    `env -u OMNI_TERMINAL_ID -u OMNI_CWD_URL -u OMNI_HOOK_TOKEN ${extraEnv} bash ${script} <<< '${JSON.stringify(input)}'`, 'Enter']);
+  try {
+    await sleep(700);
+    send();
+    assert.ok(await waitFor(() => got.length === 1), 'status delivered');
+    assert.deepStrictEqual(got[0], ['4', input]);
+    assert.ok(await waitFor(() => fs.existsSync(path.join(dir, 'orig-ran'))), "the user's line ran");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'orig-ran'), 'utf8')), input);
+    // Run from the app's own status line (wrapper claude): no second report.
+    send('OMNI_HOOKED=1');
+    await sleep(1200);
+    assert.strictEqual(got.length, 1);
+  } finally {
+    client.kill();
+    spawnSync('tmux', ['-L', sock, 'kill-server']);
+    srv.close();
+  }
 });
 
 test('the app bash installs the tmux hook by itself once, then stays quiet', { skip: (!has('tmux') || !has('python3')) && 'needs tmux and python3' }, () => {
@@ -118,6 +178,7 @@ test('the app bash installs the tmux hook by itself once, then stays quiet', { s
   const first = run();
   assert.match(first.stdout + first.stderr, /tmux 안의 claude도 상태가 표시되도록 설정했습니다/);
   assert.ok(fs.readFileSync(settings, 'utf8').includes('omni-agent-terminal/claude-hook.sh'));
+  assert.ok(fs.readFileSync(settings, 'utf8').includes('omni-agent-terminal/claude-statusline.sh'));
 
   const backups = () => fs.readdirSync(path.dirname(settings)).filter((f) => f.includes('omni-backup')).length;
   const before = backups();
