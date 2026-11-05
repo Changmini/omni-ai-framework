@@ -162,6 +162,7 @@ function removeAgent(id) {
 function select(id) {
   if (!agents.has(id)) return;
   activeId = id;
+  loadConfig();
   for (const [aid, a] of agents) {
     const on = aid === id;
     a.el.classList.toggle('active', on);
@@ -384,6 +385,7 @@ els.activeName.addEventListener('dblclick', () => { if (activeId) startRename(ac
 function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
+  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) loadConfig(); // new project
   Object.assign(a.info, patch);
   renderItem(id);
 }
@@ -452,6 +454,106 @@ sidebarToggle.addEventListener('click', () => {
 });
 setSidebarWidth(Number(readPref('sidebarWidth', SIDEBAR.def)) || SIDEBAR.def, false);
 setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
+
+// ---------- Claude config list ----------
+// Skills, plugins, hooks, subagents and MCP servers for the active terminal's
+// project, read by the main process (claude-config.js). Reloaded when the
+// terminal or its folder changes, on window focus, and with the ⟳ button.
+const cfgEls = { body: $('#config-body'), project: $('#config-project'), refresh: $('#config-refresh') };
+const CFG_GROUPS = [
+  ['skills', '스킬', (x) => [x.name, x.source, x.description]],
+  ['plugins', '플러그인', (x) => [`${x.name}${x.version ? ` ${x.version}` : ''}`, x.missing ? '미설치' : x.enabled ? (x.marketplace || '') : '꺼짐', `${x.id}${x.scope ? ` (${x.scope})` : ''}`]],
+  ['hooks', '훅', (x) => [`${x.event}${x.matcher ? ` · ${x.matcher}` : ''}`, x.omni ? 'Omni' : x.source, `${x.type}: ${x.target}`]],
+  ['agents', '서브에이전트', (x) => [x.name, x.source, x.description]],
+  ['mcp', 'MCP 서버', (x) => [x.name, x.source, `${x.type}: ${x.description}`]],
+];
+let cfgTimer = null;
+let cfgOpen = {};
+try { cfgOpen = JSON.parse(readPref('cfgOpen', '{"skills":true}')); } catch { cfgOpen = { skills: true }; }
+
+function loadConfig(delay = 150) {
+  clearTimeout(cfgTimer);
+  cfgTimer = setTimeout(async () => {
+    const id = activeId;
+    if (!id || !api.claudeConfig) return;
+    let data = null;
+    try { data = await api.claudeConfig(id); } catch { /* keep the old list */ return; }
+    if (id === activeId) renderConfig(data);
+  }, delay);
+}
+
+function renderConfig(data) {
+  if (!data) { cfgEls.body.replaceChildren(h('div', 'cfg-empty', '읽을 수 없습니다')); return; }
+  cfgEls.project.textContent = data.project ? `프로젝트: ${data.project}` : '';
+  cfgEls.project.title = data.project || '';
+  cfgEls.body.replaceChildren(...CFG_GROUPS.map(([key, label, row]) => {
+    const items = data[key] || [];
+    const d = document.createElement('details');
+    d.className = 'cfg-group';
+    d.open = Boolean(cfgOpen[key]);
+    const sum = document.createElement('summary');
+    sum.append(h('span', null, label), h('span', 'count', String(items.length)));
+    d.append(sum);
+    d.addEventListener('toggle', () => { cfgOpen[key] = d.open; writePref('cfgOpen', JSON.stringify(cfgOpen)); });
+    if (!items.length) { d.append(h('div', 'cfg-empty', '없음')); return d; }
+    const ul = h('ul', 'cfg-list');
+    for (const x of items) {
+      const [fullName, rawSrc, tip] = row(x);
+      // Plugin items: "omni-core:planning-changes" + "플러그인 omni-core" would
+      // say the plugin twice; show the short name with the plugin as source.
+      const plugin = /^플러그인 (.+)$/.exec(rawSrc || '');
+      const name = plugin ? fullName.replace(`${plugin[1]}:`, '') : fullName;
+      const src = plugin ? plugin[1] : rawSrc;
+      const li = h('li', 'cfg-item');
+      if (key === 'plugins' && (!x.enabled || x.missing)) li.classList.add('off');
+      if (key === 'hooks' && x.omni) li.classList.add('omni');
+      li.title = [fullName, plugin ? `플러그인: ${plugin[1]}` : rawSrc, tip].filter(Boolean).join('\n');
+      li.append(h('span', 'cfg-name', name), h('span', 'cfg-src', src || ''));
+      ul.append(li);
+    }
+    d.append(ul);
+    return d;
+  }));
+}
+
+cfgEls.refresh.addEventListener('click', () => loadConfig(0));
+window.addEventListener('focus', () => loadConfig());
+
+// ---------- terminals | config height ----------
+const split = $('#sidebar-split');
+const splitResizer = $('#split-resizer');
+function setTerminalsHeight(px, save = true) {
+  if (px == null) {
+    document.documentElement.style.removeProperty('--terminals-h');
+    if (save) writePref('terminalsHeight', '');
+    return;
+  }
+  const max = split.getBoundingClientRect().height - 60;
+  const v = Math.round(Math.max(80, Math.min(max, px)));
+  document.documentElement.style.setProperty('--terminals-h', `${v}px`);
+  if (save) writePref('terminalsHeight', v);
+}
+splitResizer.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  splitResizer.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing-v');
+  const top = split.getBoundingClientRect().top;
+  const move = (ev) => setTerminalsHeight(ev.clientY - top, false);
+  const up = (ev) => {
+    splitResizer.releasePointerCapture(ev.pointerId);
+    splitResizer.removeEventListener('pointermove', move);
+    splitResizer.removeEventListener('pointerup', up);
+    document.body.classList.remove('resizing-v');
+    setTerminalsHeight(ev.clientY - top);
+  };
+  splitResizer.addEventListener('pointermove', move);
+  splitResizer.addEventListener('pointerup', up);
+});
+splitResizer.addEventListener('dblclick', () => setTerminalsHeight(null));
+{
+  const saved = Number(readPref('terminalsHeight', ''));
+  if (saved > 0) setTerminalsHeight(saved, false);
+}
 
 // ---------- terminal -> UI ----------
 

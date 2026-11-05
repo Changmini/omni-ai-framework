@@ -21,6 +21,8 @@ class SessionManager {
     readTeam = () => null,
     readTasks = () => null,
     gitBranch = () => null,
+    scanConfig = () => null,
+    claudePaths = { dir: null, json: null },
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -30,6 +32,8 @@ class SessionManager {
     this.readTeam = readTeam;
     this.readTasks = readTasks;
     this.gitBranch = gitBranch;
+    this.scanConfig = scanConfig;
+    this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
     this.tick = 0;
@@ -134,6 +138,21 @@ class SessionManager {
     s.cwd = dir;
     s.branch = branch;
     this.emit('session:meta', { id, cwd: s.cwd, branch: s.branch });
+  }
+
+  // Skills, plugins, hooks, subagents and MCP servers Claude would load in
+  // this terminal's project. Inside WSL, read from the Linux home.
+  claudeConfig(id) {
+    const s = this.sessions.get(id);
+    if (!s) return null;
+    const w = s.wsl && s.wsl.home ? s.wsl : null;
+    const home = w ? w.home.replace(/\/$/, '') : null;
+    return this.scanConfig({
+      claudeDir: w ? wslToWindows(`${home}/.claude`, w.distro) : this.claudePaths.dir,
+      claudeJson: w ? wslToWindows(`${home}/.claude.json`, w.distro) : this.claudePaths.json,
+      cwd: this.hostPath(s, s.cwd),
+      mapPath: w ? (p) => wslToWindows(p, w.distro) || p : (p) => p,
+    });
   }
 
   // A name the user gave the terminal; empty goes back to the folder name.

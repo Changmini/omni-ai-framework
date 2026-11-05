@@ -19,11 +19,22 @@
         <span>Omni Agent Terminal</span>
       </header>
 
-      <section class="panel">
-        <h2>터미널 <span id="agent-count" class="count">0</span></h2>
-        <ul id="agent-list" class="agent-list" aria-label="터미널 목록"></ul>
-        <button id="new-terminal" class="btn new-terminal" title="새 터미널 (Ctrl+Shift+T)">＋ 새 터미널</button>
-      </section>
+      <div class="sidebar-split" id="sidebar-split">
+        <section class="panel terminals-panel">
+          <h2>터미널 <span id="agent-count" class="count">0</span></h2>
+          <ul id="agent-list" class="agent-list" aria-label="터미널 목록"></ul>
+          <button id="new-terminal" class="btn new-terminal" title="새 터미널 (Ctrl+Shift+T)">＋ 새 터미널</button>
+        </section>
+        <div class="split-resizer" id="split-resizer" role="separator" aria-orientation="horizontal"
+             title="끌어서 높이 조절 · 더블클릭: 기본 높이"></div>
+        <section class="panel config-panel" aria-label="Claude 구성">
+          <h2>Claude 구성
+            <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
+          </h2>
+          <div id="config-project" class="hint ellipsis"></div>
+          <div id="config-body"></div>
+        </section>
+      </div>
 
       <section class="panel settings">
         <label class="slider">글자 크기 <output id="font-size-value">14</output>
