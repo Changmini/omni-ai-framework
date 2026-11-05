@@ -12,6 +12,8 @@ const { withWslEnv } = require('./wsl');
 const { gitBranch } = require('./git');
 const { readTeam, readTasks, claudeDir } = require('./teams');
 const { scanClaudeConfig } = require('./claude-config');
+const { runTmux } = require('./tmux');
+const { readContextUsage } = require('./usage');
 
 let win = null;
 let manager = null;
@@ -53,6 +55,14 @@ function registerIpc() {
     const u = str(url, 4000);
     if (u && /^https?:\/\//i.test(u)) shell.openExternal(u);
   });
+  // A file from the activity log, in VS Code.
+  ipcMain.handle('open-file', async (_e, id, file) => {
+    const url = manager.editorUrl(str(id, 20), str(file, 4000));
+    if (!url) return false;
+    try { await shell.openExternal(url); return true; } catch { return false; }
+  });
+  ipcMain.handle('session:activity', (_e, id) => manager.activity(str(id, 20)));
+  ipcMain.handle('session:focusPane', (_e, id, target) => manager.focusPane(str(id, 20), str(target, 200)));
   ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));
   ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
@@ -133,6 +143,8 @@ if (primaryInstance) app.whenReady().then(async () => {
     readTasks,
     gitBranch,
     scanConfig: scanClaudeConfig,
+    runTmux,
+    readUsage: readContextUsage,
     claudePaths: {
       dir: claudeDir(),
       json: process.env.CLAUDE_CONFIG_DIR

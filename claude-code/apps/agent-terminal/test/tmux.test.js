@@ -125,3 +125,49 @@ test('the app bash installs the tmux hook by itself once, then stays quiet', { s
   assert.doesNotMatch(second.stdout + second.stderr, /\[Omni\] tmux/);
   assert.strictEqual(backups(), before, 'already current: nothing rewritten');
 });
+
+test('clicking a split-pane teammate selects its tmux pane (real tmux, real hook)', { skip }, async () => {
+  const { SessionManager } = require('../src/sessions');
+  const { runTmux } = require('../src/tmux');
+  const sock = `omni-focus-${process.pid}`;
+  const srv = await startHookServer({ onEvent: (id, ev, meta) => m.onHookEvent(id, ev, meta), token: 'tok' });
+  const fake = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
+  const m = new SessionManager({ spawn: fake, emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, runTmux });
+  const { id } = m.create({});
+  spawnSync('tmux', ['-L', sock, '-f', '/dev/null', 'new-session', '-d', '-s', 'team', '-x', '120', '-y', '40']);
+  spawnSync('tmux', ['-L', sock, 'split-window', '-t', 'team']); // pane %1, now active
+  const client = pty.spawn('tmux', ['-L', sock, 'attach', '-t', 'team'], {
+    cols: 120, rows: 40, env: { ...process.env, OMNI_TERMINAL_ID: id, OMNI_CWD_URL: srv.cwdUrl, OMNI_HOOK_TOKEN: 'tok' },
+  });
+  const active = () => spawnSync('tmux', ['-L', sock, 'display-message', '-p', '-t', 'team', '#{pane_id}'], { encoding: 'utf8' }).stdout.trim();
+  try {
+    await sleep(700);
+    runHookInPane(sock, 'team:0.0', { hook_event_name: 'UserPromptSubmit', session_id: 'lead' });
+    runHookInPane(sock, 'team:0.1', { hook_event_name: 'TeammateIdle', session_id: 'mate', agent_type: 'general-purpose', teammate_name: 'alpha' });
+    assert.ok(await waitFor(() => m.list()[0].claude.agents.some((a) => a.name === 'alpha' && a.focusable)), 'alpha listed and focusable');
+    assert.ok(m.list()[0].claude.focusable, 'lead focusable');
+    assert.strictEqual(await m.focusPane(id, 'main'), true);
+    assert.strictEqual(active(), '%0');
+    assert.strictEqual(await m.focusPane(id, 'session:mate'), true);
+    assert.strictEqual(active(), '%1');
+    assert.strictEqual(await m.focusPane(id, 'session:nope'), false);
+  } finally {
+    client.kill();
+    spawnSync('tmux', ['-L', sock, 'kill-server']);
+    srv.close();
+  }
+});
+
+test('runTmux goes through wsl.exe on Windows and checks the distro name', async () => {
+  const { runTmux } = require('../src/tmux');
+  const calls = [];
+  const exec = (f, a, o, cb) => { calls.push([f, a]); cb(null); };
+  await runTmux(['select-pane', '-t', '%3'], 'Ubuntu-24.04', 'win32', exec);
+  await runTmux(['select-pane', '-t', '%3'], 'bad name; rm', 'win32', exec);
+  await runTmux(['select-pane', '-t', '%3'], null, 'linux', exec);
+  assert.deepStrictEqual(calls, [
+    ['wsl.exe', ['-d', 'Ubuntu-24.04', '--', 'tmux', 'select-pane', '-t', '%3']],
+    ['wsl.exe', ['--', 'tmux', 'select-pane', '-t', '%3']],
+    ['tmux', ['select-pane', '-t', '%3']],
+  ]);
+});
