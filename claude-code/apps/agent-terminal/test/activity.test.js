@@ -28,11 +28,14 @@ test('tool summaries for built-in tools', () => {
 test('events that are not shown', () => {
   assert.strictEqual(activityEntry({ hook_event_name: 'PostToolUse' }, 1), null);
   assert.strictEqual(activityEntry({ hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'x' }, 1), null);
+  // Already logged by PermissionRequest.
+  assert.strictEqual(activityEntry({ hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' }, 1), null);
+  assert.strictEqual(activityEntry({ hook_event_name: 'Notification', notification_type: 'elicitation_dialog', message: 'pick one' }, 1).text, 'pick one');
   assert.strictEqual(activityEntry({ hook_event_name: 'Stop', agent_id: 'a' }, 1), null);
   assert.strictEqual(activityEntry(null, 1), null);
 });
 
-function setup() {
+function setup(platform = 'linux') {
   const events = [];
   let t = 1000;
   const m = new SessionManager({
@@ -41,6 +44,7 @@ function setup() {
     shell: { file: 'sh', args: [], env: {} },
     now: () => t++,
     pollMs: 0,
+    platform,
   });
   const { id } = m.create({ cwd: '/repo' });
   return { m, id, events };
@@ -53,7 +57,8 @@ test('the session log: who, failure marks the call, cap', () => {
   m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: sid, tool_name: 'Bash', tool_input: { command: 'false' }, tool_use_id: 'b1' });
   m.onHookEvent(id, { hook_event_name: 'PostToolUseFailure', session_id: sid, tool_name: 'Bash', tool_input: { command: 'false' }, tool_use_id: 'b1', error: 'exit 1' });
   m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: sid, agent_id: 'a1', agent_type: 'Explore', tool_name: 'Read', tool_input: { file_path: '/repo/x.js' }, tool_use_id: 'r1' });
-  const log = m.activity(id);
+  const log = m.activity(id).entries;
+  assert.strictEqual(m.activity(id).max, 200);
   assert.deepStrictEqual(log.map((e) => [e.kind, e.who, e.tool || null]),
     [['prompt', null, null], ['fail', null, 'Bash'], ['tool', 'Explore', 'Read']]);
   assert.strictEqual(log[1].error, 'exit 1');
@@ -62,16 +67,18 @@ test('the session log: who, failure marks the call, cap', () => {
 
   // A second claude session in the same terminal (tmux) is named.
   m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'S2', teammate_name: 'tester' });
-  assert.strictEqual(m.activity(id).at(-1).who, 'tester');
+  assert.strictEqual(m.activity(id).entries.at(-1).who, 'tester');
+  // Named the same way as in the sidebar.
+  assert.strictEqual(m.list()[0].claude.agents.find((a) => a.id === 'session:S2').name, 'tester');
 
   for (let i = 0; i < 250; i++) m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: sid, tool_name: 'Bash', tool_input: { command: `c${i}` } });
-  assert.strictEqual(m.activity(id).length, 200);
-  assert.strictEqual(m.activity(id).at(-1).text, 'c249');
-  assert.deepStrictEqual(m.activity('nope'), []);
+  assert.strictEqual(m.activity(id).entries.length, 200);
+  assert.strictEqual(m.activity(id).entries.at(-1).text, 'c249');
+  assert.deepStrictEqual(m.activity('nope').entries, []);
 });
 
 test('editorUrl: only files from the log; Windows, Linux and WSL forms', () => {
-  const { m, id } = setup();
+  const { m, id } = setup('win32');
   const read = (file) => m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Read', tool_input: { file_path: file } });
   assert.strictEqual(m.editorUrl(id, '/etc/passwd'), null);
   read('/repo/a b#1.js');

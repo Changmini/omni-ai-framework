@@ -6,6 +6,7 @@
 // built-in tools: file_path, command, pattern, url, query, description).
 
 const MAX_TEXT = 160;
+const ACTIVITY_MAX = 200; // log lines kept per terminal (main process and page)
 
 const oneLine = (v, max = MAX_TEXT) => {
   if (typeof v !== 'string') return '';
@@ -60,7 +61,8 @@ function activityEntry(ev, at, who = null) {
     case 'PermissionRequest':
       return { ...base, kind: 'wait', tool: oneLine(ev.tool_name, 60) || null, text: '승인 대기' };
     case 'Notification':
-      return ev.notification_type === 'idle_prompt' ? null
+      // idle_prompt is noise; permission_prompt repeats PermissionRequest.
+      return ev.notification_type === 'idle_prompt' || ev.notification_type === 'permission_prompt' ? null
         : { ...base, kind: 'wait', text: oneLine(ev.message) || '알림' };
     case 'Stop':
       return ev.agent_id ? null : { ...base, kind: 'done', text: '응답 완료' };
@@ -77,4 +79,4 @@ function activityEntry(ev, at, who = null) {
   }
 }
 
-module.exports = { activityEntry, toolSummary, oneLine };
+module.exports = { activityEntry, toolSummary, oneLine, ACTIVITY_MAX };
