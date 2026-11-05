@@ -256,9 +256,40 @@ body.resizing .terminals { pointer-events: none; }
 .new-terminal:hover { color: var(--text); border-color: var(--accent); }
 .btn:focus-visible, .agent-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.slider { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 12px; color: var(--muted); }
-.slider input { grid-column: span 2; accent-color: var(--accent); }
-.settings { flex: none; }
+/* bottom docks of the sidebar (plan usage, font size) */
+.dock { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-top: 1px solid var(--line); }
+.dock.open { height: var(--dock-h, auto); }
+.dock-head {
+  flex: none; display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 16px; background: none; border: 0; cursor: pointer; text-align: left;
+  font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+}
+.dock-head:hover { color: var(--text); }
+.dock-head:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.dock-chev { font-size: 9px; width: 9px; transition: transform .12s; }
+.dock:not(.open) .dock-chev { transform: rotate(-90deg); }
+.dock-summary { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--text); }
+.dock-summary[data-level="mid"] { color: var(--busy); }
+.dock-summary[data-level="high"] { color: var(--err); }
+.dock-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 12px; }
+.dock:not(.open) .dock-body { display: none; }
+.dock-resizer { flex: none; height: 6px; margin: -3px 0; position: relative; z-index: 2; cursor: row-resize; }
+.dock-resizer::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 2px; height: 2px;
+  background: transparent; transition: background .12s;
+}
+.dock-resizer:hover::after, .dock-resizer.dragging::after { background: var(--accent); }
+.font-range { width: 100%; margin: 2px 0 0; accent-color: var(--accent); }
+.plan-bar { height: 6px; border-radius: 3px; background: rgba(125, 132, 148, .22); overflow: hidden; margin-top: 2px; }
+.plan-fill { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--ok); transition: width .3s; }
+.plan-bar[data-level="mid"] .plan-fill { background: var(--busy); }
+.plan-bar[data-level="high"] .plan-fill { background: var(--err); }
+.plan-reset { margin-top: 7px; font-size: 11.5px; }
+/* top bar: plan usage while the sidebar is collapsed */
+.plan-badge { display: none; font-size: 11.5px; color: var(--muted); }
+.app.collapsed .plan-badge:not([data-empty]) { display: inline; }
+.plan-badge[data-level="mid"] { color: var(--busy); }
+.plan-badge[data-level="high"] { color: var(--err); }
 
 /* terminals | Claude config, split vertically */
 .sidebar-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }

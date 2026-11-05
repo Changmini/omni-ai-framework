@@ -49,10 +49,30 @@
         </section>
       </div>
 
-      <section class="panel settings">
-        <label class="slider">글자 크기 <output id="font-size-value">14</output>
-          <input type="range" id="font-size" min="10" max="22" value="14">
-        </label>
+      <!-- Bottom docks: drag the border above one for its height; the title
+           closes it, and opens it again at its last height. -->
+      <div class="dock-resizer" data-dock="plan" role="separator" aria-orientation="horizontal"></div>
+      <section class="dock" id="dock-plan" data-dock="plan" aria-label="현재 세션 사용량">
+        <button class="dock-head" type="button">
+          <span class="dock-chev" aria-hidden="true">▾</span>
+          <span class="dock-title">현재 세션</span>
+          <span class="dock-summary" id="plan-summary">—</span>
+        </button>
+        <div class="dock-body">
+          <div class="plan-bar"><span class="plan-fill" id="plan-fill"></span></div>
+          <p class="hint plan-reset" id="plan-reset"></p>
+        </div>
+      </section>
+      <div class="dock-resizer" data-dock="font" role="separator" aria-orientation="horizontal"></div>
+      <section class="dock" id="dock-font" data-dock="font" aria-label="글자 크기">
+        <button class="dock-head" type="button">
+          <span class="dock-chev" aria-hidden="true">▾</span>
+          <span class="dock-title">글자 크기</span>
+          <output class="dock-summary" id="font-size-value">14</output>
+        </button>
+        <div class="dock-body">
+          <input type="range" id="font-size" class="font-range" min="10" max="22" value="14" aria-label="글자 크기">
+        </div>
       </section>
     </aside>
     <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical"
@@ -63,6 +83,7 @@
         <button id="sidebar-toggle" class="icon-btn" title="사이드바 접기/펴기 (Ctrl+Shift+B)" aria-label="사이드바 접기/펴기">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="6" y1="2.5" x2="6" y2="13.5" stroke="currentColor"/></svg>
         </button>
+        <span id="plan-badge" class="plan-badge" data-empty></span>
         <span id="active-led" class="led" data-status="none"></span>
         <span id="active-name" class="active-name"></span>
         <span id="active-cwd" class="muted ellipsis"></span>

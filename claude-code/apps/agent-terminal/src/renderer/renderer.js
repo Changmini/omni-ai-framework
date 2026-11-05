@@ -758,7 +758,9 @@ function openShortcutForm(sc) {
   f.newTerminal.checked = sc ? sc.newTerminal : true;
   scEls.form.hidden = false;
   renderShortcuts();
-  f.name.focus();
+  f.name.focus({ preventScroll: true });
+  // The whole form, down to its buttons, in view inside the shortcuts area.
+  scEls.form.scrollIntoView({ block: 'nearest' });
 }
 
 function closeShortcutForm() {
@@ -1162,6 +1164,115 @@ splitResizer.addEventListener('dblclick', () => { applySplit(null); saveSplit(nu
   if (saved === 'top' || saved === 'bottom') applySplit(saved);
   else if (Number(saved) > 0) applySplit(Number(saved));
 }
+
+// ---------- bottom docks: plan usage, font size ----------
+// Each dock has a title row and a body. Drag the border above a dock for its
+// height (dragging it down to the title closes it); click the title to close
+// it or to open it again at its last height; double-click the border for the
+// default height. Open state and height are remembered per dock.
+const DOCK_DEFAULT_H = { plan: 74, font: 66 };
+const DOCK_SNAP = 14; // body px below which a drag closes the dock
+const SPLIT_MIN_H = 140; // terminal list + shortcuts keep at least this
+
+function dockEl(name) { return document.getElementById(`dock-${name}`); }
+const dockHeadH = (el) => el.querySelector('.dock-head').offsetHeight;
+
+function setDock(name, open, h, save = true) {
+  const el = dockEl(name);
+  el.classList.toggle('open', open);
+  el.querySelector('.dock-head').setAttribute('aria-expanded', String(open));
+  if (h > 0) el.style.setProperty('--dock-h', `${Math.round(h)}px`);
+  if (save) {
+    writePref(`dock.${name}.open`, open);
+    if (h > 0) writePref(`dock.${name}.h`, Math.round(h));
+  }
+  requestAnimationFrame(fitActive);
+}
+
+const savedDockH = (name) => Number(readPref(`dock.${name}.h`, '')) || DOCK_DEFAULT_H[name];
+
+for (const el of document.querySelectorAll('.dock')) {
+  const name = el.dataset.dock;
+  el.querySelector('.dock-head').addEventListener('click', () => {
+    const open = !el.classList.contains('open');
+    setDock(name, open, open ? savedDockH(name) : 0);
+  });
+}
+for (const handle of document.querySelectorAll('.dock-resizer')) {
+  const name = handle.dataset.dock;
+  dragResize(handle, 'resizing-v', () => {
+    const el = dockEl(name);
+    handle.classList.add('dragging');
+    const bottom = el.getBoundingClientRect().bottom;
+    const head = dockHeadH(el);
+    const max = el.offsetHeight + split.offsetHeight - SPLIT_MIN_H;
+    const at = (ev) => {
+      const h = Math.min(max, bottom - ev.clientY);
+      return h < head + DOCK_SNAP ? null : h;
+    };
+    return {
+      move: (ev) => { const h = at(ev); setDock(name, h !== null, h || 0, false); },
+      end: (ev) => {
+        handle.classList.remove('dragging');
+        const h = at(ev);
+        setDock(name, h !== null, h || 0); // closing keeps the last height for reopening
+      },
+    };
+  });
+  handle.title = '끌어서 높이 조절 (끝까지 내리면 닫기) · 더블클릭: 기본 높이';
+  handle.addEventListener('dblclick', () => setDock(name, true, DOCK_DEFAULT_H[name]));
+}
+for (const name of Object.keys(DOCK_DEFAULT_H)) {
+  setDock(name, readPref(`dock.${name}.open`, 'true') === 'true', savedDockH(name), false);
+}
+
+// ---------- plan usage ----------
+// The claude.ai "current session" limit (5-hour window), reported through the
+// status line of claude in app terminals (plan-usage.js). Account-wide.
+const planEls = {
+  summary: $('#plan-summary'), bar: document.querySelector('.plan-bar'), fill: $('#plan-fill'),
+  reset: $('#plan-reset'), badge: $('#plan-badge'), dock: dockEl('plan'),
+};
+let planValue = null;
+
+function untilText(ms) {
+  const min = Math.max(1, Math.round(ms / 60000));
+  const hr = Math.floor(min / 60);
+  return hr ? `${hr}시간${min % 60 ? ` ${min % 60}분` : ''}` : `${min}분`;
+}
+
+function clockText(t) {
+  const d = new Date(t);
+  const hm = d.toTimeString().slice(0, 5);
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+function renderPlan() {
+  const now = Date.now();
+  const p = planValue;
+  const reset = Boolean(p && p.resetsAt && now >= p.resetsAt); // window over: starts again at 0
+  const pct = p ? (reset ? 0 : p.pct) : null;
+  const level = pct === null ? '' : contextLevel(pct);
+  planEls.summary.textContent = pct === null ? '—' : `${pct}%`;
+  planEls.summary.dataset.level = level;
+  planEls.bar.dataset.level = level;
+  planEls.fill.style.width = `${pct || 0}%`;
+  planEls.reset.textContent = !p ? '앱 터미널의 Claude가 응답하면 표시됩니다 (claude.ai 구독 요금제).'
+    : reset ? '초기화됨 · 다음 응답부터 다시 집계됩니다.'
+    : p.resetsAt ? `${clockText(p.resetsAt)} 초기화 (${untilText(p.resetsAt - now)} 뒤)` : '';
+  const tip = p ? `claude.ai 현재 세션(5시간) 한도 ${pct}% 사용 · ${clockText(p.at)}에 받은 값` : '현재 세션 사용량: 아직 값 없음';
+  planEls.dock.title = tip;
+  if (pct === null) planEls.badge.setAttribute('data-empty', '');
+  else planEls.badge.removeAttribute('data-empty');
+  planEls.badge.textContent = pct === null ? '' : `세션 ${pct}%`;
+  planEls.badge.dataset.level = level;
+  planEls.badge.title = tip;
+}
+
+setInterval(renderPlan, 30000);
+renderPlan();
+if (api.planUsage) api.planUsage().then((v) => { if (v) { planValue = v; renderPlan(); } }).catch(() => {});
+if (api.onPlanUsage) api.onPlanUsage((v) => { planValue = v; renderPlan(); });
 
 // ---------- terminal -> UI ----------
 
