@@ -32,6 +32,8 @@ const els = {
   activeCwd: $('#active-cwd'),
   activeStatus: $('#active-status'),
   banner: $('#error-banner'),
+  imeEnabled: $('#ime-enabled'),
+  imeToggle: $('#ime-toggle'),
 };
 
 const agents = new Map(); // id -> { info, term, fit, el, item }
@@ -82,8 +84,12 @@ function addAgent(info) {
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
+  const preedit = document.createElement('span');
+  preedit.className = 'preedit';
+  preedit.hidden = true;
+  el.appendChild(preedit);
   term.onData((data) => api.write(info.id, data));
-  term.attachCustomKeyEventHandler((e) => !isShortcut(e));
+  term.attachCustomKeyEventHandler((e) => !isShortcut(e) && !handleImeKey(info.id, e));
   term.onResize(({ cols, rows }) => api.resize(info.id, cols, rows));
   // The shell integration reports its folder before each prompt.
   term.parser.registerOscHandler(7, (data) => { api.reportCwd(info.id, 7, data); return true; });
@@ -116,7 +122,13 @@ function addAgent(info) {
   });
   els.list.appendChild(item);
 
-  agents.set(info.id, { info, term, fit, el, item });
+  agents.set(info.id, { info, term, fit, el, item, preedit });
+  // The shell echoes committed text after the composed syllable was drawn:
+  // follow the cursor so the syllable stays at the insertion point.
+  const follow = () => { if (composer.composing && activeId === info.id) drawPreedit(info.id); };
+  term.onCursorMove(follow);
+  term.onScroll(follow);
+  term.onResize(follow);
   renderItem(info.id);
   renderList();
 }
@@ -140,6 +152,7 @@ function removeAgent(id) {
 
 function select(id) {
   if (!agents.has(id)) return;
+  if (activeId && activeId !== id) commitComposition(activeId);
   activeId = id;
   for (const [aid, a] of agents) {
     const on = aid === id;
@@ -280,6 +293,122 @@ function applyFontSize(size) {
   writePref('fontSize', size);
 }
 els.fontSize.addEventListener('input', () => applyFontSize(Number(els.fontSize.value)));
+
+// ---------- built-in Hangul input ----------
+// Where no system input method reaches the app (Electron inside WSLg), the
+// app composes dubeolsik Hangul itself: letter keys go to the composer, the
+// syllable being composed is drawn over the cursor, and finished text is
+// written to the terminal. On by default on Linux only; Windows and macOS
+// have their own input methods.
+
+/* global HangulComposer */
+const composer = new HangulComposer();
+let imeEnabled = readPref('imeEnabled', String(api.platform === 'linux')) === 'true';
+let hangulMode = false;
+let altRightAlone = false;
+
+const isToggleKey = (e) =>
+  e.key === 'HangulMode' || e.code === 'Lang1' ||
+  (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey);
+
+function commitComposition(id) {
+  if (!composer.composing) return;
+  const text = composer.flush();
+  if (id && agents.has(id)) api.write(id, text);
+  drawPreedit(id);
+}
+
+function drawPreedit(id) {
+  const a = agents.get(id);
+  if (!a) return;
+  const text = composer.composing ? composer.preedit : '';
+  a.preedit.hidden = !text;
+  if (!text) return;
+  const screen = a.el.querySelector('.xterm-screen');
+  if (!screen) return;
+  const sr = screen.getBoundingClientRect();
+  const er = a.el.getBoundingClientRect();
+  const cw = sr.width / a.term.cols;
+  const ch = sr.height / a.term.rows;
+  const buf = a.term.buffer.active;
+  const row = buf.cursorY + (buf.baseY - buf.viewportY);
+  Object.assign(a.preedit.style, {
+    left: `${sr.left - er.left + buf.cursorX * cw}px`,
+    top: `${sr.top - er.top + row * ch}px`,
+    height: `${ch}px`,
+    lineHeight: `${ch}px`,
+    fontSize: `${a.term.options.fontSize}px`,
+  });
+  a.preedit.textContent = text;
+}
+
+function setHangulMode(on) {
+  if (!on) commitComposition(activeId);
+  hangulMode = on;
+  renderIme();
+}
+
+function renderIme() {
+  els.imeEnabled.checked = imeEnabled;
+  els.imeToggle.hidden = !imeEnabled;
+  els.imeToggle.textContent = hangulMode ? '한' : 'A';
+  els.imeToggle.classList.toggle('on', hangulMode);
+}
+
+// Returns true when the key was used here and xterm must ignore it.
+function handleImeKey(id, e) {
+  if (!imeEnabled || e.isComposing || e.keyCode === 229) return false; // a system IME is active
+  const down = e.type === 'keydown';
+
+  // 한/영: the Hangul key, Shift+Space, or Right Alt pressed and released alone
+  // (Korean keyboards often send Right Alt for 한/영).
+  if (isToggleKey(e)) {
+    if (down && !e.repeat) setHangulMode(!hangulMode);
+    e.preventDefault(); // no keypress/input event, so no stray space
+    return true;
+  }
+  if (e.code === 'AltRight') {
+    if (down) altRightAlone = true;
+    else if (e.type === 'keyup' && altRightAlone) { altRightAlone = false; setHangulMode(!hangulMode); }
+    return true;
+  }
+  if (down) altRightAlone = false;
+
+  if (!hangulMode) return false;
+  if (e.ctrlKey || e.altKey || e.metaKey) {
+    if (down) commitComposition(id);
+    return false;
+  }
+  const letter = e.key.length === 1 && /[a-zA-Z]/.test(e.key);
+  if (!down) return letter && e.type === 'keypress'; // the keypress of a handled letter
+  if (letter) {
+    e.preventDefault(); // keep the browser from also inserting the Latin letter
+    const r = composer.feed(e.key);
+    if (r.commit) api.write(id, r.commit);
+    drawPreedit(id);
+    return true;
+  }
+  if (e.key === 'Backspace' && composer.backspace()) {
+    e.preventDefault();
+    drawPreedit(id);
+    return true;
+  }
+  if (e.key === 'Escape' && composer.composing) { composer.reset(); drawPreedit(id); return false; }
+  commitComposition(id); // any other key ends the syllable, then goes through
+  return false;
+}
+
+els.imeToggle.addEventListener('click', () => {
+  setHangulMode(!hangulMode);
+  agents.get(activeId)?.term.focus();
+});
+els.imeEnabled.addEventListener('change', () => {
+  imeEnabled = els.imeEnabled.checked;
+  writePref('imeEnabled', imeEnabled);
+  if (!imeEnabled) setHangulMode(false);
+  renderIme();
+});
+renderIme();
 
 // ---------- terminal -> UI ----------
 
