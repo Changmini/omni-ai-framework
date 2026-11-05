@@ -278,6 +278,7 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 
 .error-banner[data-kind="waiting"] { background: #2b2116; color: #ffcf9e; border-bottom-color: #4d3518; }
 .error-banner {
+  cursor: pointer;
   background: #2a1a1e;
   color: #ffb3ba;
   border-bottom: 1px solid #4a2228;
