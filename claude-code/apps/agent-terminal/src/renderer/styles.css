@@ -100,6 +100,12 @@ body {
 .agent-claude[data-status="waiting"] { color: var(--wait); }
 .agent-claude[data-status="idle"] { color: var(--ok); }
 .agent-claude[data-status="error"] { color: var(--err); }
+.rename {
+  width: 100%; padding: 1px 4px; margin: -2px 0 -1px -5px;
+  font: 600 13px var(--mono); color: #fff;
+  background: var(--bg); border: 1px solid var(--accent); border-radius: 4px;
+}
+.active-name { cursor: text; }
 .agent-close {
   background: none; border: 0; color: var(--muted);
   font: inherit; cursor: pointer; padding: 2px 4px; border-radius: 4px;
