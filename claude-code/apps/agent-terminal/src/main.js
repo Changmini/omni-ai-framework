@@ -58,7 +58,7 @@ function registerIpc() {
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
   ipcMain.on('session:cwd', (_e, id, kind, data) => {
     const d = str(data, 4000);
-    if (d !== null && (kind === 7 || kind === 9)) manager.setCwd(str(id, 20), parseCwdReport(kind, d));
+    if (d !== null && (kind === 7 || kind === 9)) manager.setCwd(str(id, 20), parseCwdReport(kind, d), true);
   });
   ipcMain.handle('dialog:pickFolder', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
@@ -92,22 +92,27 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
 }
 
-// One app instance: the hooks settings file and its port belong to it.
-if (!app.requestSingleInstanceLock()) app.quit();
+// One app instance. A second launch only focuses the first window and does
+// nothing else: app.quit() is asynchronous, so without this guard the second
+// process would still start a hook server and write its own settings file.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
 app.on('second-instance', () => {
   if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
 });
 
 let hooks = null;
+let settingsFile = null;
 
-app.whenReady().then(async () => {
+if (primaryInstance) app.whenReady().then(async () => {
   // Claude Code hooks for app terminals only: a local receiver plus a settings
   // file that the shell integration passes to claude with --settings.
   hooks = await startHookServer({
     onEvent: (id, ev, meta) => manager && manager.onHookEvent(id, ev, meta),
     onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
   });
-  const settingsFile = path.join(app.getPath('userData'), 'claude-hooks.json');
+  // Per process, so no other instance can ever overwrite the port in it.
+  settingsFile = path.join(app.getPath('userData'), `claude-hooks-${process.pid}.json`);
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
   fs.writeFileSync(settingsFile, JSON.stringify(buildClaudeSettings(hooks.port), null, 2));
 
@@ -145,6 +150,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   if (manager) manager.killAll();
   if (hooks) hooks.close();
+  if (settingsFile) { try { fs.unlinkSync(settingsFile); } catch { /* already gone */ } }
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

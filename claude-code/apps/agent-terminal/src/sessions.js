@@ -5,7 +5,8 @@ const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
 
-const TEAM_POLL_EVERY = 4; // status polls between team/task file reads
+const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
+const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
 
 // Owns one PTY per terminal plus what Claude reports from inside it.
 // `spawn` is node-pty's spawn (injected for tests); `emit(channel, payload)`
@@ -70,6 +71,8 @@ class SessionManager {
       claude: emptyState(), // the terminal's main claude session
       primarySid: null,
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
+      teammateSids: new Set(), // sessions known to be split-pane teammates
+      teamReadAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
       tasks: null,
@@ -86,6 +89,8 @@ class SessionManager {
       session.claude = emptyState();
       session.primarySid = null;
       session.others.clear();
+      session.team = null;
+      session.tasks = null;
       this.emit('session:exit', { id, exitCode });
       this.pollStatus();
       this.emitAgent(session);
@@ -121,7 +126,7 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s || typeof cwd !== 'string' || !cwd) return;
     s.wsl = wslDistro ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
-    this.setCwd(id, cwd);
+    this.setCwd(id, cwd, true);
   }
 
   // Where this host can read a path the shell or Claude reported.
@@ -130,9 +135,14 @@ class SessionManager {
   }
 
   // The shell reported its folder (prompt integration) or Claude's hook did.
-  setCwd(id, dir) {
+  // The git branch is looked up only when the folder changed or `recheck` is
+  // set (shell prompt, end of a Claude turn): hook events arrive many times a
+  // turn, and for WSL every lookup is synchronous I/O over \\wsl.localhost
+  // on the main process.
+  setCwd(id, dir, recheck = false) {
     const s = this.sessions.get(id);
     if (!s || !dir) return;
+    if (!recheck && dir === s.cwd) return;
     const branch = this.gitBranch(this.hostPath(s, dir));
     if (dir === s.cwd && branch === s.branch) return;
     s.cwd = dir;
@@ -181,17 +191,24 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s) return;
     const sid = ev.session_id || '';
-    // Several claude sessions can report into one terminal through tmux: the
-    // first that is not a teammate is the main one (LED, banner); the others,
-    // e.g. split-pane teammates, which arrive as their own sessions carrying
-    // agent_type but no agent_id (seen on 2.1.318), are listed beside it.
-    const teammateSession = Boolean(ev.agent_type && !ev.agent_id);
-    if (sid && sid !== s.primarySid && (s.primarySid || teammateSession)) {
-      this.onOtherSession(s, sid, ev, meta, teammateSession);
+    // Several claude sessions can report into one terminal through tmux. The
+    // first one is the main session (LED, banner); later ones are listed
+    // beside it. A split-pane teammate is its own session, recognised by a
+    // TeammateIdle without agent_id (seen on 2.1.318). agent_type alone is not
+    // enough: `claude --agent <name>` sets it on a main session too.
+    if (sid && ev.hook_event_name === 'TeammateIdle' && !ev.agent_id) {
+      s.teammateSids.add(sid);
+      if (sid === s.primarySid) this.demotePrimary(s, meta);
+    }
+    if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
+      this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
       this.emitAgent(s);
       return;
     }
-    if (sid && !s.primarySid) s.primarySid = sid;
+    if (sid && !s.primarySid) {
+      s.primarySid = sid;
+      s.others.delete(sid); // was listed beside the previous main session
+    }
     s.claude = reduce(s.claude, ev, this.now());
     if (ev.hook_event_name === 'SessionEnd') {
       s.team = null;
@@ -204,8 +221,20 @@ class SessionManager {
     }
     if (/^(Task|Teammate|Subagent)/.test(ev.hook_event_name || '')) this.refreshTeam(s);
     if (ev.cwd) this.setCwd(id, ev.cwd);
-    if (ev.hook_event_name === 'Stop') this.setCwd(id, s.cwd); // branch may have changed
+    if (ev.hook_event_name === 'Stop') this.setCwd(id, s.cwd, true); // branch may have changed
     this.emitAgent(s);
+  }
+
+  // The main session turned out to be a teammate (e.g. the app was opened
+  // while a split-pane team was already running): list it beside instead.
+  demotePrimary(s, meta) {
+    s.others.set(s.primarySid, {
+      state: s.claude, pane: meta.pane || null, teammate: true, name: null, type: s.claude.agentType || null,
+    });
+    s.claude = emptyState();
+    s.primarySid = null;
+    s.team = null;
+    s.tasks = null;
   }
 
   onOtherSession(s, sid, ev, meta, teammateSession) {
@@ -222,6 +251,7 @@ class SessionManager {
   }
 
   refreshTeam(s) {
+    s.teamReadAt = this.now();
     const sid = s.claude.sessionId;
     // Claude inside WSL keeps its files under the Linux home.
     const base = s.wsl && s.wsl.home ? wslToWindows(`${s.wsl.home.replace(/\/$/, '')}/.claude`, s.wsl.distro) : undefined;
@@ -302,7 +332,10 @@ class SessionManager {
         s.lastStatus = key;
         this.emit('session:status', { id: s.id, status, error: s.tracker.error });
       }
-      if (readFiles && s.claude.status) {
+      // Team and task files change with Claude's activity: re-read them only
+      // after new events, or now and then while it runs.
+      const stale = s.claude.updatedAt > s.teamReadAt || this.now() - s.teamReadAt > TEAM_IDLE_REREAD_MS;
+      if (readFiles && s.claude.status && stale) {
         this.refreshTeam(s);
         this.emitAgent(s);
       }
