@@ -4,8 +4,13 @@
 [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
-  claude() { command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
+  # OMNI_HOOKED tells the tmux hook (claude-hook.sh) this claude already reports.
+  claude() { OMNI_HOOKED=1 command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
 fi
+
+# One-time setup so claude inside tmux reports too (see omni-tmux-setup.sh).
+__omni_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+omni-tmux-setup() { bash "$__omni_dir/omni-tmux-setup.sh" "$@"; }
 
 __omni_json() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 
