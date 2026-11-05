@@ -105,6 +105,17 @@ body {
   border-left: 1px solid var(--line); padding-left: 10px; margin-left: -6px;
 }
 .child-name { color: var(--text); }
+/* context usage: thin bar on the card, % on teammate rows */
+.ctx { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 10.5px; color: var(--muted); }
+.ctx[hidden] { display: none; }
+.ctx-bar { flex: 1; max-width: 110px; height: 4px; border-radius: 2px; background: rgba(125, 132, 148, .22); overflow: hidden; }
+.ctx-fill { display: block; height: 100%; border-radius: 2px; background: var(--ok); transition: width .3s; }
+.ctx[data-level="mid"] .ctx-fill { background: var(--busy); }
+.ctx[data-level="high"] .ctx-fill { background: var(--err); }
+.ctx[data-level="high"] .ctx-text { color: var(--err); }
+.child-ctx { margin-left: 4px; font-size: 10px; }
+.child-ctx[data-level="mid"] { color: var(--busy); }
+.child-ctx[data-level="high"] { color: var(--err); }
 .child.focusable, .agent-claude.focusable { cursor: pointer; }
 .child.focusable:hover .child-name, .agent-claude.focusable:hover { text-decoration: underline; text-underline-offset: 2px; }
 .agent.focus-failed { animation: shake .3s; }

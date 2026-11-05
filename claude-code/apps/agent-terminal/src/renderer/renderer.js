@@ -165,6 +165,7 @@ function addAgent(info) {
         <div class="agent-name ellipsis"></div>
         <div class="agent-sub ellipsis"></div>
         <div class="agent-claude ellipsis"></div>
+        <div class="ctx" hidden><span class="ctx-bar"><span class="ctx-fill"></span></span><span class="ctx-text"></span></div>
       </span>
       <button class="agent-close" title="터미널 닫기 (Ctrl+Shift+W)" aria-label="터미널 닫기">✕</button>
     </div>
@@ -280,6 +281,21 @@ function shellError(info) {
   return info.error;
 }
 
+// ---------- context usage ----------
+const contextLevel = (pct) => (pct >= 85 ? 'high' : pct >= 60 ? 'mid' : 'low');
+const kTokens = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`);
+const contextTitle = (ctx) => `컨텍스트 ${kTokens(ctx.tokens)} / ${kTokens(ctx.window)} (${ctx.pct}%)`
+  + `${ctx.model ? ` · ${ctx.model}` : ''}\n창 크기는 추정값입니다: 200k, 넘으면 1M으로 봅니다.`;
+
+function renderContext(box, ctx) {
+  box.hidden = !ctx;
+  if (!ctx) return;
+  box.dataset.level = contextLevel(ctx.pct);
+  box.querySelector('.ctx-fill').style.width = `${ctx.pct}%`;
+  box.querySelector('.ctx-text').textContent = `${ctx.pct}% · ${kTokens(ctx.tokens)}`;
+  box.title = contextTitle(ctx);
+}
+
 function claudeSummary(c) {
   if (!c || !c.status) return '';
   if (c.status === 'working' && c.tool) return `Claude · ${c.tool} 실행 중`;
@@ -305,6 +321,7 @@ function renderItem(id) {
   claudeLine.textContent = claudeSummary(c);
   claudeLine.dataset.status = c.status || '';
   claudeLine.classList.toggle('focusable', Boolean(c.focusable));
+  renderContext(item.querySelector('.ctx'), c.context);
   claudeLine.title = c.focusable ? '클릭: 이 Claude의 tmux 창으로 이동' : '';
   item.title = info.cwd;
 
@@ -315,12 +332,15 @@ function renderItem(id) {
     const led = h('span', 'led small');
     led.dataset.status = ag.status || 'working';
     const kind = ag.teammate ? '팀원' : '서브에이전트';
-    li.append(
-      led,
-      h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'),
-      h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind),
-    );
-    li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ');
+    const meta = h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind);
+    if (ag.context) {
+      const pct = h('span', 'child-ctx', ` ${ag.context.pct}%`);
+      pct.dataset.level = contextLevel(ag.context.pct);
+      meta.append(pct);
+    }
+    li.append(led, h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'), meta);
+    li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ')
+      + (ag.context ? `\n${contextTitle(ag.context)}` : '');
     if (ag.focusable) {
       // Split-pane teammate: jump to its tmux pane.
       li.classList.add('focusable');

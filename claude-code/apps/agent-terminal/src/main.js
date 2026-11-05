@@ -13,6 +13,7 @@ const { gitBranch } = require('./git');
 const { readTeam, readTasks, claudeDir } = require('./teams');
 const { scanClaudeConfig } = require('./claude-config');
 const { runTmux } = require('./tmux');
+const { readContextUsage } = require('./usage');
 
 let win = null;
 let manager = null;
@@ -136,6 +137,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     gitBranch,
     scanConfig: scanClaudeConfig,
     runTmux,
+    readUsage: readContextUsage,
     claudePaths: {
       dir: claudeDir(),
       json: process.env.CLAUDE_CONFIG_DIR

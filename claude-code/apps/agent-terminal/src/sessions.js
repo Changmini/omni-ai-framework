@@ -7,6 +7,7 @@ const { wslToWindows } = require('./wsl');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
+const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
 
 // Owns one PTY per terminal plus what Claude reports from inside it.
 // `spawn` is node-pty's spawn (injected for tests); `emit(channel, payload)`
@@ -25,6 +26,7 @@ class SessionManager {
     scanConfig = () => null,
     claudePaths = { dir: null, json: null },
     runTmux = () => Promise.resolve(false),
+    readUsage = () => Promise.resolve(null),
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -36,6 +38,7 @@ class SessionManager {
     this.gitBranch = gitBranch;
     this.scanConfig = scanConfig;
     this.runTmux = runTmux;
+    this.readUsage = readUsage;
     this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
@@ -75,6 +78,7 @@ class SessionManager {
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       teammateSids: new Set(), // sessions known to be split-pane teammates
       tmuxSocket: null, // from claude-hook.sh, to select a pane on click
+      usage: new Map(), // session_id -> { tokens, window, pct, model, readAt, pending }
       primaryPane: null,
       teamReadAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
@@ -95,6 +99,7 @@ class SessionManager {
       session.others.clear();
       session.team = null;
       session.tasks = null;
+      session.usage.clear();
       this.emit('session:exit', { id, exitCode });
       this.pollStatus();
       this.emitAgent(session);
@@ -196,6 +201,7 @@ class SessionManager {
     if (!s) return;
     const sid = ev.session_id || '';
     if (meta.socket) s.tmuxSocket = meta.socket;
+    if (sid && ev.transcript_path && !ev.agent_id) this.scheduleUsage(s, sid, ev.transcript_path, ev.hook_event_name);
     // Several claude sessions can report into one terminal through tmux. The
     // first one is the main session (LED, banner); later ones are listed
     // beside it. A split-pane teammate is its own session, recognised by a
@@ -217,6 +223,7 @@ class SessionManager {
     if (meta.pane) s.primaryPane = meta.pane;
     s.claude = reduce(s.claude, ev, this.now());
     if (ev.hook_event_name === 'SessionEnd') {
+      s.usage.delete(sid);
       s.team = null;
       s.tasks = null;
       s.primarySid = null;
@@ -232,6 +239,29 @@ class SessionManager {
     this.emitAgent(s);
   }
 
+  // Context usage from the session's transcript: read asynchronously, at most
+  // every USAGE_MIN_MS per session (always at the end of a turn), then the
+  // sidebar is updated.
+  scheduleUsage(s, sid, transcript, eventName) {
+    const prev = s.usage.get(sid) || { readAt: -Infinity, pending: false }; // never read yet
+    const due = eventName === 'Stop' || eventName === 'SessionStart' || this.now() - prev.readAt >= USAGE_MIN_MS;
+    if (prev.pending || !due) return;
+    s.usage.set(sid, { ...prev, pending: true, readAt: this.now() });
+    Promise.resolve(this.readUsage(this.hostPath(s, transcript)))
+      .catch(() => null)
+      .then((u) => {
+        if (!this.sessions.has(s.id)) return;
+        const cur = s.usage.get(sid) || {};
+        s.usage.set(sid, { ...cur, ...(u || {}), pending: false });
+        this.emitAgent(s);
+      });
+  }
+
+  contextOf(s, sid) {
+    const u = sid && s.usage.get(sid);
+    return u && u.tokens ? { tokens: u.tokens, window: u.window, pct: u.pct, model: u.model || null } : null;
+  }
+
   // The main session turned out to be a teammate (e.g. the app was opened
   // while a split-pane team was already running): list it beside instead.
   demotePrimary(s, meta) {
@@ -245,7 +275,7 @@ class SessionManager {
   }
 
   onOtherSession(s, sid, ev, meta, teammateSession) {
-    if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); return; }
+    if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); s.usage.delete(sid); return; }
     const prev = s.others.get(sid) || { state: emptyState(), name: null, teammate: false, pane: null };
     const title = /^@\S/.test(meta.title || '') ? meta.title.slice(1) : null; // "@planner"
     s.others.set(sid, {
@@ -275,6 +305,7 @@ class SessionManager {
       tool: o.state.tool,
       teammate: o.teammate,
       focusable: Boolean(o.pane && s.tmuxSocket),
+      context: this.contextOf(s, sid),
     }));
     // Teammates already listed as their own sessions are not repeated from the config.
     const names = new Set(others.map((o) => o.name));
@@ -290,6 +321,7 @@ class SessionManager {
       agents: [...Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })), ...others],
       tasks: s.tasks,
       focusable: Boolean(view.status && s.primaryPane && s.tmuxSocket),
+      context: view.status ? this.contextOf(s, s.primarySid) : null,
     };
   }
 
