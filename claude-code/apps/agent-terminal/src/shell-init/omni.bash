@@ -22,9 +22,20 @@ fi
 
 [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 
+# The user's own statusLine command: the app's settings replace the status
+# line (to report plan usage) and run this one after it.
+__omni_user_statusline() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 "$__omni_dir/user-statusline.py" "$PWD/.claude/settings.local.json" "$PWD/.claude/settings.json" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null
+}
+
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
   # OMNI_HOOKED tells the tmux hook (claude-hook.sh) this claude already reports.
-  claude() { OMNI_HOOKED=1 command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"; }
+  claude() {
+    OMNI_USER_STATUSLINE="$(__omni_user_statusline)" OMNI_HOOKED=1 \
+      command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"
+  }
 fi
 
 # Manual run of the same setup (e.g. --remove).

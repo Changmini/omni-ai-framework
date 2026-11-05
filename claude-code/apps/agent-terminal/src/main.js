@@ -14,9 +14,11 @@ const { readTeam, readTasks, claudeDir } = require('./teams');
 const { scanClaudeConfig } = require('./claude-config');
 const { runTmux } = require('./tmux');
 const { readContextUsage } = require('./usage');
+const { PlanUsage } = require('./plan-usage');
 
 let win = null;
 let manager = null;
+let plan = null;
 
 const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -36,6 +38,7 @@ function registerIpc() {
     }),
   );
   ipcMain.handle('session:list', () => manager.list());
+  ipcMain.handle('plan:get', () => plan.get());
   ipcMain.handle('session:kill', (_e, id) => manager.kill(str(id, 20)));
   ipcMain.handle('session:sendLine', (_e, id, text) => manager.sendLine(str(id, 20), str(text) ?? ''));
   ipcMain.on('session:write', (_e, id, data) => {
@@ -131,7 +134,9 @@ if (primaryInstance) app.whenReady().then(async () => {
   hooks = await startHookServer({
     onEvent: (id, ev, meta) => manager && manager.onHookEvent(id, ev, meta),
     onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
+    onStatusLine: (_id, data) => plan && plan.report(data),
   });
+  plan = new PlanUsage({ emit: send });
   // Per process, so no other instance can ever overwrite the port in it.
   settingsFile = path.join(app.getPath('userData'), `claude-hooks-${process.pid}.json`);
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });

@@ -30,14 +30,15 @@ function salvage(head) {
 // Receives, on 127.0.0.1:
 //   POST /hook - Claude Code HTTP hooks (type "http" POSTs the event JSON)
 //   POST /cwd  - {"cwd", "wslDistro"?, "home"?} from the app's shell integration
+//   POST /status - the status line input (claude-settings.js), for plan usage
 // Requests must carry the per-run token; the terminal id header says which
 // terminal sent them.
-function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
+function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
   const server = http.createServer((req, res) => {
     // Always answer 2xx with an empty body: hooks then neither block nor
     // change any decision (PermissionRequest, TaskCompleted, ...).
     const done = (code) => { res.writeHead(code); res.end(); };
-    if (req.method !== 'POST' || (req.url !== '/hook' && req.url !== '/cwd')) return done(404);
+    if (req.method !== 'POST' || !['/hook', '/cwd', '/status'].includes(req.url)) return done(404);
     if (req.headers['x-omni-token'] !== token) return done(403);
     const terminalId = String(req.headers['x-omni-terminal'] || '');
     let size = 0;
@@ -61,6 +62,8 @@ function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes
       if (!ev || typeof ev !== 'object') return;
       if (req.url === '/cwd') {
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
+      } else if (req.url === '/status') {
+        onStatusLine(terminalId, ev);
       } else if (ev.omni && ev.event && typeof ev.event === 'object') {
         // From claude-hook.sh (tmux): { omni: { pane, title }, event }
         const meta = { pane: String(ev.omni.pane || ''), title: String(ev.omni.title || ''), socket: String(ev.omni.socket || '') };
