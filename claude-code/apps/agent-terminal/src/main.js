@@ -87,7 +87,10 @@ let hooks = null;
 app.whenReady().then(async () => {
   // Claude Code hooks for app terminals only: a local receiver plus a settings
   // file that the shell integration passes to claude with --settings.
-  hooks = await startHookServer({ onEvent: (id, ev) => manager && manager.onHookEvent(id, ev) });
+  hooks = await startHookServer({
+    onEvent: (id, ev) => manager && manager.onHookEvent(id, ev),
+    onCwd: (id, dir) => manager && manager.setCwd(id, dir),
+  });
   const settingsFile = path.join(app.getPath('userData'), 'claude-hooks.json');
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
   fs.writeFileSync(settingsFile, JSON.stringify(buildClaudeSettings(hooks.port), null, 2));
@@ -96,7 +99,7 @@ app.whenReady().then(async () => {
     spawn: pty.spawn,
     emit: send,
     shell: shellLaunch(),
-    extraEnv: { OMNI_CLAUDE_SETTINGS: settingsFile, OMNI_HOOK_TOKEN: hooks.token },
+    extraEnv: { OMNI_CLAUDE_SETTINGS: settingsFile, OMNI_HOOK_TOKEN: hooks.token, OMNI_CWD_URL: hooks.cwdUrl },
     readTeam,
     readTasks,
     gitBranch,

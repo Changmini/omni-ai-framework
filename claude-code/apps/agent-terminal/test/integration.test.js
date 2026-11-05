@@ -12,14 +12,19 @@ const { readTeam, readTasks } = require('../src/teams');
 
 test('hook server accepts only token-bearing POSTs and passes the terminal id', async () => {
   const got = [];
-  const srv = await startHookServer({ onEvent: (id, ev) => got.push([id, ev.hook_event_name]), token: 'tok' });
-  const post = (headers, body = '{"hook_event_name":"Stop"}') =>
-    fetch(`http://127.0.0.1:${srv.port}/hook`, { method: 'POST', headers, body }).then(async (r) => [r.status, await r.text()]);
+  const cwds = [];
+  const srv = await startHookServer({ onEvent: (id, ev) => got.push([id, ev.hook_event_name]), onCwd: (id, d) => cwds.push([id, d]), token: 'tok' });
+  const post = (headers, body = '{"hook_event_name":"Stop"}', route = 'hook') =>
+    fetch(`http://127.0.0.1:${srv.port}/${route}`, { method: 'POST', headers, body }).then(async (r) => [r.status, await r.text()]);
   try {
     assert.deepStrictEqual(await post({ 'x-omni-token': 'tok', 'x-omni-terminal': '3' }), [200, '']);
     assert.deepStrictEqual(await post({ 'x-omni-token': 'bad', 'x-omni-terminal': '3' }), [403, '']);
     assert.deepStrictEqual(await post({ 'x-omni-token': 'tok', 'x-omni-terminal': '3' }, 'not json'), [200, '']);
     assert.deepStrictEqual(got, [['3', 'Stop']]);
+    assert.deepStrictEqual(await post({ 'x-omni-token': 'tok', 'x-omni-terminal': '3' }, '{"cwd":"C:\\\\work\\\\proj"}', 'cwd'), [200, '']);
+    assert.deepStrictEqual(await post({ 'x-omni-token': 'bad', 'x-omni-terminal': '3' }, '{"cwd":"/x"}', 'cwd'), [403, '']);
+    assert.deepStrictEqual(cwds, [['3', 'C:\\work\\proj']]);
+    assert.strictEqual(srv.cwdUrl, `http://127.0.0.1:${srv.port}/cwd`);
   } finally { srv.close(); }
 });
 
@@ -37,6 +42,7 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   const script = Buffer.from(ps.args.at(-1), 'base64').toString('utf16le');
   assert.match(script, /function global:claude/);
   assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS/);
+  assert.match(script, /OMNI_CWD_URL/);
   assert.deepStrictEqual(shellLaunch('linux', { SHELL: '/bin/bash' }).args.slice(0, 1), ['--rcfile']);
   assert.match(shellLaunch('darwin', { SHELL: '/bin/zsh' }).env.ZDOTDIR, /shell-init[\\/]zsh$/);
 });
