@@ -124,7 +124,8 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 
 **설정은 자동입니다.** 앱 터미널의 bash(Linux 앱, 또는 Windows 앱에서 `wsl`로 들어간 bash)가 시작될 때 tmux가 설치돼 있으면, 필요한 훅을 알아서 설치하고 처음 한 번만 안내를 띄웁니다. 이미 최신이면 아무것도 하지 않습니다.
 - **적용 시점:** 설정 전에 이미 실행 중이던 `claude`는 다시 시작해야 적용됩니다(`claude --continue`로 대화 유지).
-- **설치 내용:** 훅 스크립트를 `~/.local/share/omni-agent-terminal/claude-hook.sh`에 복사하고, Claude 사용자 설정(`~/.claude/settings.json`)에 command 훅으로 추가합니다. 기존 설정은 `settings.json.omni-backup-<시각>`으로 백업하고, 다른 설정과 훅은 건드리지 않습니다.
+- **설치 내용:** 훅 스크립트(`claude-hook.sh`)와 상태 줄 스크립트(`claude-statusline.sh`)를 `~/.local/share/omni-agent-terminal/`에 복사하고, Claude 사용자 설정(`~/.claude/settings.json`)에 command 훅과 `statusLine`으로 추가합니다. 기존 설정은 `settings.json.omni-backup-<시각>`으로 백업하고, 다른 설정과 훅은 건드리지 않습니다.
+- **상태 줄:** 원래 쓰던 `statusLine`은 같은 폴더(`statusline-orig.json`)에 보관하고, 앱 상태 줄 스크립트가 같은 입력으로 실행해 그 출력을 그대로 보여 줍니다. `padding`·`refreshInterval`도 유지합니다. 설정 뒤에 상태 줄을 바꾸면 다음 자동 설정 때 새 것을 보관하고 다시 감쌉니다. 제거하면 원래 상태 줄로 돌아갑니다.
 - **끄기·제거:** 자동 설정을 끄려면 `OMNI_NO_AUTO_SETUP=1`로 두세요. 제거는 앱 bash에서 `omni-tmux-setup --remove`(또는 `bash <앱 폴더>/src/shell-init/omni-tmux-setup.sh --remove`)입니다.
 - **창 분할 팀 표시:** 리더가 메인 LED를 쓰고, 각 창의 팀원은 그 아래 목록에 이름(`alpha`, `planner` 등)과 상태로 표시됩니다. 같은 tmux 세션에 다른 `claude`가 하나 더 있으면 `claude %5`처럼 따로 표시됩니다.
 - **창으로 이동:** 목록의 팀원을 클릭하면 앱이 그 tmux 서버에 `select-window`·`select-pane`을 보내 해당 창을 선택합니다(Windows 앱이면 셸을 거치지 않도록 `wsl.exe -d <배포판> -e tmux ...`). 이동할 수 없으면 카드가 잠깐 흔들립니다.
@@ -172,7 +173,8 @@ claude.ai `사용량` 화면의 `현재 세션`(5시간 한도)과 같은 값입
 - **조건:** claude.ai 구독(Pro·Max 등)으로 로그인한 `claude`이고, 앱 터미널에서 Claude가 한 번 이상 응답한 뒤부터 표시됩니다. API 키로 쓰면 값이 오지 않습니다.
 - **갱신:** 앱 터미널의 Claude가 응답할 때마다 갱신됩니다. 계정 전체 값이라 어느 터미널에서 받은 값이든 같은 칸에 보입니다. 다른 곳(웹, 다른 PC)에서 쓴 양은 다음 응답 때 반영됩니다. 초기화 시각이 지나면 `0%`·`초기화됨`으로 바뀝니다.
 - **동작 방식:** 앱이 `--settings`로 넘기는 설정에 상태 줄 명령이 들어 있습니다. 이 명령은 받은 정보를 앱(`127.0.0.1`, 실행마다 새 토큰)으로 보낸 뒤, **사용자가 원래 쓰던 상태 줄 명령**(로컬 → 프로젝트 → 사용자 설정 순으로 찾은 `statusLine.command`)을 같은 입력으로 실행해 그 결과를 그대로 보여 줍니다. 원래 상태 줄의 `padding`·`refreshInterval`은 적용되지 않습니다. bash·zsh에서는 원래 명령을 찾는 데 `python3`가 필요합니다.
-- **tmux:** tmux 안에서 직접 실행한 `claude`는 이 설정을 받지 않습니다. 값은 계정 공통이라 앱 터미널 하나에서만 받아도 됩니다.
+- **tmux:** tmux 안에서 실행한 `claude`는 tmux 자동 설정이 사용자 설정에 넣은 상태 줄(`claude-statusline.sh`)로 보냅니다. 훅과 같은 방식으로 이 tmux 세션을 띄운 앱 터미널을 찾습니다(아래 "tmux 안에서 쓰기"). 프로젝트 설정에 자체 `statusLine`이 있으면 그쪽이 우선이라 그 프로젝트의 Claude에서는 값이 오지 않습니다.
+- **tmux에서 확인한 범위:** 실제 Claude Code 2.1.318을 앱 변수가 없는 tmux 세션에서 실행하고 앱 클라이언트를 붙였을 때, 첫 응답 뒤 `rate_limits`가 앱에 도착하고 원래 상태 줄이 유지되는 것을 확인했습니다(설치된 설정을 `--settings`로 넘겨 확인).
 - **확인한 범위:** Linux에서 실제 Claude Code 2.1.318로 상태 줄 실행, 첫 응답 뒤 `rate_limits` 수신, 원래 상태 줄 유지를 확인했습니다. Windows의 PowerShell에서 실행한 `claude`는 상태 줄 명령을 Git Bash로 실행한다고 보고 bash 문법으로 작성했지만, 아직 확인하지 못했습니다.
 
 ## 활동 기록과 컨텍스트
