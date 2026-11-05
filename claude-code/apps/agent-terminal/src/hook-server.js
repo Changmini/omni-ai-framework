@@ -32,8 +32,12 @@ function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes
       if (!ev || typeof ev !== 'object' || !terminalId) return;
       if (req.url === '/cwd') {
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
+      } else if (ev.omni && ev.event && typeof ev.event === 'object') {
+        // From claude-hook.sh (tmux): { omni: { pane, title }, event }
+        const meta = { pane: String(ev.omni.pane || ''), title: String(ev.omni.title || '') };
+        onEvent(terminalId, ev.event, meta);
       } else {
-        onEvent(terminalId, ev);
+        onEvent(terminalId, ev, {});
       }
     });
   });

@@ -92,7 +92,7 @@ app.whenReady().then(async () => {
   // Claude Code hooks for app terminals only: a local receiver plus a settings
   // file that the shell integration passes to claude with --settings.
   hooks = await startHookServer({
-    onEvent: (id, ev) => manager && manager.onHookEvent(id, ev),
+    onEvent: (id, ev, meta) => manager && manager.onHookEvent(id, ev, meta),
     onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
   });
   const settingsFile = path.join(app.getPath('userData'), 'claude-hooks.json');

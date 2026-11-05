@@ -1,0 +1,217 @@
+[
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "UserPromptSubmit"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "Agent"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "Agent"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "Agent"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "Agent"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "ToolSearch"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "ToolSearch"
+  }
+ },
+ {
+  "pane": "%1",
+  "ev": {
+   "session_id": "3c0454ee-0b5d-4d28-b122-6bbb9f791f28",
+   "agent_type": "general-purpose",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "SendMessage"
+  }
+ },
+ {
+  "pane": "%1",
+  "ev": {
+   "session_id": "3c0454ee-0b5d-4d28-b122-6bbb9f791f28",
+   "agent_type": "general-purpose",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "SendMessage"
+  }
+ },
+ {
+  "pane": "%2",
+  "ev": {
+   "session_id": "b1ac49c9-b331-4fcb-933a-a2eaf342da1d",
+   "agent_type": "general-purpose",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "SendMessage"
+  }
+ },
+ {
+  "pane": "%2",
+  "ev": {
+   "session_id": "b1ac49c9-b331-4fcb-933a-a2eaf342da1d",
+   "agent_type": "general-purpose",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "SendMessage"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "Stop",
+   "background_tasks": [
+    {
+     "id": "te3qg6jt8",
+     "type": "teammate",
+     "status": "running",
+     "description": "Teammate alpha"
+    },
+    {
+     "id": "t2y7ild0v",
+     "type": "teammate",
+     "status": "running",
+     "description": "Teammate beta"
+    }
+   ]
+  }
+ },
+ {
+  "pane": "%1",
+  "ev": {
+   "session_id": "3c0454ee-0b5d-4d28-b122-6bbb9f791f28",
+   "agent_type": "general-purpose",
+   "hook_event_name": "Stop",
+   "background_tasks": []
+  }
+ },
+ {
+  "pane": "%1",
+  "ev": {
+   "session_id": "3c0454ee-0b5d-4d28-b122-6bbb9f791f28",
+   "agent_type": "general-purpose",
+   "hook_event_name": "TeammateIdle",
+   "teammate_name": "alpha"
+  }
+ },
+ {
+  "pane": "%2",
+  "ev": {
+   "session_id": "b1ac49c9-b331-4fcb-933a-a2eaf342da1d",
+   "agent_type": "general-purpose",
+   "hook_event_name": "Stop",
+   "background_tasks": []
+  }
+ },
+ {
+  "pane": "%2",
+  "ev": {
+   "session_id": "b1ac49c9-b331-4fcb-933a-a2eaf342da1d",
+   "agent_type": "general-purpose",
+   "hook_event_name": "TeammateIdle",
+   "teammate_name": "beta"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "TaskStop"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "TaskStop"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "agent_id": "a5889ceac09eb3395",
+   "agent_type": "",
+   "hook_event_name": "SubagentStop",
+   "background_tasks": [
+    {
+     "id": "t2y7ild0v",
+     "type": "teammate",
+     "status": "running",
+     "description": "Teammate beta"
+    }
+   ]
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PreToolUse",
+   "tool_name": "TaskStop"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "PostToolUse",
+   "tool_name": "TaskStop"
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "hook_event_name": "Stop",
+   "background_tasks": []
+  }
+ },
+ {
+  "pane": "%0",
+  "ev": {
+   "session_id": "f7461f6c-4fe3-4b07-9a3f-58ca5172b40d",
+   "agent_id": "a834f53ba82760dc5",
+   "agent_type": "",
+   "hook_event_name": "SubagentStop",
+   "background_tasks": []
+  }
+ }
+]
