@@ -180,7 +180,13 @@ body {
 }
 
 .terminals { position: relative; flex: 1; min-height: 0; }
-.term { position: absolute; inset: 0; padding: 10px 0 6px 14px; display: none; }
+.term {
+  position: absolute; inset: 0; padding: 10px 0 6px 14px; display: none;
+  /* FitAddon sizes rows from this element's computed height. With border-box
+     that height includes the padding and the last row ends up below the
+     visible area, so measure the content box only. */
+  box-sizing: content-box;
+}
 .term.active { display: block; }
 /* xterm draws on the same background as the page */
 .xterm, .xterm .xterm-viewport { background-color: var(--bg) !important; }
