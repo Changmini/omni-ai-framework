@@ -124,17 +124,28 @@ body.resizing .terminals { pointer-events: none; }
 }
 .icon-btn:hover { color: var(--text); background: var(--panel); border-color: var(--line); }
 .app.collapsed .icon-btn { color: var(--accent); }
-.shortcuts { margin-top: 14px; }
-.shortcuts h2 { display: flex; }
-.shortcut-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.shortcuts {
+  /* its own band: full-width divider and a slightly different background, so
+     launchers do not read as more terminals */
+  margin: 16px -16px -14px; padding: 12px 16px 14px;
+  border-top: 1px solid var(--line);
+  background: #191c24;
+}
+.shortcuts h2 { display: flex; align-items: baseline; }
+.shortcut-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .shortcut {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
-  padding: 6px 8px; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 5px 6px; border-radius: var(--radius); cursor: pointer; border: 1px solid transparent;
 }
 .shortcut:hover, .shortcut:focus-visible { background: var(--panel); border-color: var(--line); outline: none; }
-.shortcut-icon { color: var(--accent); width: 12px; text-align: center; }
-.shortcut-name { font-size: 12.5px; font-weight: 600; }
-.shortcut-cmd { font-size: 11px; color: var(--muted); }
+.shortcut:active .shortcut-icon { transform: scale(.94); }
+.shortcut-icon {
+  display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px;
+  background: rgba(217, 119, 87, .14); color: var(--accent); font-size: 11px;
+}
+.shortcut:hover .shortcut-icon { background: var(--accent); color: #1a0f0a; }
+.shortcut-name { font-size: 12px; font-weight: 600; }
+.shortcut-cmd { font-size: 10.5px; color: var(--muted); }
 .shortcut-btn {
   visibility: hidden; background: none; border: 0; color: var(--muted);
   font: inherit; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
@@ -218,7 +229,9 @@ body.resizing .terminals { pointer-events: none; }
 
 /* terminals | Claude config, split vertically */
 .sidebar-split { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.terminals-panel { flex: 0 1 var(--terminals-h, 45%); min-height: 0; overflow-y: auto; }
+.terminals-panel { flex: 0 1 var(--terminals-h, 45%); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.terminals-panel > * { flex: none; }
+.terminals-panel > .shortcuts { flex: 1 0 auto; }
 .config-panel { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 /* one side hidden: the other takes the whole height */
 .sidebar-split.top-collapsed .terminals-panel { display: none; }
