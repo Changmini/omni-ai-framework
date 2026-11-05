@@ -100,6 +100,9 @@ body {
 .agent-claude[data-status="waiting"] { color: var(--wait); }
 .agent-claude[data-status="idle"] { color: var(--ok); }
 .agent-claude[data-status="error"] { color: var(--err); }
+.agent.dragging { opacity: .4; }
+.agent.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.agent.drop-after { box-shadow: 0 2px 0 var(--accent); }
 .rename {
   width: 100%; padding: 1px 4px; margin: -2px 0 -1px -5px;
   font: 600 13px var(--mono); color: #fff;
