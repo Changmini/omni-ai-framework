@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   sendLine: (id, text) => ipcRenderer.invoke('session:sendLine', id, text),
   write: (id, data) => ipcRenderer.send('session:write', id, data),
   resize: (id, cols, rows) => ipcRenderer.send('session:resize', id, cols, rows),
+  rename: (id, name) => ipcRenderer.invoke('session:rename', id, name),
   reportCwd: (id, kind, data) => ipcRenderer.send('session:cwd', id, kind, data),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   onData: on('session:data'),

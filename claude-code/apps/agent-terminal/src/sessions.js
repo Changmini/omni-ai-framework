@@ -132,6 +132,16 @@ class SessionManager {
     this.emit('session:meta', { id, cwd: s.cwd, branch: s.branch });
   }
 
+  // A name the user gave the terminal; empty goes back to the folder name.
+  rename(id, name) {
+    const s = this.sessions.get(id);
+    if (!s) return false;
+    const n = typeof name === 'string' ? name.trim().slice(0, 80) : '';
+    s.name = n || null;
+    this.emit('session:meta', { id, name: s.name });
+    return true;
+  }
+
   // One Claude Code hook event, already authenticated by the hook server.
   onHookEvent(id, ev) {
     const s = this.sessions.get(id);

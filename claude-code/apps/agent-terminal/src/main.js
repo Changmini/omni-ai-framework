@@ -40,6 +40,7 @@ function registerIpc() {
     if (d !== null) manager.write(str(id, 20), d);
   });
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
+  ipcMain.handle('session:rename', (_e, id, name) => manager.rename(str(id, 20), str(name, 200) ?? ''));
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
   ipcMain.on('session:cwd', (_e, id, kind, data) => {
     const d = str(data, 4000);
