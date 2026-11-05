@@ -25,6 +25,10 @@
           <ul id="agent-list" class="agent-list" aria-label="터미널 목록"></ul>
           <button id="new-terminal" class="btn new-terminal" title="새 터미널 (Ctrl+Shift+T)">＋ 새 터미널</button>
 
+        </section>
+        <div class="split-resizer" id="split-resizer" role="separator" aria-orientation="horizontal"
+             title="끌어서 높이 조절 · 더블클릭: 기본 높이"></div>
+        <section class="panel shortcuts-panel" aria-label="바로가기">
           <div class="shortcuts">
             <h2>바로가기 <span id="shortcut-count" class="count">0</span>
               <button id="shortcut-add" class="mini-btn" title="바로가기 추가" aria-label="바로가기 추가">＋</button>
@@ -42,15 +46,6 @@
               </div>
             </form>
           </div>
-        </section>
-        <div class="split-resizer" id="split-resizer" role="separator" aria-orientation="horizontal"
-             title="끌어서 높이 조절 · 더블클릭: 기본 높이"></div>
-        <section class="panel config-panel" aria-label="Claude 구성">
-          <h2>Claude 구성
-            <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
-          </h2>
-          <div id="config-project" class="hint ellipsis"></div>
-          <div id="config-body"></div>
         </section>
       </div>
 
@@ -72,6 +67,9 @@
         <span id="active-name" class="active-name"></span>
         <span id="active-cwd" class="muted ellipsis"></span>
         <span id="active-status" class="status-text"></span>
+        <button id="inspector-toggle" class="icon-btn" title="상세 패널 접기/펴기 (Ctrl+Shift+I)" aria-label="상세 패널 접기/펴기">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor"/></svg>
+        </button>
       </div>
       <div id="error-banner" class="error-banner" hidden></div>
       <div id="terminals" class="terminals">
@@ -84,6 +82,25 @@
         </div>
       </div>
     </main>
+    <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"
+         title="끌어서 상세 패널 너비 조절 · 더블클릭: 기본 너비"></div>
+    <aside class="inspector" id="inspector" aria-label="상세 패널">
+      <div class="inspector-head" role="tablist">
+        <button class="tab" role="tab" data-tab="activity">활동</button>
+        <button class="tab" role="tab" data-tab="config">Claude 구성</button>
+        <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
+      </div>
+      <section class="tab-body" data-tab="activity">
+        <div id="ctx-detail" class="ctx-detail"></div>
+        <h2 class="inspector-h">최근 활동</h2>
+        <ol id="activity-list" class="activity-list" aria-label="최근 활동"></ol>
+        <p id="activity-empty" class="hint">Claude가 이 터미널에서 일하면 프롬프트, 도구 실행, 수정한 파일이 여기에 쌓입니다.</p>
+      </section>
+      <section class="tab-body" data-tab="config">
+        <div id="config-project" class="hint ellipsis"></div>
+        <div id="config-body"></div>
+      </section>
+    </aside>
   </div>
 
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>

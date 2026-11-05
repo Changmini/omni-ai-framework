@@ -4,9 +4,14 @@ const os = require('node:os');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
+const { activityEntry } = require('./activity');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
+const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
+const ACTIVITY_MAX = 200; // activity log lines kept per terminal
+
+const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
 
 // Owns one PTY per terminal plus what Claude reports from inside it.
 // `spawn` is node-pty's spawn (injected for tests); `emit(channel, payload)`
@@ -24,6 +29,8 @@ class SessionManager {
     gitBranch = () => null,
     scanConfig = () => null,
     claudePaths = { dir: null, json: null },
+    runTmux = () => Promise.resolve(false),
+    readUsage = () => Promise.resolve(null),
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -34,6 +41,8 @@ class SessionManager {
     this.readTasks = readTasks;
     this.gitBranch = gitBranch;
     this.scanConfig = scanConfig;
+    this.runTmux = runTmux;
+    this.readUsage = readUsage;
     this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
@@ -72,11 +81,16 @@ class SessionManager {
       primarySid: null,
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       teammateSids: new Set(), // sessions known to be split-pane teammates
+      tmuxSocket: null, // from claude-hook.sh, to select a pane on click
+      usage: new Map(), // session_id -> { tokens, window, pct, model, readAt, pending }
+      primaryPane: null,
       teamReadAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
       tasks: null,
       lastAgent: null,
+      activity: [], // inspector log, oldest first
+      activitySeq: 0,
     };
     this.sessions.set(id, session);
 
@@ -91,6 +105,7 @@ class SessionManager {
       session.others.clear();
       session.team = null;
       session.tasks = null;
+      session.usage.clear();
       this.emit('session:exit', { id, exitCode });
       this.pollStatus();
       this.emitAgent(session);
@@ -191,6 +206,8 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s) return;
     const sid = ev.session_id || '';
+    if (meta.socket) s.tmuxSocket = meta.socket;
+    if (sid && ev.transcript_path && !ev.agent_id) this.scheduleUsage(s, sid, ev.transcript_path, ev.hook_event_name);
     // Several claude sessions can report into one terminal through tmux. The
     // first one is the main session (LED, banner); later ones are listed
     // beside it. A split-pane teammate is its own session, recognised by a
@@ -202,6 +219,8 @@ class SessionManager {
     }
     if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
       this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
+      const o = s.others.get(sid);
+      this.recordActivity(s, ev, (o && (o.name || o.type)) || `claude ${(o && o.pane) || sid.slice(0, 8)}`);
       this.emitAgent(s);
       return;
     }
@@ -209,11 +228,15 @@ class SessionManager {
       s.primarySid = sid;
       s.others.delete(sid); // was listed beside the previous main session
     }
+    if (meta.pane) s.primaryPane = meta.pane;
+    this.recordActivity(s, ev, ev.agent_id ? ev.agent_type || 'subagent' : null);
     s.claude = reduce(s.claude, ev, this.now());
     if (ev.hook_event_name === 'SessionEnd') {
+      s.usage.delete(sid);
       s.team = null;
       s.tasks = null;
       s.primarySid = null;
+      s.primaryPane = null;
     }
     // The main agent's turn ended with nothing left running: teammates are gone.
     if (ev.hook_event_name === 'Stop' && !ev.agent_id && Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) {
@@ -223,6 +246,69 @@ class SessionManager {
     if (ev.cwd) this.setCwd(id, ev.cwd);
     if (ev.hook_event_name === 'Stop') this.setCwd(id, s.cwd, true); // branch may have changed
     this.emitAgent(s);
+  }
+
+  // One line of the inspector's log. A failed tool call marks the line of
+  // that call instead of adding one.
+  recordActivity(s, ev, who) {
+    const entry = activityEntry(ev, this.now(), who);
+    if (!entry) return;
+    if (entry.kind === 'fail' && entry.useId) {
+      const i = s.activity.findIndex((a) => a.useId === entry.useId);
+      if (i !== -1) {
+        s.activity[i] = { ...s.activity[i], kind: 'fail', error: entry.text };
+        this.emit('session:activity', { id: s.id, entry: s.activity[i] });
+        return;
+      }
+    }
+    const e = { ...entry, n: ++s.activitySeq };
+    s.activity.push(e);
+    if (s.activity.length > ACTIVITY_MAX) s.activity.splice(0, s.activity.length - ACTIVITY_MAX);
+    this.emit('session:activity', { id: s.id, entry: e });
+  }
+
+  activity(id) {
+    const s = this.sessions.get(id);
+    return s ? s.activity.slice() : [];
+  }
+
+  // A vscode:// link for a file from this terminal's activity log (only
+  // those: the page cannot make the app open arbitrary paths). Inside WSL it
+  // opens through VS Code's WSL remote. URL forms from
+  // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
+  editorUrl(id, file) {
+    const s = this.sessions.get(id);
+    if (!s || typeof file !== 'string' || !s.activity.some((a) => a.file === file)) return null;
+    if (s.wsl) {
+      const p = file.startsWith('/') ? file : `${s.cwd.replace(/\/$/, '')}/${file}`;
+      return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(p)}`;
+    }
+    const abs = /^([a-zA-Z]:[\\/]|\/)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
+    const p = abs.replace(/\\/g, '/');
+    return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
+  }
+
+  // Context usage from the session's transcript: read asynchronously, at most
+  // every USAGE_MIN_MS per session (always at the end of a turn), then the
+  // sidebar is updated.
+  scheduleUsage(s, sid, transcript, eventName) {
+    const prev = s.usage.get(sid) || { readAt: -Infinity, pending: false }; // never read yet
+    const due = eventName === 'Stop' || eventName === 'SessionStart' || this.now() - prev.readAt >= USAGE_MIN_MS;
+    if (prev.pending || !due) return;
+    s.usage.set(sid, { ...prev, pending: true, readAt: this.now() });
+    Promise.resolve(this.readUsage(this.hostPath(s, transcript)))
+      .catch(() => null)
+      .then((u) => {
+        if (!this.sessions.has(s.id)) return;
+        const cur = s.usage.get(sid) || {};
+        s.usage.set(sid, { ...cur, ...(u || {}), pending: false });
+        this.emitAgent(s);
+      });
+  }
+
+  contextOf(s, sid) {
+    const u = sid && s.usage.get(sid);
+    return u && u.tokens ? { tokens: u.tokens, window: u.window, pct: u.pct, model: u.model || null } : null;
   }
 
   // The main session turned out to be a teammate (e.g. the app was opened
@@ -238,7 +324,7 @@ class SessionManager {
   }
 
   onOtherSession(s, sid, ev, meta, teammateSession) {
-    if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); return; }
+    if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); s.usage.delete(sid); return; }
     const prev = s.others.get(sid) || { state: emptyState(), name: null, teammate: false, pane: null };
     const title = /^@\S/.test(meta.title || '') ? meta.title.slice(1) : null; // "@planner"
     s.others.set(sid, {
@@ -267,6 +353,8 @@ class SessionManager {
       status: o.state.status || 'idle',
       tool: o.state.tool,
       teammate: o.teammate,
+      focusable: Boolean(o.pane && s.tmuxSocket),
+      context: this.contextOf(s, sid),
     }));
     // Teammates already listed as their own sessions are not repeated from the config.
     const names = new Set(others.map((o) => o.name));
@@ -281,6 +369,8 @@ class SessionManager {
       team: hasTeammates ? (s.team ? s.team.name : `session-${(s.primarySid || '').slice(0, 8)}`) : null,
       agents: [...Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })), ...others],
       tasks: s.tasks,
+      focusable: Boolean(view.status && s.primaryPane && s.tmuxSocket),
+      context: view.status ? this.contextOf(s, s.primarySid) : null,
     };
   }
 
@@ -290,6 +380,19 @@ class SessionManager {
     if (key === s.lastAgent) return;
     s.lastAgent = key;
     this.emit('session:agent', { id: s.id, claude: view });
+  }
+
+  // Selects the tmux pane of the main session ('main') or of a session listed
+  // beside it ('session:<id>'), in the tmux server that reported it.
+  async focusPane(id, target) {
+    const s = this.sessions.get(id);
+    if (!s || !s.tmuxSocket) return false;
+    let pane = null;
+    if (target === 'main') pane = s.primaryPane;
+    else if (typeof target === 'string' && target.startsWith('session:')) pane = s.others.get(target.slice(8))?.pane;
+    if (!pane || !/^%\d+$/.test(pane) || !/^\/[\w./@:+-]+$/.test(s.tmuxSocket)) return false;
+    const args = ['-S', s.tmuxSocket, 'select-window', '-t', pane, ';', 'select-pane', '-t', pane];
+    return this.runTmux(args, s.wsl ? s.wsl.distro : null);
   }
 
   kill(id) {

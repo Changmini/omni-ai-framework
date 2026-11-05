@@ -75,9 +75,25 @@ const SHORTCUTS = {
   KeyV: () => pasteInto(activeId),
   KeyA: () => agents.get(activeId)?.term.selectAll(),
   KeyF: () => openSearch(),
+  KeyI: () => setInspectorOpen(app.classList.contains('inspector-closed')),
 };
 function isShortcut(e) {
-  return e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS;
+  return (e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS) || navTarget(e) !== null;
+}
+
+// Ctrl+1..9: n-th terminal in the sidebar order; Ctrl+Tab / Ctrl+Shift+Tab:
+// next / previous (wrapping). Returns the terminal id to show, or null.
+function navTarget(e) {
+  if (!e.ctrlKey || e.altKey || e.metaKey) return null;
+  const ids = [...agents.keys()];
+  if (!ids.length) return null;
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && !e.shiftKey) return ids[Number(digit[1]) - 1] ?? null;
+  if (e.code === 'Tab') {
+    const i = Math.max(0, ids.indexOf(activeId));
+    return ids[(i + (e.shiftKey ? -1 : 1) + ids.length) % ids.length];
+  }
+  return null;
 }
 
 function addAgent(info) {
@@ -144,11 +160,13 @@ function addAgent(info) {
   item.draggable = true;
   item.innerHTML = `
     <div class="agent-row" tabindex="0">
+      <span class="agent-num" aria-hidden="true"></span>
       <span class="led"></span>
       <span class="agent-meta">
         <div class="agent-name ellipsis"></div>
         <div class="agent-sub ellipsis"></div>
         <div class="agent-claude ellipsis"></div>
+        <div class="ctx" hidden><span class="ctx-bar"><span class="ctx-fill"></span></span><span class="ctx-text"></span></div>
       </span>
       <button class="agent-close" title="터미널 닫기 (Ctrl+Shift+W)" aria-label="터미널 닫기">✕</button>
     </div>
@@ -156,6 +174,11 @@ function addAgent(info) {
     <div class="agent-tasks ellipsis"></div>`;
   const row = item.querySelector('.agent-row');
   row.addEventListener('click', () => select(info.id));
+  item.querySelector('.agent-claude').addEventListener('click', (e) => {
+    if (!e.currentTarget.classList.contains('focusable')) return;
+    e.stopPropagation();
+    focusPane(info.id, 'main');
+  });
   row.addEventListener('keydown', (e) => {
     if (e.target !== row) return; // typing in the rename box
     if (e.key === 'Enter') select(info.id);
@@ -176,7 +199,8 @@ function addAgent(info) {
   enableDrag(item, info.id);
   els.list.appendChild(item);
 
-  agents.set(info.id, { info, term, fit, el, item, search });
+  agents.set(info.id, { info, term, fit, el, item, search, activity: [] });
+  loadActivity(info.id);
   renderItem(info.id);
   renderList();
 }
@@ -203,6 +227,7 @@ function select(id) {
   if (activeId !== id) closeSearch(false);
   activeId = id;
   loadConfig();
+  renderInspector();
   for (const [aid, a] of agents) {
     const on = aid === id;
     a.el.classList.toggle('active', on);
@@ -227,6 +252,12 @@ function fitActive() {
 
 function renderList() {
   els.count.textContent = String(agents.size);
+  // Position badges for Ctrl+1..9, in sidebar order.
+  [...agents.values()].forEach((a, i) => {
+    const n = a.item.querySelector('.agent-num');
+    n.textContent = i < 9 ? String(i + 1) : '';
+    n.title = i < 9 ? `Ctrl+${i + 1}` : '';
+  });
 }
 
 const baseName = (p) => (p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
@@ -253,6 +284,21 @@ function shellError(info) {
   return info.error;
 }
 
+// ---------- context usage ----------
+const contextLevel = (pct) => (pct >= 85 ? 'high' : pct >= 60 ? 'mid' : 'low');
+const kTokens = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`);
+const contextTitle = (ctx) => `컨텍스트 ${kTokens(ctx.tokens)} / ${kTokens(ctx.window)} (${ctx.pct}%)`
+  + `${ctx.model ? ` · ${ctx.model}` : ''}\n창 크기는 추정값입니다: 200k, 넘으면 1M으로 봅니다.`;
+
+function renderContext(box, ctx) {
+  box.hidden = !ctx;
+  if (!ctx) return;
+  box.dataset.level = contextLevel(ctx.pct);
+  box.querySelector('.ctx-fill').style.width = `${ctx.pct}%`;
+  box.querySelector('.ctx-text').textContent = `${ctx.pct}% · ${kTokens(ctx.tokens)}`;
+  box.title = contextTitle(ctx);
+}
+
 function claudeSummary(c) {
   if (!c || !c.status) return '';
   if (c.status === 'working' && c.tool) return `Claude · ${c.tool} 실행 중`;
@@ -277,6 +323,9 @@ function renderItem(id) {
   const claudeLine = item.querySelector('.agent-claude');
   claudeLine.textContent = claudeSummary(c);
   claudeLine.dataset.status = c.status || '';
+  claudeLine.classList.toggle('focusable', Boolean(c.focusable));
+  renderContext(item.querySelector('.ctx'), c.context);
+  claudeLine.title = c.focusable ? '클릭: 이 Claude의 tmux 창으로 이동' : '';
   item.title = info.cwd;
 
   // Subagents and teammates, live from hooks and the team config.
@@ -286,12 +335,21 @@ function renderItem(id) {
     const led = h('span', 'led small');
     led.dataset.status = ag.status || 'working';
     const kind = ag.teammate ? '팀원' : '서브에이전트';
-    li.append(
-      led,
-      h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'),
-      h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind),
-    );
-    li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ');
+    const meta = h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind);
+    if (ag.context) {
+      const pct = h('span', 'child-ctx', ` ${ag.context.pct}%`);
+      pct.dataset.level = contextLevel(ag.context.pct);
+      meta.append(pct);
+    }
+    li.append(led, h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'), meta);
+    li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ')
+      + (ag.context ? `\n${contextTitle(ag.context)}` : '');
+    if (ag.focusable) {
+      // Split-pane teammate: jump to its tmux pane.
+      li.classList.add('focusable');
+      li.title += '\n클릭: tmux 창으로 이동';
+      li.addEventListener('click', (e) => { e.stopPropagation(); focusPane(id, ag.id); });
+    }
     return li;
   }));
 
@@ -344,6 +402,7 @@ function saveOrder() {
   agents.clear();
   for (const [id, a] of reordered) agents.set(id, a);
   api.reorder(ids);
+  renderList();
 }
 
 function moveTerminal(id, delta) {
@@ -389,6 +448,17 @@ function enableDrag(item, id) {
     els.list.insertBefore(moving, after ? item.nextSibling : item);
     saveOrder();
   });
+}
+
+// ---------- tmux pane focus ----------
+async function focusPane(id, target) {
+  select(id);
+  const ok = await api.focusPane(id, target).catch(() => false);
+  const a = agents.get(id);
+  if (!ok && a) {
+    a.item.classList.add('focus-failed');
+    setTimeout(() => a.item.classList.remove('focus-failed'), 600);
+  }
 }
 
 // ---------- rename ----------
@@ -452,15 +522,18 @@ function update(id, patch) {
   if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) loadConfig(); // new project
   Object.assign(a.info, patch);
   renderItem(id);
+  if (id === activeId && 'claude' in patch) renderCtxDetail();
 }
 
 // ---------- UI -> terminal ----------
 
 els.newTerminal.addEventListener('click', () => newTerminal());
 document.addEventListener('keydown', (e) => {
-  if (!isShortcut(e) || e.repeat) return;
+  if (!isShortcut(e)) return;
   e.preventDefault();
-  SHORTCUTS[e.code]();
+  const target = navTarget(e);
+  if (target !== null) { select(target); return; } // repeat allowed: hold Ctrl+Tab to cycle
+  if (!e.repeat) SHORTCUTS[e.code]();
 });
 
 function applyFontSize(size) {
@@ -752,6 +825,7 @@ const CFG_GROUPS = [
   ['mcp', 'MCP 서버', (x) => [x.name, x.source, `${x.type}: ${x.description}`]],
 ];
 let cfgTimer = null;
+let cfgStale = true; // skipped while hidden; read when the tab opens
 let lastConfigAt = 0;
 let cfgOpen = {};
 try { cfgOpen = JSON.parse(readPref('cfgOpen', '{"skills":true}')); } catch { cfgOpen = { skills: true }; }
@@ -760,7 +834,8 @@ function loadConfig(delay = 150) {
   clearTimeout(cfgTimer);
   cfgTimer = setTimeout(async () => {
     const id = activeId;
-    if (!id || !api.claudeConfig) return;
+    if (!id || !api.claudeConfig || !configVisible()) { cfgStale = true; return; }
+    cfgStale = false;
     let data = null;
     try { data = await api.claudeConfig(id); } catch { data = null; }
     lastConfigAt = Date.now();
@@ -810,6 +885,177 @@ cfgEls.refresh.addEventListener('click', () => loadConfig(0));
 // Coming back to the window: re-read, but not more than every 5s (the scan
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
+
+// ---------- inspector: activity | Claude config ----------
+// The right panel. Ctrl+Shift+I or the top-bar button opens and closes it;
+// its left edge sets the width (double-click: default). The open state, the
+// tab and the width are remembered.
+const insp = {
+  tabs: [...document.querySelectorAll('.inspector-head .tab')],
+  bodies: [...document.querySelectorAll('.tab-body')],
+  toggle: $('#inspector-toggle'),
+  resizer: $('#inspector-resizer'),
+  ctx: $('#ctx-detail'),
+  list: $('#activity-list'),
+  empty: $('#activity-empty'),
+};
+const INSPECTOR = { def: 320, min: 240, max: 640 };
+let inspectorTab = readPref('inspectorTab', 'activity') === 'config' ? 'config' : 'activity';
+
+function configVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
+}
+
+function setInspectorOpen(on) {
+  app.classList.toggle('inspector-closed', !on);
+  insp.toggle.setAttribute('aria-pressed', String(on));
+  writePref('inspectorOpen', on);
+  if (on && inspectorTab === 'config' && cfgStale) loadConfig(0);
+  requestAnimationFrame(fitActive);
+}
+
+function setInspectorTab(tab) {
+  inspectorTab = tab;
+  writePref('inspectorTab', tab);
+  for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
+  for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
+  cfgEls.refresh.hidden = tab !== 'config';
+  if (tab === 'config' && cfgStale) loadConfig(0);
+}
+
+function setInspectorWidth(w, save = true) {
+  const width = Math.round(Math.min(INSPECTOR.max, Math.max(INSPECTOR.min, w)));
+  document.documentElement.style.setProperty('--inspector-w', `${width}px`);
+  if (save) writePref('inspectorWidth', width);
+  requestAnimationFrame(fitActive);
+}
+
+for (const t of insp.tabs) t.addEventListener('click', () => setInspectorTab(t.dataset.tab));
+insp.toggle.addEventListener('click', () => {
+  setInspectorOpen(app.classList.contains('inspector-closed'));
+  agents.get(activeId)?.term.focus();
+});
+insp.resizer.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  insp.resizer.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing');
+  const right = app.getBoundingClientRect().right;
+  const move = (ev) => setInspectorWidth(right - ev.clientX, false);
+  const up = (ev) => {
+    insp.resizer.releasePointerCapture(ev.pointerId);
+    insp.resizer.removeEventListener('pointermove', move);
+    insp.resizer.removeEventListener('pointerup', up);
+    document.body.classList.remove('resizing');
+    setInspectorWidth(right - ev.clientX);
+  };
+  insp.resizer.addEventListener('pointermove', move);
+  insp.resizer.addEventListener('pointerup', up);
+});
+insp.resizer.addEventListener('dblclick', () => setInspectorWidth(INSPECTOR.def));
+
+// Context use of the main session and of every session listed beside it.
+function renderCtxDetail() {
+  const c = agents.get(activeId)?.info.claude || {};
+  const rows = [];
+  if (c.context) rows.push(['메인', c.context, true]);
+  for (const ag of c.agents || []) if (ag.context) rows.push([ag.name || ag.type || '세션', ag.context, false]);
+  if (!rows.length) { insp.ctx.replaceChildren(); return; }
+  insp.ctx.replaceChildren(h('h2', 'inspector-h', '컨텍스트'), ...rows.map(([who, ctx, lead]) => {
+    const row = h('div', `ctx-row${lead ? ' lead' : ''}`);
+    row.dataset.level = contextLevel(ctx.pct);
+    row.title = contextTitle(ctx);
+    const bar = h('span', 'ctx-bar');
+    const fill = h('span', 'ctx-fill');
+    fill.style.width = `${ctx.pct}%`;
+    bar.append(fill);
+    row.append(h('span', 'ctx-who ellipsis', who), bar,
+      h('span', 'ctx-num', `${ctx.pct}% · ${kTokens(ctx.tokens)}/${kTokens(ctx.window)}`));
+    return row;
+  }));
+}
+
+// A file under the terminal's folder is shown relative to it (the name stays
+// visible in a narrow panel); the full path is in the tooltip.
+function shortPath(file, cwd) {
+  const base = (cwd || '').replace(/[\\/]+$/, '');
+  if (base && file.length > base.length + 1 && file.startsWith(base) && /[\\/]/.test(file[base.length])) {
+    return file.slice(base.length + 1);
+  }
+  return file;
+}
+
+const ACT_LABEL = { prompt: '프롬프트', done: '완료', wait: '대기', error: '오류', agent: '에이전트', idle: '팀원' };
+const hhmmss = (t) => new Date(t).toTimeString().slice(0, 8);
+
+function activityRow(id, e) {
+  const li = h('li', 'act');
+  li.dataset.kind = e.kind;
+  li.dataset.n = String(e.n);
+  const label = e.tool || ACT_LABEL[e.kind] || e.kind;
+  const text = h('span', 'act-text');
+  if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who} · ` : e.who));
+  if (e.file) {
+    const f = h('span', 'act-file', shortPath(e.file, agents.get(id)?.info.cwd));
+    f.title = `${e.file}\n클릭: VS Code에서 열기`;
+    f.addEventListener('click', async () => {
+      const ok = await api.openFile(id, e.file).catch(() => false);
+      if (!ok) { f.classList.add('open-failed'); setTimeout(() => f.classList.remove('open-failed'), 800); }
+    });
+    text.append(f);
+  } else {
+    text.append(document.createTextNode(e.text || ''));
+  }
+  if (e.kind === 'fail' && e.error) text.append(h('span', 'act-error', ` — ${e.error}`));
+  if (!e.file) text.title = [e.who, e.text, e.error].filter(Boolean).join('\n');
+  li.append(h('span', 'act-time', hhmmss(e.at)), h('span', 'act-tool', label), text);
+  return li;
+}
+
+function renderActivity() {
+  const id = activeId;
+  const list = agents.get(id)?.activity || [];
+  insp.list.replaceChildren(...list.slice().reverse().map((e) => activityRow(id, e)));
+  insp.empty.hidden = list.length > 0;
+}
+
+function renderInspector() {
+  renderCtxDetail();
+  renderActivity();
+}
+
+async function loadActivity(id) {
+  const a = agents.get(id);
+  if (!a || !api.activity) return;
+  const list = await api.activity(id).catch(() => []);
+  // Lines that arrived while loading are newer than the loaded ones.
+  const seen = new Set(list.map((e) => e.n));
+  a.activity = [...list, ...a.activity.filter((e) => !seen.has(e.n))];
+  if (id === activeId) renderActivity();
+}
+
+// New line, or a tool line now marked failed (same n).
+function onActivity(id, entry) {
+  const a = agents.get(id);
+  if (!a) return;
+  const i = a.activity.findIndex((e) => e.n === entry.n);
+  if (i !== -1) a.activity[i] = entry;
+  else {
+    a.activity.push(entry);
+    if (a.activity.length > 200) a.activity.splice(0, a.activity.length - 200);
+  }
+  if (id !== activeId) return;
+  if (i !== -1) {
+    insp.list.querySelector(`.act[data-n="${entry.n}"]`)?.replaceWith(activityRow(id, entry));
+    return;
+  }
+  insp.list.prepend(activityRow(id, entry));
+  while (insp.list.children.length > 200) insp.list.lastElementChild.remove();
+  insp.empty.hidden = true;
+}
+
+setInspectorTab(inspectorTab);
+setInspectorWidth(Number(readPref('inspectorWidth', INSPECTOR.def)) || INSPECTOR.def, false);
+setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
 
 // ---------- terminals | config height ----------
 // Drag the border between the terminal list and the config list. Dragging to
@@ -885,6 +1131,7 @@ api.onExit(({ id, exitCode }) => {
   update(id, { status: 'exited' });
 });
 api.onRemoved(({ id }) => removeAgent(id));
+if (api.onActivity) api.onActivity(({ id, entry }) => onActivity(id, entry));
 
 window.addEventListener('resize', () => requestAnimationFrame(fitActive));
 new ResizeObserver(() => fitActive()).observe(els.terminals);

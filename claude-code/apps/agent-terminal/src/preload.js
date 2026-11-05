@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('agentApi', {
   resize: (id, cols, rows) => ipcRenderer.send('session:resize', id, cols, rows),
   rename: (id, name) => ipcRenderer.invoke('session:rename', id, name),
   claudeConfig: (id) => ipcRenderer.invoke('session:config', id),
+  focusPane: (id, target) => ipcRenderer.invoke('session:focusPane', id, target),
+  activity: (id) => ipcRenderer.invoke('session:activity', id),
+  openFile: (id, file) => ipcRenderer.invoke('open-file', id, file),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   clipboardWrite: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -32,4 +35,5 @@ contextBridge.exposeInMainWorld('agentApi', {
   onRemoved: on('session:removed'),
   onAgent: on('session:agent'),
   onMeta: on('session:meta'),
+  onActivity: on('session:activity'),
 });

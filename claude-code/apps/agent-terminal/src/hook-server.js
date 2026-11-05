@@ -19,7 +19,7 @@ function salvage(head) {
     const v = field(k);
     if (v !== undefined) ev[k] = v;
   }
-  const meta = { pane: field('pane') || '', title: field('title') || '' };
+  const meta = { pane: field('pane') || '', title: field('title') || '', socket: field('socket') || '' };
   return [ev.hook_event_name ? ev : null, meta];
 }
 
@@ -59,7 +59,7 @@ function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
       } else if (ev.omni && ev.event && typeof ev.event === 'object') {
         // From claude-hook.sh (tmux): { omni: { pane, title }, event }
-        const meta = { pane: String(ev.omni.pane || ''), title: String(ev.omni.title || '') };
+        const meta = { pane: String(ev.omni.pane || ''), title: String(ev.omni.title || ''), socket: String(ev.omni.socket || '') };
         onEvent(terminalId, ev.event, meta);
       } else {
         onEvent(terminalId, ev, {});
