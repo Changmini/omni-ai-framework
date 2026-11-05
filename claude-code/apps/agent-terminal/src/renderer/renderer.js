@@ -321,7 +321,9 @@ function renderActive() {
   els.activeLed.dataset.status = ledStatus(info);
   els.activeName.textContent = displayName(info);
   els.activeCwd.textContent = [info.cwd, info.branch ? `⎇ ${info.branch}` : ''].filter(Boolean).join('  ');
-  els.activeStatus.textContent = claudeSummary(c) || SHELL_LABEL[info.status] || '';
+  // '오류 감지' only when the error is actually shown (see shellError).
+  const shellLabel = info.status === 'exited' ? SHELL_LABEL.exited : shellError(info) ? SHELL_LABEL.error : '';
+  els.activeStatus.textContent = claudeSummary(c) || shellLabel;
   // Claude waiting for the user takes the banner over a shell error line.
   const claudeMsg = (c.status === 'waiting' || c.status === 'error') && c.message;
   const banner = claudeMsg || shellError(info);
@@ -546,9 +548,20 @@ async function waitQuiet(id, quietMs = 500, maxMs = 8000) {
   }
 }
 
+const runningShortcuts = new Set(); // a second click while one runs is ignored
+
 async function runShortcut(sc) {
   const lines = sc.command.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim());
-  if (!lines.length) return;
+  if (!lines.length || runningShortcuts.has(sc.id)) return;
+  runningShortcuts.add(sc.id);
+  try {
+    await typeShortcut(sc, lines);
+  } finally {
+    runningShortcuts.delete(sc.id);
+  }
+}
+
+async function typeShortcut(sc, lines) {
   let id = activeId;
   if (sc.newTerminal || !id) {
     id = await newTerminal();
@@ -701,6 +714,7 @@ function showSearchCount({ resultIndex, resultCount }) {
 
 searchEls.input.addEventListener('input', () => findInTerminal(1, true));
 searchEls.input.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // Ctrl+Shift+V/A/C here act on the search box, not the terminal
   if (e.key === 'Enter') { e.preventDefault(); findInTerminal(e.shiftKey ? -1 : 1); }
   if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
 });
@@ -721,6 +735,7 @@ const CFG_GROUPS = [
   ['mcp', 'MCP 서버', (x) => [x.name, x.source, `${x.type}: ${x.description}`]],
 ];
 let cfgTimer = null;
+let lastConfigAt = 0;
 let cfgOpen = {};
 try { cfgOpen = JSON.parse(readPref('cfgOpen', '{"skills":true}')); } catch { cfgOpen = { skills: true }; }
 
@@ -730,13 +745,18 @@ function loadConfig(delay = 150) {
     const id = activeId;
     if (!id || !api.claudeConfig) return;
     let data = null;
-    try { data = await api.claudeConfig(id); } catch { /* keep the old list */ return; }
-    if (id === activeId) renderConfig(data);
+    try { data = await api.claudeConfig(id); } catch { data = null; }
+    lastConfigAt = Date.now();
+    if (id === activeId) renderConfig(data); // null shows '읽을 수 없습니다', not the previous list
   }, delay);
 }
 
 function renderConfig(data) {
-  if (!data) { cfgEls.body.replaceChildren(h('div', 'cfg-empty', '읽을 수 없습니다')); return; }
+  if (!data) {
+    cfgEls.project.textContent = '';
+    cfgEls.body.replaceChildren(h('div', 'cfg-empty', '읽을 수 없습니다'));
+    return;
+  }
   cfgEls.project.textContent = data.project ? `프로젝트: ${data.project}` : '';
   cfgEls.project.title = data.project || '';
   cfgEls.body.replaceChildren(...CFG_GROUPS.map(([key, label, row]) => {
@@ -770,7 +790,9 @@ function renderConfig(data) {
 }
 
 cfgEls.refresh.addEventListener('click', () => loadConfig(0));
-window.addEventListener('focus', () => loadConfig());
+// Coming back to the window: re-read, but not more than every 5s (the scan
+// is synchronous file I/O in the main process, slow over \\wsl.localhost).
+window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
 
 // ---------- terminals | config height ----------
 // Drag the border between the terminal list and the config list. Dragging to

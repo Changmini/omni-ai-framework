@@ -85,3 +85,21 @@ test('team and task files are read defensively', () => {
   fs.writeFileSync(path.join(base, 'tasks', sid, '3.json'), '{broken');
   assert.deepStrictEqual(readTasks(sid, base), { total: 2, done: 1, inProgress: [{ subject: 'b', owner: 'dev' }] });
 });
+
+test('hook server answers 200 to an oversized event and still passes its key fields', async () => {
+  const got = [];
+  const srv = await startHookServer({ onEvent: (id, ev, meta) => got.push([id, ev, meta]), token: 'tok' });
+  const big = 'x'.repeat(9 * 1024 * 1024);
+  const post = (body) => fetch(`http://127.0.0.1:${srv.port}/hook`, {
+    method: 'POST', headers: { 'x-omni-token': 'tok', 'x-omni-terminal': '2' }, body,
+  }).then((r) => r.status);
+  try {
+    const plain = JSON.stringify({ session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { content: big } });
+    assert.strictEqual(await post(plain), 200);
+    const wrapped = `{"omni":{"pane":"%3","title":"@builder"},"event":${JSON.stringify({ session_id: 's2', hook_event_name: 'PostToolUse', agent_type: 'general-purpose', tool_name: 'Write', tool_response: big })}}`;
+    assert.strictEqual(await post(wrapped), 200);
+    assert.deepStrictEqual(got[0], ['2', { session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write' }, { pane: '', title: '' }]);
+    assert.deepStrictEqual(got[1][1], { session_id: 's2', hook_event_name: 'PostToolUse', agent_type: 'general-purpose', tool_name: 'Write' });
+    assert.deepStrictEqual(got[1][2], { pane: '%3', title: '@builder' });
+  } finally { srv.close(); }
+});

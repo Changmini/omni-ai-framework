@@ -3,7 +3,25 @@
 const http = require('node:http');
 const crypto = require('node:crypto');
 
-const MAX_BODY = 1024 * 1024;
+const MAX_BODY = 8 * 1024 * 1024;
+const HEAD_KEEP = 64 * 1024;
+
+// For a body too large to keep (e.g. a Write of a huge file), the fields the
+// status needs, taken from the start of the JSON. Returns [event, meta].
+function salvage(head) {
+  const field = (key) => {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(head);
+    if (!m) return undefined;
+    try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
+  };
+  const ev = {};
+  for (const k of ['hook_event_name', 'session_id', 'agent_id', 'agent_type', 'tool_name', 'notification_type', 'cwd']) {
+    const v = field(k);
+    if (v !== undefined) ev[k] = v;
+  }
+  const meta = { pane: field('pane') || '', title: field('title') || '' };
+  return [ev.hook_event_name ? ev : null, meta];
+}
 
 // Receives, on 127.0.0.1:
 //   POST /hook - Claude Code HTTP hooks (type "http" POSTs the event JSON)
@@ -22,14 +40,21 @@ function startHookServer({ onEvent, onCwd = () => {}, token = crypto.randomBytes
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) { req.destroy(); return; }
-      chunks.push(c);
+      // Past the limit keep reading (and answer 200, so Claude reports no
+      // hook error) but stop keeping the body.
+      if (size <= MAX_BODY) chunks.push(c);
     });
     req.on('end', () => {
       done(200);
+      if (!terminalId) return;
+      if (size > MAX_BODY) {
+        const [big, meta] = salvage(Buffer.concat(chunks).subarray(0, HEAD_KEEP).toString('utf8'));
+        if (big && req.url === '/hook') onEvent(terminalId, big, meta);
+        return;
+      }
       let ev;
       try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return; }
-      if (!ev || typeof ev !== 'object' || !terminalId) return;
+      if (!ev || typeof ev !== 'object') return;
       if (req.url === '/cwd') {
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
       } else if (ev.omni && ev.event && typeof ev.event === 'object') {
