@@ -3,6 +3,7 @@
 const os = require('node:os');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
+const { wslToWindows } = require('./wsl');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file reads
 
@@ -63,6 +64,7 @@ class SessionManager {
       tracker: new StatusTracker({ now: this.now }),
       lastStatus: null,
       claude: emptyState(),
+      wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
       tasks: null,
       lastAgent: null,
@@ -105,11 +107,25 @@ class SessionManager {
     if (cols > 0 && rows > 0) s.pty.resize(cols, rows);
   }
 
+  // A folder report from the shell integration (POST /cwd). Inside WSL it
+  // also names the distro and home, so Linux paths can be read from Windows.
+  reportShellCwd(id, { cwd, wslDistro, home } = {}) {
+    const s = this.sessions.get(id);
+    if (!s || typeof cwd !== 'string' || !cwd) return;
+    s.wsl = wslDistro ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
+    this.setCwd(id, cwd);
+  }
+
+  // Where this host can read a path the shell or Claude reported.
+  hostPath(s, p) {
+    return (s.wsl && wslToWindows(p, s.wsl.distro)) || p;
+  }
+
   // The shell reported its folder (prompt integration) or Claude's hook did.
   setCwd(id, dir) {
     const s = this.sessions.get(id);
     if (!s || !dir) return;
-    const branch = this.gitBranch(dir);
+    const branch = this.gitBranch(this.hostPath(s, dir));
     if (dir === s.cwd && branch === s.branch) return;
     s.cwd = dir;
     s.branch = branch;
@@ -130,8 +146,10 @@ class SessionManager {
 
   refreshTeam(s) {
     const sid = s.claude.sessionId;
-    s.team = s.claude.status ? this.readTeam(sid) : null;
-    s.tasks = s.claude.status ? this.readTasks(sid) : null;
+    // Claude inside WSL keeps its files under the Linux home.
+    const base = s.wsl && s.wsl.home ? wslToWindows(`${s.wsl.home.replace(/\/$/, '')}/.claude`, s.wsl.distro) : undefined;
+    s.team = s.claude.status ? this.readTeam(sid, base || undefined) : null;
+    s.tasks = s.claude.status ? this.readTasks(sid, base || undefined) : null;
   }
 
   agentView(s) {

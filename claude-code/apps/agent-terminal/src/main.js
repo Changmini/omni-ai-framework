@@ -7,7 +7,8 @@ const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
 const { buildClaudeSettings } = require('./claude-settings');
-const { shellLaunch, parseCwdReport } = require('./shell');
+const { shellLaunch, parseCwdReport, INIT_DIR } = require('./shell');
+const { withWslEnv } = require('./wsl');
 const { gitBranch } = require('./git');
 const { readTeam, readTasks } = require('./teams');
 
@@ -89,7 +90,7 @@ app.whenReady().then(async () => {
   // file that the shell integration passes to claude with --settings.
   hooks = await startHookServer({
     onEvent: (id, ev) => manager && manager.onHookEvent(id, ev),
-    onCwd: (id, dir) => manager && manager.setCwd(id, dir),
+    onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
   });
   const settingsFile = path.join(app.getPath('userData'), 'claude-hooks.json');
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
@@ -99,7 +100,15 @@ app.whenReady().then(async () => {
     spawn: pty.spawn,
     emit: send,
     shell: shellLaunch(),
-    extraEnv: { OMNI_CLAUDE_SETTINGS: settingsFile, OMNI_HOOK_TOKEN: hooks.token, OMNI_CWD_URL: hooks.cwdUrl },
+    extraEnv: {
+      OMNI_CLAUDE_SETTINGS: settingsFile,
+      OMNI_HOOK_TOKEN: hooks.token,
+      OMNI_CWD_URL: hooks.cwdUrl,
+      // For `wsl` typed in an app PowerShell terminal (see shell-init/omni.ps1).
+      ...(process.platform === 'win32'
+        ? { OMNI_INIT_BASH: path.join(INIT_DIR, 'omni.bash'), WSLENV: withWslEnv(process.env.WSLENV) }
+        : {}),
+    },
     readTeam,
     readTasks,
     gitBranch,
