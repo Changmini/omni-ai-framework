@@ -22,6 +22,12 @@ clients="$(tmux list-clients -t "$session" -F '#{client_pid}' 2>/dev/null)" || e
 [ -n "$clients" ] || exit 0
 
 input="$(cat)"
+# Which pane sent it: split-pane agent teams run each teammate as its own
+# claude in its own pane. Sent in the body (JSON) so non-ASCII titles survive.
+pane="${TMUX_PANE:-}"
+title="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)"
+esc() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+body="{\"omni\":{\"pane\":\"$(esc "$pane")\",\"title\":\"$(esc "$title")\"},\"event\":$input}"
 for pid in $clients; do
   [ -r "/proc/$pid/environ" ] || continue
   envs="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null)" || continue
@@ -30,7 +36,7 @@ for pid in $clients; do
   token="$(printf '%s\n' "$envs" | sed -n 's/^OMNI_HOOK_TOKEN=//p' | head -1)"
   [ -n "$tid" ] && [ -n "$url" ] && [ -n "$token" ] || continue
   # Fire and forget: Claude does not wait on the app.
-  ( printf '%s' "$input" | curl -s -m 2 -o /dev/null -X POST \
+  ( printf '%s' "$body" | curl -s -m 2 -o /dev/null -X POST \
       -H 'Content-Type: application/json' \
       -H "X-Omni-Token: $token" -H "X-Omni-Terminal: $tid" \
       --data-binary @- "${url%/cwd}/hook" >/dev/null 2>&1 & )
