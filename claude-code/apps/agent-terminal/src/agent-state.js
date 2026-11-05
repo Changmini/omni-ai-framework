@@ -10,6 +10,7 @@
 //   error   - the turn ended on an API error (StopFailure)
 //   null    - Claude is not running in this terminal
 
+const MAX_STOPPED = 200;
 const WAIT_NOTIFICATIONS = new Set(['permission_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog']);
 
 function emptyState() {
@@ -21,6 +22,7 @@ function emptyState() {
     cwd: null,
     agents: {}, // agent_id -> { type, name, status, tool }
     teammates: {}, // teammate name -> { status }
+    stopped: [], // recent agent_ids that sent SubagentStop (newest last)
     updatedAt: 0,
   };
 }
@@ -37,6 +39,14 @@ function reduce(prev, ev, now = Date.now()) {
   if (ev.cwd) s.cwd = ev.cwd;
 
   const agentId = ev.agent_id || null;
+  // Hooks arrive over parallel HTTP requests, so a subagent's last tool event
+  // can land after its SubagentStop. Never bring a stopped agent back.
+  // TeammateIdle still counts: it follows SubagentStop and only marks the
+  // teammate's name idle.
+  const late = !['SubagentStop', 'TeammateIdle'].includes(ev.hook_event_name);
+  if (agentId && late && prev.stopped && prev.stopped.includes(agentId)) {
+    return prev;
+  }
   // Events from inside a subagent or in-process teammate update that agent;
   // the main agent stays as it was.
   const touchAgent = (patch) => {
@@ -71,11 +81,20 @@ function reduce(prev, ev, now = Date.now()) {
       if (agentId) touchAgent({ status: 'working', tool: null });
       break;
     case 'SubagentStop':
-      if (agentId) delete s.agents[agentId];
+      if (agentId) {
+        delete s.agents[agentId];
+        s.stopped = [...(prev.stopped || []).filter((x) => x !== agentId), agentId].slice(-MAX_STOPPED);
+      }
       break;
     case 'Stop':
-      if (!agentId) touchMain({ status: 'idle', tool: null, message: null });
-      else touchAgent({ status: 'idle', tool: null });
+      if (!agentId) {
+        touchMain({ status: 'idle', tool: null, message: null });
+        // background_tasks lists what still runs after this turn ([] when
+        // nothing does, seen on 2.1.318). Then any agent left is stale.
+        if (Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) s.agents = {};
+      } else {
+        touchAgent({ status: 'idle', tool: null });
+      }
       break;
     case 'StopFailure':
       touch({ status: 'error', tool: null, ...(agentId ? {} : { message: `API 오류: ${ev.error || 'unknown'}` }) });
