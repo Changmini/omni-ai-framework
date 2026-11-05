@@ -115,7 +115,14 @@ function addAgent(info) {
     <div class="agent-tasks ellipsis"></div>`;
   const row = item.querySelector('.agent-row');
   row.addEventListener('click', () => select(info.id));
-  row.addEventListener('keydown', (e) => { if (e.key === 'Enter') select(info.id); });
+  row.addEventListener('keydown', (e) => {
+    if (e.target !== row) return; // typing in the rename box
+    if (e.key === 'Enter') select(info.id);
+    if (e.key === 'F2') { e.preventDefault(); startRename(info.id); }
+  });
+  const nameEl = item.querySelector('.agent-name');
+  nameEl.title = '더블클릭(또는 F2)해서 이름 바꾸기';
+  nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(info.id); });
   item.querySelector('.agent-close').addEventListener('click', (e) => {
     e.stopPropagation();
     closeTerminal(info.id);
@@ -162,7 +169,8 @@ function select(id) {
   const a = agents.get(id);
   requestAnimationFrame(() => {
     fitActive();
-    a.term.focus();
+    // A double-click on a name selects first; leave focus in the rename box.
+    if (![...agents.values()].some((x) => x.renaming)) a.term.focus();
   });
   renderActive();
 }
@@ -209,7 +217,7 @@ function renderItem(id) {
   const { info, item } = a;
   const c = info.claude || {};
   item.querySelector('.led').dataset.status = ledStatus(info);
-  item.querySelector('.agent-name').textContent = displayName(info);
+  if (!a.renaming) item.querySelector('.agent-name').textContent = displayName(info);
   item.querySelector('.agent-sub').textContent = info.branch ? `⎇ ${info.branch}` : info.cwd;
   const claudeLine = item.querySelector('.agent-claude');
   claudeLine.textContent = claudeSummary(c);
@@ -267,6 +275,52 @@ function renderActive() {
   els.banner.dataset.kind = waiting ? 'waiting' : 'error';
   els.banner.textContent = banner ? `${waiting ? '⏳' : '⚠'} ${banner}` : '';
 }
+
+// ---------- rename ----------
+// Double-click a name (sidebar or top bar) or press F2 on a row. Enter or
+// leaving the box saves; Esc cancels; an empty name follows the folder again.
+function startRename(id) {
+  const a = agents.get(id);
+  if (!a || a.renaming) return;
+  a.renaming = true;
+  const nameEl = a.item.querySelector('.agent-name');
+  const input = document.createElement('input');
+  input.className = 'rename';
+  const initial = a.info.name || displayName(a.info);
+  input.value = initial;
+  input.maxLength = 80;
+  input.setAttribute('aria-label', '터미널 이름');
+  nameEl.replaceChildren(input);
+  input.focus();
+  input.select();
+  let done = false;
+  let ready = false; // ignore a blur from the click that opened the box
+  requestAnimationFrame(() => requestAnimationFrame(() => { ready = true; if (document.activeElement !== input) { input.focus(); input.select(); } }));
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    a.renaming = false;
+    // Unchanged text is not saved: the name keeps following the folder.
+    if (save && input.value.trim() !== initial) {
+      const name = input.value.trim();
+      a.info.name = name || null;
+      api.rename(id, name);
+    }
+    renderItem(id);
+    if (id === activeId) a.term.focus();
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('dblclick', (e) => e.stopPropagation());
+  input.addEventListener('blur', () => { if (ready) finish(true); });
+}
+
+els.activeName.title = '더블클릭해서 이름 바꾸기';
+els.activeName.addEventListener('dblclick', () => { if (activeId) startRename(activeId); });
 
 function update(id, patch) {
   const a = agents.get(id);
@@ -415,7 +469,7 @@ renderIme();
 api.onData(({ id, data }) => agents.get(id)?.term.write(data));
 api.onStatus(({ id, status, error }) => update(id, { status, error }));
 api.onAgent(({ id, claude }) => update(id, { claude }));
-api.onMeta(({ id, cwd, branch }) => update(id, { cwd, branch }));
+api.onMeta(({ id, ...patch }) => update(id, patch)); // cwd/branch, or name
 api.onExit(({ id, exitCode }) => {
   const a = agents.get(id);
   if (!a) return;
