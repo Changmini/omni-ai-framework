@@ -579,8 +579,11 @@ async function typeShortcut(sc, lines) {
 function renderShortcuts() {
   scEls.empty.hidden = shortcuts.length > 0 || !scEls.form.hidden;
   $('#shortcut-count').textContent = String(shortcuts.length);
-  scEls.list.replaceChildren(...shortcuts.map((sc) => {
+  scEls.list.replaceChildren(...shortcuts.flatMap((sc) => {
     const li = h('li', 'shortcut');
+    // Editing: the form opens right under the item being edited.
+    const editingThis = editingShortcut === sc.id && !scEls.form.hidden;
+    if (editingThis) li.classList.add('editing');
     li.tabIndex = 0;
     const first = sc.command.split(/\r?\n/).find((l) => l.trim()) || '';
     const more = sc.command.split(/\r?\n/).filter((l) => l.trim()).length - 1;
@@ -601,11 +604,17 @@ function renderShortcuts() {
       e.stopPropagation();
       if (!window.confirm(`바로가기 "${sc.name}"을(를) 삭제할까요?`)) return;
       shortcuts = shortcuts.filter((x) => x.id !== sc.id);
+      if (editingShortcut === sc.id) { editingShortcut = null; scEls.form.hidden = true; }
       saveShortcuts();
       renderShortcuts();
     });
-    return li;
+    if (!editingThis) return [li];
+    const slot = h('li', 'shortcut-edit-slot');
+    slot.append(scEls.form);
+    return [li, slot];
   }));
+  // Adding a new one (or nothing open): the form sits below the list.
+  if (editingShortcut === null || editingShortcut === 'new') scEls.empty.after(scEls.form);
 }
 
 function openShortcutForm(sc) {
@@ -613,6 +622,7 @@ function openShortcutForm(sc) {
   const f = scEls.form.elements;
   f.name.value = sc ? sc.name : '';
   f.command.value = sc ? sc.command : '';
+  fitCommandBox();
   f.newTerminal.checked = sc ? sc.newTerminal : true;
   scEls.form.hidden = false;
   renderShortcuts();
@@ -624,6 +634,13 @@ function closeShortcutForm() {
   scEls.form.hidden = true;
   renderShortcuts();
 }
+
+// The command box grows with its lines (3 to 8), so a whole shortcut is visible.
+function fitCommandBox() {
+  const box = scEls.form.elements.command;
+  box.rows = Math.min(8, Math.max(3, box.value.split('\n').length));
+}
+scEls.form.elements.command.addEventListener('input', fitCommandBox);
 
 scEls.add.addEventListener('click', () => openShortcutForm(null));
 scEls.cancel.addEventListener('click', () => closeShortcutForm());
