@@ -15,8 +15,8 @@
 | 🌳 **서브에이전트·팀** | Claude가 띄운 서브에이전트와 에이전트 팀 팀원을 트리로 표시하고, 각자의 상태와 도구를 보여 줌 |
 | ✅ **작업 진행률** | Claude의 작업 목록 진행률(`작업 1/4 · 담당자: 작업명`) 표시 |
 | 🔔 **알림 배너** | 승인 대기 메시지, API 오류, 셸 출력의 오류 줄(`Error: ...`, `command not found` 등)을 상단에 표시 |
-| 🐧 **WSL 지원** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 |
-| ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) |
+| 🐧 **WSL·Linux** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 · Linux/WSL에서 앱을 직접 실행하는 설치 스크립트 |
+| ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
 | 🔒 **안전** | 훅은 앱에서 연 터미널의 `claude`에만 적용(사용자 설정 파일은 수정하지 않음) · 신호 수신기는 `127.0.0.1` 전용이고 실행마다 새 토큰 확인 · 앱은 한 번에 하나만 실행 |
 
 ### 단축키
@@ -44,9 +44,40 @@ npm start
 - 터미널 창 없이 띄우려면 바탕화면 바로가기의 대상에 `"<앱 폴더>\node_modules\electron\dist\electron.exe" "<앱 폴더>"`를 넣으세요. `npm start`는 개발용입니다.
 - **업데이트:** `git pull`은 앱을 켠 채로 받아도 됩니다. 새 코드는 앱을 껐다 켜야 반영됩니다(앱 안의 터미널과 Claude도 같이 종료되며, 대화는 `claude --continue`로 이어 갈 수 있음).
 - Windows에서는 별도 빌드 도구가 필요 없습니다. node-pty 1.1 패키지에 `prebuilds/win32-x64`, `win32-arm64` 바이너리가 들어 있습니다.
-- macOS와 Linux에서는 `$SHELL`을 사용합니다. Linux에는 node-pty prebuild가 없으므로 `npm install` 뒤 `cd node_modules/node-pty && npx node-gyp rebuild`로 빌드하세요. Python, make, C++ 컴파일러가 필요합니다.
+- macOS에서는 `$SHELL`을 사용합니다. Linux는 아래 "실행 (Linux · WSL 안에서)"를 보세요.
+
+## 실행 (Linux · WSL 안에서)
+
+설치 스크립트 하나로 준비가 끝납니다. Node.js 20 이상만 미리 있으면 됩니다.
+
+```bash
+cd claude-code/apps/agent-terminal
+scripts/setup-linux.sh
+omni-agent-terminal
+```
+
+`setup-linux.sh`가 하는 일(`--dry-run`을 붙이면 실행하지 않고 할 일만 보여 줌):
+
+1. **패키지 설치 (sudo 요청):** node-pty 빌드 도구(`build-essential`, `python3`)와 Electron 실행 라이브러리(GTK3, NSS, ALSA 등)를 설치합니다. Ubuntu 버전마다 다른 패키지 이름(24.04의 `*t64` 등)은 자동으로 고릅니다.
+2. **`npm install`:** node-pty가 이 단계에서 Linux용으로 빌드됩니다. 실패하면 한 번 더 빌드를 시도합니다.
+3. **Electron 샌드박스 권한:** `chrome-sandbox`에 root 소유와 setuid를 설정합니다. 설정하지 못하면 실행기가 `--no-sandbox`로 대신 실행합니다.
+4. **실행기와 메뉴 항목 생성:** 실행기 `~/.local/bin/omni-agent-terminal`과 앱 메뉴 항목을 만듭니다. 실행기는 앱을 터미널과 분리해서 띄우므로, 실행한 터미널을 닫아도 앱은 남습니다.
+
+**한글 글꼴:** 앱에 Nanum Gothic Coding(OFL-1.1, npm `@fontsource/nanum-gothic-coding`)이 들어 있어, 시스템에 한글 글꼴이 없어도 깨지지 않습니다.
+
+**WSL에서:** Windows 11(WSLg)이면 앱 창이 Windows 바탕화면에 뜨고, 메뉴 항목이 Windows 시작 메뉴에 나타날 수 있습니다. 이때 프로젝트는 `/mnt/c/...`가 아니라 **WSL 홈에 따로 clone**하세요. Windows용 `node_modules`는 Linux에서 동작하지 않습니다.
 
 ## WSL에서 쓰기
+
+방법은 두 가지입니다.
+
+| | A. Windows 앱에서 `wsl` 입력 | B. 앱을 WSL 안에서 실행 |
+|---|---|---|
+| 설치 | Windows에서 `npm install` | WSL에서 `scripts/setup-linux.sh` |
+| 터미널 | PowerShell(필요할 때 `wsl`로 Ubuntu 진입) | Ubuntu bash |
+| 조건 | WSL **mirrored 네트워킹**(설정 후 `wsl --shutdown` 필요) | WSLg(Windows 11). 네트워킹 설정 불필요 |
+
+B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A 방식의 설명입니다.
 
 앱의 PowerShell 터미널에서 `wsl`을 입력하면 Ubuntu bash로 들어가고, 그 안에서도 경로 표시와 Claude 상태 표시가 동작합니다.
 
@@ -85,7 +116,7 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 검증한 범위(Linux, Claude Code 2.1.318):
 - **확인함:** `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
 - **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
-- **확인 못 함:** Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
+- **확인 못 함:** Linux·WSLg에서 Electron 창 실행과 `setup-linux.sh`의 실제 설치 단계(`--dry-run`과 실행기 생성만 확인), Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
 - **문서화되지 않은 형식:** 팀 설정과 작업 파일 형식은 공식 문서에 없어서 실제 파일을 보고 맞췄습니다. 버전이 바뀌면 달라질 수 있습니다
 
 ## 구조
@@ -105,6 +136,7 @@ src/
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
 ├── status.js          # 셸 출력의 오류 줄 감지
 └── renderer/          # index.html · styles.css · renderer.js (xterm.js 화면, 사이드바 트리, 단축키)
+scripts/setup-linux.sh # Linux·WSL 설치 자동화 (패키지, npm install, 샌드박스, 실행기)
 test/                  # node --test
 ```
 
