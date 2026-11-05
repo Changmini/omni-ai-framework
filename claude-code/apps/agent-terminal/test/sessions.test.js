@@ -104,3 +104,16 @@ test('hook events for unknown terminals are ignored', () => {
   m.onHookEvent('99', { hook_event_name: 'Stop' });
   assert.strictEqual(events.length, 0);
 });
+
+test('rename sets a custom name; empty goes back to the folder name', () => {
+  const { m, events } = setup();
+  const { id } = m.create({ cwd: '/repo' });
+  assert.strictEqual(m.rename(id, '  백엔드 API  '), true);
+  assert.strictEqual(m.list()[0].name, '백엔드 API');
+  assert.deepStrictEqual(events.at(-1), ['session:meta', { id, name: '백엔드 API' }]);
+  m.rename(id, '   ');
+  assert.strictEqual(m.list()[0].name, null);
+  assert.strictEqual(m.rename('99', 'x'), false);
+  m.rename(id, 'x'.repeat(200));
+  assert.strictEqual(m.list()[0].name.length, 80);
+});
