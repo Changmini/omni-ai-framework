@@ -63,7 +63,9 @@ class SessionManager {
       pty,
       tracker: new StatusTracker({ now: this.now }),
       lastStatus: null,
-      claude: emptyState(),
+      claude: emptyState(), // the terminal's main claude session
+      primarySid: null,
+      others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
       tasks: null,
@@ -78,6 +80,8 @@ class SessionManager {
     pty.onExit(({ exitCode }) => {
       session.tracker.onExit();
       session.claude = emptyState();
+      session.primarySid = null;
+      session.others.clear();
       this.emit('session:exit', { id, exitCode });
       this.pollStatus();
       this.emitAgent(session);
@@ -154,15 +158,48 @@ class SessionManager {
   }
 
   // One Claude Code hook event, already authenticated by the hook server.
-  onHookEvent(id, ev) {
+  onHookEvent(id, ev, meta = {}) {
     const s = this.sessions.get(id);
     if (!s) return;
+    const sid = ev.session_id || '';
+    // Several claude sessions can report into one terminal through tmux: the
+    // first that is not a teammate is the main one (LED, banner); the others,
+    // e.g. split-pane teammates, which arrive as their own sessions carrying
+    // agent_type but no agent_id (seen on 2.1.318), are listed beside it.
+    const teammateSession = Boolean(ev.agent_type && !ev.agent_id);
+    if (sid && sid !== s.primarySid && (s.primarySid || teammateSession)) {
+      this.onOtherSession(s, sid, ev, meta, teammateSession);
+      this.emitAgent(s);
+      return;
+    }
+    if (sid && !s.primarySid) s.primarySid = sid;
     s.claude = reduce(s.claude, ev, this.now());
-    if (ev.hook_event_name === 'SessionEnd') { s.team = null; s.tasks = null; }
+    if (ev.hook_event_name === 'SessionEnd') {
+      s.team = null;
+      s.tasks = null;
+      s.primarySid = null;
+    }
+    // The main agent's turn ended with nothing left running: teammates are gone.
+    if (ev.hook_event_name === 'Stop' && !ev.agent_id && Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) {
+      for (const [k, o] of s.others) if (o.teammate) s.others.delete(k);
+    }
     if (/^(Task|Teammate|Subagent)/.test(ev.hook_event_name || '')) this.refreshTeam(s);
     if (ev.cwd) this.setCwd(id, ev.cwd);
     if (ev.hook_event_name === 'Stop') this.setCwd(id, s.cwd); // branch may have changed
     this.emitAgent(s);
+  }
+
+  onOtherSession(s, sid, ev, meta, teammateSession) {
+    if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); return; }
+    const prev = s.others.get(sid) || { state: emptyState(), name: null, teammate: false, pane: null };
+    const title = /^@\S/.test(meta.title || '') ? meta.title.slice(1) : null; // "@planner"
+    s.others.set(sid, {
+      state: reduce(prev.state, ev, this.now()),
+      pane: meta.pane || prev.pane,
+      teammate: prev.teammate || teammateSession || ev.hook_event_name === 'TeammateIdle',
+      name: (ev.hook_event_name === 'TeammateIdle' && ev.teammate_name) || prev.name || title || null,
+      type: prev.type || ev.agent_type || null,
+    });
   }
 
   refreshTeam(s) {
@@ -174,14 +211,26 @@ class SessionManager {
   }
 
   agentView(s) {
-    const view = withTeam(s.claude, s.team);
+    const others = [...s.others].map(([sid, o]) => ({
+      id: `session:${sid}`,
+      name: o.name || (o.teammate ? o.type : null) || `claude ${o.pane || sid.slice(0, 8)}`,
+      type: o.type,
+      status: o.state.status || 'idle',
+      tool: o.state.tool,
+      teammate: o.teammate,
+    }));
+    // Teammates already listed as their own sessions are not repeated from the config.
+    const names = new Set(others.map((o) => o.name));
+    const team = s.team ? { ...s.team, members: s.team.members.filter((m) => !names.has(m.name)) } : null;
+    const view = withTeam(s.claude, team);
+    const hasTeammates = others.some((o) => o.teammate) || Boolean(team && team.members.some((m) => m.agentType !== 'team-lead'));
     return {
       status: view.status,
       tool: view.tool,
       message: view.message,
       // A lead alone is not shown as a team (the config exists from startup).
-      team: s.team && s.team.members.some((m) => m.agentType !== 'team-lead') ? s.team.name : null,
-      agents: Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })),
+      team: hasTeammates ? (s.team ? s.team.name : `session-${(s.primarySid || '').slice(0, 8)}`) : null,
+      agents: [...Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })), ...others],
       tasks: s.tasks,
     };
   }

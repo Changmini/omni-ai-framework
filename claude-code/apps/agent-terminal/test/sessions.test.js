@@ -127,3 +127,40 @@ test('reorder changes the listed order and ignores unknown ids', () => {
   m.kill(ids[0]);
   assert.deepStrictEqual(m.list().map((s) => s.id), [ids[2], ids[1]]);
 });
+
+test('tmux split-pane team (real 2.1.318 events): lead keeps the LED, teammates listed, cleared at the end', () => {
+  const fixture = require('./fixtures/tmux-split-team-2.1.318.json');
+  // No team file here: in split-pane mode the config listed only the lead.
+  const events = [];
+  const m = new SessionManager({ spawn: () => fakePty(), emit: (c, p) => events.push([c, p]), shell: { file: 'sh', args: [] }, pollMs: 0 });
+  const { id } = m.create({});
+  const views = [];
+  for (const { pane, ev } of fixture) {
+    m.onHookEvent(id, ev, { pane, title: '' });
+    views.push(events.filter(([c]) => c === 'session:agent').at(-1)[1].claude);
+  }
+  // While teammates worked, the lead's status came only from the lead's pane.
+  const mid = views[fixture.findIndex((f) => f.pane === '%2' && f.ev.hook_event_name === 'TeammateIdle')];
+  assert.deepStrictEqual(mid.agents.filter((a) => a.teammate).map((a) => [a.name, a.status]).sort(), [['alpha', 'idle'], ['beta', 'idle']]);
+  assert.ok(mid.team, 'shown as a team');
+  const leadStatuses = new Set(views.map((v) => v.status));
+  assert.ok(!views.some((v, i) => fixture[i].pane !== '%0' && v.status !== views[i - 1]?.status), 'teammate events never changed the lead status');
+  assert.ok(leadStatuses.has('working') && leadStatuses.has('idle'));
+  // The lead's last Stop (background_tasks: []) removes the teammates.
+  const last = views.at(-1);
+  assert.deepStrictEqual(last.agents.filter((a) => a.teammate), []);
+  assert.strictEqual(last.team, null);
+});
+
+test('a second, unrelated claude session in the same terminal is listed, not merged', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A' }, { pane: '%0' });
+  m.onHookEvent(id, { hook_event_name: 'Stop', session_id: 'A' }, { pane: '%0' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'B' }, { pane: '%5' });
+  const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.strictEqual(view.status, 'idle', 'main session unchanged');
+  assert.deepStrictEqual(view.agents.map((a) => [a.name, a.status, a.teammate]), [['claude %5', 'working', false]]);
+  m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 'B' }, { pane: '%5' });
+  assert.deepStrictEqual(events.filter(([c]) => c === 'session:agent').at(-1)[1].claude.agents, []);
+});
