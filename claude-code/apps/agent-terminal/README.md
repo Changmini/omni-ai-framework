@@ -5,6 +5,31 @@
 
 ![screenshot](docs/screenshot.png)
 
+## 한눈에 보는 기능
+
+| 분류 | 기능 |
+|---|---|
+| 🖥️ **터미널** | 앱을 켜면 PowerShell이 바로 열림 · 여러 터미널을 탭처럼 추가·전환·닫기 · 사이드바와 터미널이 같은 배경색·폰트로 한 화면처럼 보임 |
+| 📁 **위치 표시** | 터미널 이름이 현재 폴더 이름으로 자동 변경 · git 브랜치(`⎇`) 표시 · `cd`하면 즉시 반영 |
+| 🤖 **Claude 상태** | 터미널마다 Claude가 `작업 중` / `Bash 실행 중`(지금 쓰는 도구) / `승인 대기` / `대기` / `오류`인지 LED와 문구로 표시 |
+| 🌳 **서브에이전트·팀** | Claude가 띄운 서브에이전트와 에이전트 팀 팀원을 트리로 표시하고, 각자의 상태와 도구를 보여 줌 |
+| ✅ **작업 진행률** | Claude의 작업 목록 진행률(`작업 1/4 · 담당자: 작업명`) 표시 |
+| 🔔 **알림 배너** | 승인 대기 메시지, API 오류, 셸 출력의 오류 줄(`Error: ...`, `command not found` 등)을 상단에 표시 |
+| 🐧 **WSL 지원** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 |
+| ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) |
+| 🔒 **안전** | 훅은 앱에서 연 터미널의 `claude`에만 적용(사용자 설정 파일은 수정하지 않음) · 신호 수신기는 `127.0.0.1` 전용이고 실행마다 새 토큰 확인 · 앱은 한 번에 하나만 실행 |
+
+### 단축키
+
+| 키 | 동작 |
+|---|---|
+| `Ctrl+Shift+T` | 새 터미널 |
+| `Ctrl+Shift+W` | 현재 터미널 닫기(마지막 터미널이면 창도 닫힘) |
+
+### LED 색
+
+🟡 작업 중 · 🟠 승인 대기 · 🟢 대기 · 🔴 오류 · ⚫ 종료 · ○ Claude 없이 셸만 실행 중
+
 ## 실행 (Windows)
 
 Node.js 20 이상이 필요합니다.
@@ -17,6 +42,7 @@ npm start
 
 - 앱을 켜면 홈 폴더에서 PowerShell이 바로 열립니다. 평소처럼 `cd`로 프로젝트에 가서 `claude`를 실행하면 됩니다.
 - 터미널 창 없이 띄우려면 바탕화면 바로가기의 대상에 `"<앱 폴더>\node_modules\electron\dist\electron.exe" "<앱 폴더>"`를 넣으세요. `npm start`는 개발용입니다.
+- **업데이트:** `git pull`은 앱을 켠 채로 받아도 됩니다. 새 코드는 앱을 껐다 켜야 반영됩니다(앱 안의 터미널과 Claude도 같이 종료되며, 대화는 `claude --continue`로 이어 갈 수 있음).
 - Windows에서는 별도 빌드 도구가 필요 없습니다. node-pty 1.1 패키지에 `prebuilds/win32-x64`, `win32-arm64` 바이너리가 들어 있습니다.
 - macOS와 Linux에서는 `$SHELL`을 사용합니다. Linux에는 node-pty prebuild가 없으므로 `npm install` 뒤 `cd node_modules/node-pty && npx node-gyp rebuild`로 빌드하세요. Python, make, C++ 컴파일러가 필요합니다.
 
@@ -35,7 +61,7 @@ npm start
 - **필요한 것: curl.** WSL 안에 `curl`이 있어야 합니다(`sudo apt install curl`).
 - **WSL 안에서 쓰는 Claude:** WSL에 설치된 `claude`가 실행됩니다. Windows의 `claude.exe`가 아닙니다.
 
-## 기능
+## 기능 상세
 
 | 영역 | 동작 |
 |---|---|
@@ -46,8 +72,6 @@ npm start
 | 상단 배너 | 🟠 승인 대기 메시지, 🔴 API 오류, 또는 셸 출력의 오류 줄을 표시합니다 |
 | 새 터미널 / 닫기 | `＋ 새 터미널` 또는 `Ctrl+Shift+T` / `✕` 또는 `Ctrl+Shift+W`. 마지막 터미널을 닫으면 창도 닫힙니다 |
 | 글자 크기 | 모든 터미널에 적용되고, 설정이 기억됩니다 |
-
-LED: 🟡 작업 중 · 🟠 승인 대기 · 🟢 대기 · 🔴 오류 · ⚫ 종료 · ○ Claude 없이 셸만 실행 중
 
 ## Claude 상태는 어떻게 알아내나
 
@@ -77,13 +101,14 @@ src/
 ├── shell.js           # 셸 실행 방법(PowerShell/bash/zsh) + 현재 폴더 보고 파싱
 ├── shell-init/        # 앱 터미널 전용 셸 연동: claude 래퍼, 프롬프트마다 현재 폴더 보고
 ├── git.js             # .git/HEAD로 브랜치 읽기 (git 프로세스 없음)
+├── wsl.js             # WSL 경로 ↔ Windows 경로 변환, WSLENV 구성
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
 ├── status.js          # 셸 출력의 오류 줄 감지
 └── renderer/          # index.html · styles.css · renderer.js (xterm.js 화면, 사이드바 트리, 단축키)
 test/                  # node --test
 ```
 
-- 보안: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, CSP `script-src 'self'`를 적용했습니다. 터미널에 출력된 링크는 앱 안이 아니라 시스템 브라우저에서 열립니다.
+- 보안: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, CSP `script-src 'self'`를 적용했습니다. 앱 창은 다른 페이지로 이동하거나 새 창을 열지 않습니다.
 - 디자인: 사이드바, 터미널, 창 배경을 같은 색(`#14161c`)으로 맞추고, 같은 코딩 폰트(D2Coding → Cascadia Code → Fira Code → Consolas 순)를 씁니다. 이 색을 바꿀 때는 `styles.css`의 `--bg`, `renderer.js`의 `TERMINAL_THEME.background`, `main.js`의 `backgroundColor` 세 곳을 함께 수정하세요.
 
 ## 테스트
