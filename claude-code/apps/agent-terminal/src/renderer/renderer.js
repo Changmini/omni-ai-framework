@@ -1043,23 +1043,179 @@ function activityRow(id, e) {
   const text = h('span', 'act-text');
   if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who} · ` : e.who));
   if (e.file) {
-    const f = h('span', 'act-file', shortPath(e.file, agents.get(id)?.info.cwd));
-    f.title = `${e.file}\n클릭: VS Code에서 열기`;
-    f.addEventListener('click', async () => {
-      const ok = await api.openFile(id, e.file).catch(() => false);
-      if (!ok) { f.classList.add('open-failed'); setTimeout(() => f.classList.remove('open-failed'), 800); }
-    });
-    text.append(f);
+    text.append(fileLink(id, e.file, shortPath(e.file, agents.get(id)?.info.cwd)));
   } else {
     text.append(document.createTextNode(e.text || ''));
   }
   if (e.kind === 'fail' && e.error) text.append(h('span', 'act-error', ` — ${e.error}`));
-  if (!e.file) text.title = [e.who, e.text, e.error].filter(Boolean).join('\n');
   li.append(h('span', 'act-time', hhmmss(e.at)), h('span', 'act-tool', label), text);
+  li.addEventListener('mouseenter', () => cardHover(id, e.n, li));
+  li.addEventListener('mouseleave', () => cardLeave());
   return li;
 }
 
+// A file path that opens the file.
+function fileLink(id, file, label = file) {
+  const f = h('span', 'act-file', label);
+  f.title = `${file}\n클릭: 열기`;
+  f.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const ok = await api.openFile(id, file).catch(() => false);
+    if (!ok) { f.classList.add('open-failed'); setTimeout(() => f.classList.remove('open-failed'), 800); }
+  });
+  return f;
+}
+
+// ---------- activity detail card ----------
+// Hovering a line shows everything Claude sent for it beside the panel:
+// the whole prompt, command, edit diff, tool output or error. The card stays
+// while the pointer is on it, so its text can be selected and copied.
+const card = h('div', 'act-card');
+card.hidden = true;
+card.setAttribute('role', 'tooltip');
+document.body.append(card);
+let cardAt = null; // { id, n, li }
+let cardTimer = null;
+
+const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+
+function cardSec(title, body, cls = '') {
+  const sec = h('div', 'card-sec');
+  sec.append(h('div', 'card-h', title));
+  sec.append(typeof body === 'string' ? h('pre', `card-pre ${cls}`.trim(), body) : body);
+  return sec;
+}
+
+// Diff lines (' ', '+', '-', '@@') as colored rows.
+function diffPre(lines) {
+  const pre = h('pre', 'card-pre diff');
+  for (const l of lines) {
+    const cls = l.startsWith('@@') ? 'd-hunk' : l[0] === '+' ? 'd-add' : l[0] === '-' ? 'd-del' : 'd-ctx';
+    pre.append(h('span', cls, l || ' ')); // block spans: one line each
+  }
+  return pre;
+}
+
+// What an edit changed: the patch in the result, else the input's strings.
+function editLines(tool, input, result) {
+  const r = result && typeof result === 'object' ? result : {};
+  if (Array.isArray(r.structuredPatch) && r.structuredPatch.length) {
+    return r.structuredPatch.flatMap((hk) => [
+      `@@ -${hk.oldStart},${hk.oldLines} +${hk.newStart},${hk.newLines} @@`,
+      ...(Array.isArray(hk.lines) ? hk.lines.map(String) : []),
+    ]);
+  }
+  if (r.gitDiff && typeof r.gitDiff.patch === 'string') return r.gitDiff.patch.split('\n');
+  const pair = (o, n) => [...String(o || '').split('\n').map((x) => `-${x}`), ...String(n || '').split('\n').map((x) => `+${x}`)];
+  if (tool === 'Edit') return pair(input.old_string, input.new_string);
+  if (tool === 'MultiEdit' && Array.isArray(input.edits)) return input.edits.flatMap((x, k) => [`@@ ${k + 1}번째 수정 @@`, ...pair(x.old_string, x.new_string)]);
+  if (tool === 'Write' && typeof input.content === 'string') return input.content.split('\n').map((x) => `+${x}`);
+  if (tool === 'NotebookEdit') return pair('', input.new_source);
+  return null;
+}
+
+function cardBody(id, e) {
+  const d = e.detail || {};
+  const i = d.input && typeof d.input === 'object' ? d.input : {};
+  const r = e.result;
+  const out = [];
+  const tool = e.tool || '';
+  if (e.kind === 'prompt') out.push(cardSec('프롬프트', asText(d.prompt || e.text)));
+  else if (e.kind === 'error') out.push(cardSec('오류', asText(d.error || e.text), 'err'));
+  else if (e.kind === 'wait' && d.message) out.push(cardSec('알림', asText(d.message)));
+  else if (['tool', 'fail', 'wait'].includes(e.kind) && d.input !== undefined) {
+    if (e.file) {
+      const row = h('div', 'card-file');
+      row.append(fileLink(id, e.file));
+      out.push(row);
+    }
+    if (tool === 'Bash') {
+      out.push(cardSec('명령', asText(i.command)));
+      if (i.description) out.push(cardSec('설명', asText(i.description)));
+      if (r && typeof r === 'object') {
+        if (r.stdout) out.push(cardSec('출력', asText(r.stdout)));
+        if (r.stderr) out.push(cardSec('오류 출력', asText(r.stderr), 'err'));
+        if (!r.stdout && !r.stderr) out.push(h('div', 'card-note', '출력 없음'));
+        if (r.interrupted) out.push(h('div', 'card-note err', '중단됨'));
+      }
+    } else if (['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(tool)) {
+      const lines = editLines(tool, i, r);
+      if (lines) out.push(cardSec(tool === 'Write' && !(r && r.structuredPatch) ? '내용' : '변경', diffPre(lines)));
+    } else if (tool === 'Read') {
+      const range = [i.offset && `${i.offset}행부터`, i.limit && `${i.limit}행`].filter(Boolean).join(' ');
+      const f = r && r.file && typeof r.file === 'object' ? r.file : null;
+      const got = f && f.numLines != null ? `${f.numLines}행 읽음${f.totalLines ? ` (전체 ${f.totalLines}행)` : ''}` : '';
+      if (range || got) out.push(h('div', 'card-note', [range, got].filter(Boolean).join(' · ')));
+    } else if (tool === 'Grep' || tool === 'Glob') {
+      const cond = ['pattern', 'path', 'glob', 'type', 'output_mode'].filter((k) => i[k] != null).map((k) => `${k}: ${asText(i[k])}`);
+      out.push(cardSec('조건', cond.join('\n')));
+      if (r && typeof r === 'object') {
+        if (r.numFiles != null) out.push(h('div', 'card-note', `파일 ${r.numFiles}개${r.truncated ? ' (일부)' : ''}`));
+        if (r.content) out.push(cardSec('결과', asText(r.content)));
+        else if (Array.isArray(r.filenames) && r.filenames.length) out.push(cardSec('파일', r.filenames.map(asText).join('\n')));
+      }
+    } else if (tool === 'Agent' || tool === 'Task') {
+      if (i.subagent_type) out.push(h('div', 'card-note', `에이전트: ${asText(i.subagent_type)}`));
+      if (i.description) out.push(cardSec('설명', asText(i.description)));
+      if (i.prompt) out.push(cardSec('맡긴 일', asText(i.prompt)));
+      const said = r && Array.isArray(r.content) ? r.content.map((c) => (c && c.text) || '').join('\n').trim() : '';
+      if (said) out.push(cardSec('결과', said));
+    } else {
+      if (Object.keys(i).length) out.push(cardSec('입력', asText(i)));
+      if (r !== undefined) out.push(cardSec('결과', asText(r)));
+    }
+    if (e.kind === 'tool' && r === undefined && tool) out.push(h('div', 'card-note', '결과 기다리는 중'));
+  }
+  if (e.kind === 'fail' && (d.error || e.error)) out.push(cardSec('오류', asText(d.error || e.error), 'err'));
+  return out;
+}
+
+function renderCard() {
+  if (!cardAt) return;
+  const a = agents.get(cardAt.id);
+  const e = a && a.activity.find((x) => x.n === cardAt.n);
+  const body = e ? cardBody(cardAt.id, e) : [];
+  if (!e || !body.length || !cardAt.li.isConnected) { hideCard(); return; }
+  const head = h('div', 'card-head');
+  head.append(h('span', 'act-time', hhmmss(e.at)), h('span', 'act-tool', e.tool || ACT_LABEL[e.kind] || e.kind));
+  if (e.who) head.append(h('span', 'act-who', e.who));
+  card.dataset.kind = e.kind;
+  card.replaceChildren(head, ...body);
+  card.hidden = false;
+  // Beside the panel, over the terminal; on the panel itself when there is no room.
+  const panel = $('#inspector').getBoundingClientRect();
+  const row = cardAt.li.getBoundingClientRect();
+  const room = panel.left - 16;
+  const width = room >= 300 ? Math.min(560, room) : panel.width - 16;
+  card.style.width = `${width}px`;
+  card.style.left = `${room >= 300 ? panel.left - width - 8 : panel.left + 8}px`;
+  const top = Math.max(8, Math.min(row.top - 6, window.innerHeight - card.offsetHeight - 8));
+  card.style.top = `${top}px`;
+}
+
+function cardHover(id, n, li) {
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => { cardAt = { id, n, li }; renderCard(); }, cardAt ? 80 : 300);
+}
+
+function cardLeave() {
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(hideCard, 250);
+}
+
+function hideCard() {
+  clearTimeout(cardTimer);
+  cardAt = null;
+  card.hidden = true;
+}
+
+card.addEventListener('mouseenter', () => clearTimeout(cardTimer));
+card.addEventListener('mouseleave', () => cardLeave());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !card.hidden) hideCard(); }, true);
+insp.list.addEventListener('scroll', () => hideCard());
+
 function renderActivity() {
+  hideCard();
   const id = activeId;
   const list = agents.get(id)?.activity || [];
   insp.list.replaceChildren(...list.slice().reverse().map((e) => activityRow(id, e)));
@@ -1105,7 +1261,10 @@ function onActivity(id, entry) {
   }
   if (id !== activeId) return;
   if (i !== -1) {
-    insp.list.querySelector(`.act[data-n="${entry.n}"]`)?.replaceWith(activityRow(id, entry));
+    const row = activityRow(id, entry);
+    insp.list.querySelector(`.act[data-n="${entry.n}"]`)?.replaceWith(row);
+    // The card follows the line it shows (a result or failure just arrived).
+    if (cardAt && cardAt.id === id && cardAt.n === entry.n) { cardAt.li = row; renderCard(); }
     return;
   }
   insp.list.prepend(activityRow(id, entry));

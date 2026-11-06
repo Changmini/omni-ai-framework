@@ -260,13 +260,19 @@ class SessionManager {
   recordActivity(s, ev, who) {
     const entry = activityEntry(ev, this.now(), who);
     if (!entry) return;
-    if (entry.kind === 'fail' && entry.useId) {
-      const i = s.activity.findIndex((a) => a.useId === entry.useId);
+    // A result or failure goes on the line of its call (newest first: ids repeat
+    // only across sessions, and the latest call is the one that just ran).
+    if ((entry.kind === 'fail' || entry.kind === 'result') && entry.useId) {
+      const i = s.activity.findLastIndex((a) => a.useId === entry.useId);
       if (i !== -1) {
-        s.activity[i] = { ...s.activity[i], kind: 'fail', error: entry.text };
+        const prev = s.activity[i];
+        s.activity[i] = entry.kind === 'fail'
+          ? { ...prev, kind: 'fail', error: entry.text, detail: { ...prev.detail, error: entry.detail.error } }
+          : { ...prev, result: entry.result };
         this.emit('session:activity', { id: s.id, entry: s.activity[i] });
         return;
       }
+      if (entry.kind === 'result') return; // its call is no longer in the log
     }
     const e = { ...entry, n: ++s.activitySeq };
     s.activity.push(e);

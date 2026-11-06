@@ -7,6 +7,51 @@
 
 const MAX_TEXT = 160;
 const ACTIVITY_MAX = 200; // log lines kept per terminal (main process and page)
+const DETAIL_MAX = 12000; // JSON size kept per tool input or result (the hover card)
+
+// A copy of a hook value small enough to keep 200 of: long strings are cut,
+// arrays keep their first items, deep nesting is dropped. When the copy is
+// still too large it is made again with tighter limits.
+function clip(value, max = DETAIL_MAX) {
+  for (const [str, arr, depth] of [[4000, 40, 4], [1500, 20, 3], [400, 10, 2], [120, 5, 1]]) {
+    const c = clipWith(value, str, arr, depth);
+    if (c === undefined || JSON.stringify(c).length <= max) return c;
+  }
+  return undefined;
+}
+
+// Tool results carry whole files (Read content, Edit/Write originalFile,
+// image base64); the card shows what changed, so those are dropped first.
+// Shapes seen in Claude Code 2.1.318 transcripts (toolUseResult).
+function trimResult(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return r;
+  const out = { ...r };
+  delete out.originalFile;
+  if (out.gitDiff && typeof out.gitDiff === 'object') out.gitDiff = { ...out.gitDiff, repository: undefined };
+  if (out.file && typeof out.file === 'object') {
+    const { content, base64, ...rest } = out.file;
+    out.file = rest;
+  }
+  if (typeof out.content === 'string' && out.structuredPatch) delete out.content; // Write: the input has it
+  return out;
+}
+
+function clipWith(v, str, arr, depth) {
+  if (typeof v === 'string') return v.length > str ? `${v.slice(0, str)}… (${v.length - str}자 생략)` : v;
+  if (v === null || typeof v !== 'object') return typeof v === 'number' || typeof v === 'boolean' ? v : undefined;
+  if (depth <= 0) return Array.isArray(v) ? `[${v.length}개]` : '{…}';
+  if (Array.isArray(v)) {
+    const out = v.slice(0, arr).map((x) => clipWith(x, str, arr, depth - 1));
+    if (v.length > arr) out.push(`… (${v.length - arr}개 더)`);
+    return out;
+  }
+  const out = {};
+  for (const [k, x] of Object.entries(v)) {
+    const c = clipWith(x, str, arr, depth - 1);
+    if (c !== undefined) out[k] = c;
+  }
+  return out;
+}
 
 const oneLine = (v, max = MAX_TEXT) => {
   if (typeof v !== 'string') return '';
@@ -48,26 +93,35 @@ function activityEntry(ev, at, who = null) {
   switch (ev.hook_event_name) {
     case 'UserPromptSubmit': {
       const text = oneLine(ev.prompt);
-      return text ? { ...base, kind: 'prompt', text } : null;
+      return text ? { ...base, kind: 'prompt', text, detail: { prompt: clip(ev.prompt) } } : null;
     }
     case 'PreToolUse': {
       const s = toolSummary(ev.tool_name, ev.tool_input);
-      return { ...base, kind: 'tool', tool: oneLine(ev.tool_name, 60) || 'tool', text: s.text, file: s.file, useId: ev.tool_use_id || null };
+      return {
+        ...base, kind: 'tool', tool: oneLine(ev.tool_name, 60) || 'tool', text: s.text, file: s.file,
+        useId: ev.tool_use_id || null, detail: { input: clip(ev.tool_input) },
+      };
     }
+    // The result of a call already logged: sessions.js puts it on that line.
+    case 'PostToolUse':
+      return ev.tool_use_id ? { ...base, kind: 'result', useId: ev.tool_use_id, result: clip(trimResult(ev.tool_response)) } : null;
     case 'PostToolUseFailure': {
       const s = toolSummary(ev.tool_name, ev.tool_input);
-      return { ...base, kind: 'fail', tool: oneLine(ev.tool_name, 60) || 'tool', text: oneLine(ev.error) || s.text, file: s.file, useId: ev.tool_use_id || null };
+      return {
+        ...base, kind: 'fail', tool: oneLine(ev.tool_name, 60) || 'tool', text: oneLine(ev.error) || s.text, file: s.file,
+        useId: ev.tool_use_id || null, detail: { input: clip(ev.tool_input), error: clip(ev.error) },
+      };
     }
     case 'PermissionRequest':
-      return { ...base, kind: 'wait', tool: oneLine(ev.tool_name, 60) || null, text: '승인 대기' };
+      return { ...base, kind: 'wait', tool: oneLine(ev.tool_name, 60) || null, text: '승인 대기', detail: { input: clip(ev.tool_input) } };
     case 'Notification':
       // idle_prompt is noise; permission_prompt repeats PermissionRequest.
       return ev.notification_type === 'idle_prompt' || ev.notification_type === 'permission_prompt' ? null
-        : { ...base, kind: 'wait', text: oneLine(ev.message) || '알림' };
+        : { ...base, kind: 'wait', text: oneLine(ev.message) || '알림', detail: { message: clip(ev.message) } };
     case 'Stop':
       return ev.agent_id ? null : { ...base, kind: 'done', text: '응답 완료' };
     case 'StopFailure':
-      return { ...base, kind: 'error', text: oneLine(ev.error || ev.message) || '오류로 중단' };
+      return { ...base, kind: 'error', text: oneLine(ev.error || ev.message) || '오류로 중단', detail: { error: clip(ev.error || ev.message) } };
     case 'SubagentStart':
       return { ...base, kind: 'agent', who: ev.agent_type || who, text: '서브에이전트 시작' };
     case 'SubagentStop':
@@ -79,4 +133,4 @@ function activityEntry(ev, at, who = null) {
   }
 }
 
-module.exports = { activityEntry, toolSummary, oneLine, ACTIVITY_MAX };
+module.exports = { activityEntry, toolSummary, oneLine, clip, trimResult, ACTIVITY_MAX, DETAIL_MAX };
