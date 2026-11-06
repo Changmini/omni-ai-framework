@@ -372,6 +372,31 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 }
 
 .terminals { position: relative; flex: 1; min-height: 0; }
+/* file viewer over the terminal */
+.viewer { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--bg); }
+.viewer[hidden] { display: none; }
+.viewer-head {
+  flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 14px;
+  border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0;
+}
+.viewer-path { flex: 1 1 auto; min-width: 60px; font-size: 12.5px; font-weight: 600; }
+.viewer-tabs { display: flex; gap: 2px; flex: none; }
+.viewer-tabs .tab { height: 28px; font-size: 12px; }
+.viewer-info { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.vbtn {
+  flex: none; height: 26px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--line);
+  background: none; color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
+}
+.vbtn:hover { color: var(--text); border-color: var(--muted); }
+.vbtn.failed { color: var(--err); border-color: var(--err); }
+.vbtn.done { color: var(--ok); border-color: var(--ok); }
+.viewer-body { flex: 1; min-height: 0; overflow: auto; outline: none; }
+.viewer-code { display: flex; min-width: max-content; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+.viewer-code pre { margin: 0; padding: 10px 0; }
+.viewer-gutter { padding: 10px 10px 10px 14px !important; text-align: right; color: var(--muted); user-select: none; opacity: .7; border-right: 1px solid var(--line); }
+.viewer-text { padding: 10px 16px !important; color: var(--text); }
+.viewer-body > .card-pre { max-height: none; border-radius: 0; background: none; padding: 10px 14px; font-size: 12.5px; white-space: pre; overflow-wrap: normal; min-width: max-content; }
+.viewer-msg { padding: 24px; color: var(--muted); font-size: 13px; }
 .term {
   position: absolute; inset: 0; padding: 10px 0 6px 14px; display: none;
   /* FitAddon sizes rows from this element's computed height. With border-box

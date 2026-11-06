@@ -101,6 +101,19 @@
           <button id="search-next" class="icon-btn" title="다음 (Enter)" aria-label="다음">↓</button>
           <button id="search-close" class="icon-btn" title="닫기 (Esc)" aria-label="닫기">✕</button>
         </div>
+        <!-- In-app file viewer over the terminal (Esc closes it). -->
+        <section id="viewer" class="viewer" hidden aria-label="파일 보기">
+          <div class="viewer-head">
+            <span id="viewer-path" class="viewer-path ellipsis"></span>
+            <span id="viewer-tabs" class="viewer-tabs" role="tablist"></span>
+            <span id="viewer-info" class="viewer-info"></span>
+            <button id="viewer-copy" class="vbtn" type="button">경로 복사</button>
+            <button id="viewer-reveal" class="vbtn" type="button">폴더에서 보기</button>
+            <button id="viewer-editor" class="vbtn" type="button" hidden>VS Code</button>
+            <button id="viewer-close" class="icon-btn" type="button" title="닫기 (Esc)" aria-label="닫기">✕</button>
+          </div>
+          <div id="viewer-body" class="viewer-body" tabindex="-1"></div>
+        </section>
       </div>
     </main>
     <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"

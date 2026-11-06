@@ -224,7 +224,7 @@ function removeAgent(id) {
 
 function select(id) {
   if (!agents.has(id)) return;
-  if (activeId !== id) closeSearch(false);
+  if (activeId !== id) { closeSearch(false); closeViewer(false); }
   activeId = id;
   loadConfig();
   renderInspector();
@@ -1043,7 +1043,7 @@ function activityRow(id, e) {
   const text = h('span', 'act-text');
   if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who} · ` : e.who));
   if (e.file) {
-    text.append(fileLink(id, e.file, shortPath(e.file, agents.get(id)?.info.cwd)));
+    text.append(fileLink(id, e.file, shortPath(e.file, agents.get(id)?.info.cwd), e));
   } else {
     text.append(document.createTextNode(e.text || ''));
   }
@@ -1054,14 +1054,13 @@ function activityRow(id, e) {
   return li;
 }
 
-// A file path that opens the file.
-function fileLink(id, file, label = file) {
+// A file path that opens the file in the viewer (with the change of `entry`).
+function fileLink(id, file, label = file, entry = null) {
   const f = h('span', 'act-file', label);
-  f.title = `${file}\n클릭: 열기`;
-  f.addEventListener('click', async (ev) => {
+  f.title = `${file}\n클릭: 보기`;
+  f.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    const ok = await api.openFile(id, file).catch(() => false);
-    if (!ok) { f.classList.add('open-failed'); setTimeout(() => f.classList.remove('open-failed'), 800); }
+    openActivityFile(id, file, entry);
   });
   return f;
 }
@@ -1126,7 +1125,7 @@ function cardBody(id, e) {
   else if (['tool', 'fail', 'wait'].includes(e.kind) && d.input !== undefined) {
     if (e.file) {
       const row = h('div', 'card-file');
-      row.append(fileLink(id, e.file));
+      row.append(fileLink(id, e.file, e.file, e));
       out.push(row);
     }
     if (tool === 'Bash') {
@@ -1211,7 +1210,137 @@ function hideCard() {
 
 card.addEventListener('mouseenter', () => clearTimeout(cardTimer));
 card.addEventListener('mouseleave', () => cardLeave());
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !card.hidden) hideCard(); }, true);
+// Esc closes the card first, then the viewer.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (!card.hidden) hideCard();
+  else if (viewing) closeViewer();
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+// ---------- file viewer ----------
+// Over the terminal: a change as a diff, or the file itself with line
+// numbers, read by the main process (WSL files through \\wsl.localhost, so no
+// editor is needed). Copy the path, show it in the file manager, or open it
+// in VS Code when that is installed.
+const viewer = {
+  el: $('#viewer'), path: $('#viewer-path'), tabs: $('#viewer-tabs'), info: $('#viewer-info'), body: $('#viewer-body'),
+  copy: $('#viewer-copy'), reveal: $('#viewer-reveal'), editor: $('#viewer-editor'), close: $('#viewer-close'),
+};
+let viewing = null; // { path, views, actions, token }
+let editorOk = false;
+if (api.editorAvailable) api.editorAvailable().then((v) => { editorOk = Boolean(v); }).catch(() => {});
+
+const sizeText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`);
+
+function diffStat(lines) {
+  let add = 0;
+  let del = 0;
+  for (const l of lines) {
+    if (l.startsWith('+++') || l.startsWith('---')) continue;
+    if (l[0] === '+') add++;
+    else if (l[0] === '-') del++;
+  }
+  return `+${add} −${del}`;
+}
+
+// `views`: [{ key, label, lines }] (a diff) or [{ key, label, load }] (async,
+// resolves to { text } | { lines } | { binary, size } | { error }).
+function openViewer({ path, views, key, actions = {} }) {
+  hideCard();
+  viewing = { path, views, actions, token: null };
+  viewer.path.textContent = path;
+  viewer.path.title = path;
+  viewer.tabs.replaceChildren(...views.map((v) => {
+    const b = h('button', 'tab', v.label);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.dataset.key = v.key;
+    b.addEventListener('click', () => showView(v.key));
+    return b;
+  }));
+  viewer.tabs.hidden = views.length < 2;
+  viewer.reveal.hidden = !actions.reveal;
+  viewer.editor.hidden = !(actions.editor && editorOk);
+  viewer.el.hidden = false;
+  showView(key || views[0].key);
+  viewer.body.focus({ preventScroll: true });
+}
+
+function codeView(text) {
+  const lines = text.split('\n');
+  if (lines.length > 1 && lines.at(-1) === '') lines.pop();
+  const box = h('div', 'viewer-code');
+  box.append(h('pre', 'viewer-gutter', lines.map((_, k) => k + 1).join('\n')), h('pre', 'viewer-text', lines.join('\n')));
+  return { box, count: lines.length };
+}
+
+async function showView(key) {
+  if (!viewing) return;
+  const v = viewing.views.find((x) => x.key === key) || viewing.views[0];
+  for (const b of viewer.tabs.children) b.setAttribute('aria-selected', String(b.dataset.key === v.key));
+  viewer.info.textContent = '';
+  viewer.body.scrollTop = 0;
+  viewer.body.scrollLeft = 0;
+  let r = v.lines ? { lines: v.lines } : null;
+  if (!r) {
+    viewer.body.replaceChildren(h('div', 'viewer-msg', '읽는 중…'));
+    const token = {};
+    viewing.token = token;
+    r = await Promise.resolve(v.load()).catch(() => null) || { error: '읽을 수 없습니다' };
+    if (!viewing || viewing.token !== token) return; // closed or switched meanwhile
+  }
+  if (r.error) viewer.body.replaceChildren(h('div', 'viewer-msg', r.error));
+  else if (r.binary) viewer.body.replaceChildren(h('div', 'viewer-msg', `바이너리 파일이라 표시하지 않습니다 (${sizeText(r.size || 0)})`));
+  else if (r.lines) {
+    viewer.body.replaceChildren(r.lines.length ? diffPre(r.lines) : h('div', 'viewer-msg', '변경 없음'));
+    viewer.info.textContent = diffStat(r.lines);
+  } else {
+    const { box, count } = codeView(r.text || '');
+    viewer.body.replaceChildren(box);
+    viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
+  }
+}
+
+function closeViewer(focusTerminal = true) {
+  if (!viewing) return;
+  viewing = null;
+  viewer.el.hidden = true;
+  viewer.body.replaceChildren();
+  if (focusTerminal) agents.get(activeId)?.term.focus();
+}
+
+function flashButton(btn, ok) {
+  btn.classList.add(ok ? 'done' : 'failed');
+  setTimeout(() => btn.classList.remove('done', 'failed'), 900);
+}
+
+viewer.close.addEventListener('click', () => closeViewer());
+viewer.copy.addEventListener('click', async () => {
+  if (!viewing) return;
+  flashButton(viewer.copy, await Promise.resolve(api.clipboardWrite(viewing.path)).then(() => true, () => false));
+});
+viewer.reveal.addEventListener('click', async () => {
+  if (viewing && viewing.actions.reveal) flashButton(viewer.reveal, await viewing.actions.reveal().catch(() => false));
+});
+viewer.editor.addEventListener('click', async () => {
+  if (viewing && viewing.actions.editor) flashButton(viewer.editor, await viewing.actions.editor().catch(() => false));
+});
+
+// A file from the activity log: what that line changed, and the file now.
+function openActivityFile(id, file, entry) {
+  const views = [];
+  const input = entry && entry.detail && entry.detail.input;
+  const lines = input && typeof input === 'object' ? editLines(entry.tool, input, entry.result) : null;
+  if (lines) views.push({ key: 'change', label: '이번 변경', lines });
+  views.push({ key: 'file', label: '파일', load: () => api.readFile(id, file) });
+  openViewer({
+    path: file, views,
+    actions: { reveal: () => api.revealFile(id, file), editor: () => api.openFile(id, file) },
+  });
+}
 insp.list.addEventListener('scroll', () => hideCard());
 
 function renderActivity() {

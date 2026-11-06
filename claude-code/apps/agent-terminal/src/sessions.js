@@ -289,9 +289,19 @@ class SessionManager {
   // those: the page cannot make the app open arbitrary paths). Inside WSL it
   // opens through VS Code's WSL remote. URL forms from
   // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
+  // A file the page may open for this terminal: one from its activity log.
+  // Returns the path as Claude named it (absolute) and as this host reads it
+  // (\\wsl.localhost for a Linux path from the Windows app), or null.
+  fileTarget(id, file) {
+    const s = this.sessions.get(id);
+    if (!s || typeof file !== 'string' || !file || !s.activity.some((a) => a.file === file)) return null;
+    const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
+    return { path: abs, host: this.hostPath(s, abs) };
+  }
+
   editorUrl(id, file) {
     const s = this.sessions.get(id);
-    if (!s || typeof file !== 'string' || !s.activity.some((a) => a.file === file)) return null;
+    if (!s || !this.fileTarget(id, file)) return null;
     if (s.wsl) {
       const p = file.startsWith('/') ? file : `${s.cwd.replace(/\/$/, '')}/${file}`;
       return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(p)}`;
