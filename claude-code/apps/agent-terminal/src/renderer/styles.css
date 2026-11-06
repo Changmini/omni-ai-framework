@@ -397,6 +397,34 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .viewer-text { padding: 10px 16px !important; color: var(--text); }
 .viewer-body > .card-pre { max-height: none; border-radius: 0; background: none; padding: 10px 14px; font-size: 12.5px; white-space: pre; overflow-wrap: normal; min-width: max-content; }
 .viewer-msg { padding: 24px; color: var(--muted); font-size: 13px; }
+.card-pre .d-meta { color: #8fbcff; }
+
+/* git tab */
+.git-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
+.git-branch { font-weight: 700; overflow-wrap: anywhere; }
+.git-sync { color: var(--muted); font-size: 11.5px; }
+.git-root { width: 100%; color: var(--muted); font-size: 11px; }
+.git-list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.git-file, .git-commit {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: baseline;
+  padding: 3px 4px; border-radius: 4px; font-size: 12px; cursor: pointer;
+}
+.git-commit { grid-template-columns: auto minmax(0, 1fr) auto; }
+.git-file:hover, .git-commit:hover { background: var(--panel); }
+.git-st { font-family: var(--mono); font-weight: 700; text-align: center; }
+.git-st[data-st="M"] { color: var(--busy); }
+.git-st[data-st="A"], .git-st[data-st="?"] { color: var(--ok); }
+.git-st[data-st="D"] { color: var(--err); }
+.git-st[data-st="R"], .git-st[data-st="C"] { color: #8fbcff; }
+.git-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.git-name > span { direction: ltr; unicode-bidi: isolate; }
+.git-dir { color: var(--muted); }
+.git-num { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+.git-num .a { color: var(--ok); }
+.git-num .d { color: var(--err); margin-left: 4px; }
+.git-hash { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.git-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-when { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .term {
   position: absolute; inset: 0; padding: 10px 0 6px 14px; display: none;
   /* FitAddon sizes rows from this element's computed height. With border-box

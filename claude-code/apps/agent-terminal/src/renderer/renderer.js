@@ -227,6 +227,7 @@ function select(id) {
   if (activeId !== id) { closeSearch(false); closeViewer(false); }
   activeId = id;
   loadConfig();
+  loadGit();
   renderInspector();
   for (const [aid, a] of agents) {
     const on = aid === id;
@@ -519,7 +520,7 @@ els.banner.addEventListener('click', () => {
 function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
-  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) loadConfig(); // new project
+  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); } // new project
   Object.assign(a.info, patch);
   renderItem(id);
   if (id === activeId && 'claude' in patch) renderCtxDetail();
@@ -942,7 +943,7 @@ function renderConfig(data) {
   }));
 }
 
-cfgEls.refresh.addEventListener('click', () => loadConfig(0));
+cfgEls.refresh.addEventListener('click', () => (inspectorTab === 'git' ? loadGit(0) : loadConfig(0)));
 // Coming back to the window: re-read, but not more than every 5s (the scan
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
@@ -960,7 +961,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = readPref('inspectorTab', 'activity') === 'config' ? 'config' : 'activity';
+let inspectorTab = ['config', 'git'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -971,6 +972,7 @@ function setInspectorOpen(on) {
   insp.toggle.setAttribute('aria-pressed', String(on));
   writePref('inspectorOpen', on);
   if (on && inspectorTab === 'config' && cfgStale) loadConfig(0);
+  if (on && inspectorTab === 'git' && gitStale) loadGit(0);
   applyPanelWidths();
 }
 
@@ -979,8 +981,9 @@ function setInspectorTab(tab) {
   writePref('inspectorTab', tab);
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab !== 'config';
+  cfgEls.refresh.hidden = tab !== 'config' && tab !== 'git';
   if (tab === 'config' && cfgStale) loadConfig(0);
+  if (tab === 'git' && gitStale) loadGit(0);
 }
 
 function setInspectorWidth(w, save = true) {
@@ -1089,7 +1092,8 @@ function cardSec(title, body, cls = '') {
 function diffPre(lines) {
   const pre = h('pre', 'card-pre diff');
   for (const l of lines) {
-    const cls = l.startsWith('@@') ? 'd-hunk' : l[0] === '+' ? 'd-add' : l[0] === '-' ? 'd-del' : 'd-ctx';
+    const cls = /^(diff --git |index |\+\+\+ |--- |commit |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode|Binary files)/.test(l) ? 'd-meta'
+      : l.startsWith('@@') ? 'd-hunk' : l[0] === '+' ? 'd-add' : l[0] === '-' ? 'd-del' : 'd-ctx';
     pre.append(h('span', cls, l || ' ')); // block spans: one line each
   }
   return pre;
@@ -1262,6 +1266,7 @@ function openViewer({ path, views, key, actions = {} }) {
     return b;
   }));
   viewer.tabs.hidden = views.length < 2;
+  viewer.copy.textContent = actions.copy ? actions.copy.label : '경로 복사';
   viewer.reveal.hidden = !actions.reveal;
   viewer.editor.hidden = !(actions.editor && editorOk);
   viewer.el.hidden = false;
@@ -1320,7 +1325,8 @@ function flashButton(btn, ok) {
 viewer.close.addEventListener('click', () => closeViewer());
 viewer.copy.addEventListener('click', async () => {
   if (!viewing) return;
-  flashButton(viewer.copy, await Promise.resolve(api.clipboardWrite(viewing.path)).then(() => true, () => false));
+  const text = viewing.actions.copy ? viewing.actions.copy.text : viewing.path;
+  flashButton(viewer.copy, await Promise.resolve(api.clipboardWrite(text)).then(() => true, () => false));
 });
 viewer.reveal.addEventListener('click', async () => {
   if (viewing && viewing.actions.reveal) flashButton(viewer.reveal, await viewing.actions.reveal().catch(() => false));
@@ -1382,6 +1388,8 @@ async function loadActivity(id) {
 function onActivity(id, entry) {
   const a = agents.get(id);
   if (!a) return;
+  // A change Claude just made, or the end of its turn: the git tab follows.
+  if (id === activeId && (entry.kind === 'done' || (entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')))) loadGit(1500);
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
   else {
@@ -1400,6 +1408,137 @@ function onActivity(id, entry) {
   while (insp.list.children.length > activityMax) insp.list.lastElementChild.remove();
   insp.empty.hidden = true;
 }
+
+// ---------- git tab ----------
+// The repository at the active terminal's folder: branch, changed files and
+// recent commits (read-only; git-view.js). A file or commit opens in the viewer.
+const gitEls = { head: $('#git-head'), body: $('#git-body') };
+let gitStale = true;
+let gitTimer = null;
+let gitToken = null;
+let lastGitAt = 0;
+
+function gitVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'git';
+}
+
+function loadGit(delay = 150) {
+  clearTimeout(gitTimer);
+  gitTimer = setTimeout(async () => {
+    const id = activeId;
+    if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
+    gitStale = false;
+    const token = {};
+    gitToken = token;
+    if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
+    const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
+    lastGitAt = Date.now();
+    if (gitToken === token && id === activeId) renderGit(id, r);
+  }, delay);
+}
+
+function agoText(t) {
+  if (!t) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}초 전`;
+  if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)}일 전`;
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function gitNum(n) {
+  const box = h('span', 'git-num');
+  if (!n) return box;
+  if (n.add == null) { box.textContent = '바이너리'; return box; }
+  box.append(h('span', 'a', `+${n.add}`), h('span', 'd', `−${n.del}`));
+  return box;
+}
+
+function gitFileRow(id, root, f, st, num) {
+  const li = h('li', 'git-file');
+  const stEl = h('span', 'git-st', st);
+  stEl.dataset.st = st;
+  const name = h('span', 'git-name');
+  const slash = f.path.lastIndexOf('/');
+  const inner = h('span');
+  if (slash !== -1) inner.append(h('span', 'git-dir', f.path.slice(0, slash + 1)));
+  inner.append(document.createTextNode(f.path.slice(slash + 1)));
+  name.append(inner);
+  li.title = f.orig ? `${f.orig} → ${f.path}` : f.path;
+  li.append(stEl, name, gitNum(num));
+  li.addEventListener('click', () => openGitFile(id, root, f));
+  return li;
+}
+
+function renderGit(id, r) {
+  gitEls.head.replaceChildren();
+  if (r.error || r.notRepo) {
+    const cwd = agents.get(id)?.info.cwd || '';
+    gitEls.body.replaceChildren(h('p', 'hint', r.error || `git 저장소가 아닙니다: ${cwd}`));
+    return;
+  }
+  gitEls.head.append(h('span', 'git-branch', r.branch ? `⎇ ${r.branch}` : '⎇ (브랜치 없음)'));
+  gitEls.head.append(h('span', 'git-sync', r.upstream ? `↑${r.ahead} ↓${r.behind} · ${r.upstream}` : '원격 브랜치 없음'));
+  gitEls.head.append(h('span', 'git-root ellipsis', r.root));
+  gitEls.head.lastChild.title = r.root;
+  const groups = [
+    ['스테이징됨', r.files.filter((f) => f.index !== ' ' && f.index !== '?'), (f) => [f.index, f.staged]],
+    ['변경됨', r.files.filter((f) => f.work !== ' ' && f.work !== '?'), (f) => [f.work, f.unstaged]],
+    ['새 파일', r.files.filter((f) => f.index === '?'), () => ['?', null]],
+  ];
+  const parts = [];
+  for (const [label, files, cols] of groups) {
+    if (!files.length) continue;
+    parts.push(h('h2', 'inspector-h', `${label} ${files.length}`));
+    const ul = h('ul', 'git-list');
+    for (const f of files) { const [st, num] = cols(f); ul.append(gitFileRow(id, r.root, f, st, num)); }
+    parts.push(ul);
+  }
+  if (!parts.length) parts.push(h('p', 'hint', '바뀐 파일이 없습니다.'));
+  if (r.commits.length) {
+    parts.push(h('h2', 'inspector-h', '최근 커밋'));
+    const ul = h('ul', 'git-list');
+    for (const c of r.commits) {
+      const li = h('li', 'git-commit');
+      li.append(h('span', 'git-hash', c.short), h('span', 'git-subject', c.subject), h('span', 'git-when', agoText(c.time)));
+      li.title = `${c.subject}${c.time ? `\n${new Date(c.time).toLocaleString()}` : ''}`;
+      li.addEventListener('click', () => openViewer({
+        path: `${c.short} ${c.subject}`,
+        views: [{ key: 'show', label: '커밋', load: () => api.gitShow(id, c.hash) }],
+        actions: { copy: { label: '해시 복사', text: c.hash } },
+      }));
+      ul.append(li);
+    }
+    parts.push(ul);
+  }
+  gitEls.body.replaceChildren(...parts);
+}
+
+// A changed file: its diff against HEAD (a new file: all of it), and the file.
+function openGitFile(id, root, f) {
+  const abs = `${root}/${f.path}`;
+  const views = [];
+  if (f.index === '?') {
+    views.push({
+      key: 'change', label: '새 파일',
+      load: async () => {
+        const r = await api.readFile(id, abs);
+        return typeof r.text === 'string' ? { lines: r.text.replace(/\n$/, '').split('\n').map((l) => `+${l}`) } : r;
+      },
+    });
+  } else {
+    views.push({ key: 'change', label: '변경', load: () => api.gitDiff(id, f.path) });
+  }
+  if (f.work !== 'D' && f.index !== 'D') views.push({ key: 'file', label: '파일', load: () => api.readFile(id, abs) });
+  openViewer({
+    path: abs, views,
+    actions: { reveal: () => api.revealFile(id, abs), editor: () => api.openFile(id, abs) },
+  });
+}
+
+window.addEventListener('focus', () => { if (Date.now() - lastGitAt > 5000) loadGit(); });
 
 setInspectorTab(inspectorTab);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');

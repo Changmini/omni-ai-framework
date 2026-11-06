@@ -80,6 +80,9 @@ function registerIpc() {
     shell.showItemInFolder(t.host);
     return true;
   });
+  ipcMain.handle('git:status', (_e, id) => manager.gitStatus(str(id, 20)));
+  ipcMain.handle('git:diff', (_e, id, path) => manager.gitDiff(str(id, 20), str(path, 4000)));
+  ipcMain.handle('git:show', (_e, id, rev) => manager.gitShow(str(id, 20), str(rev, 80)));
   ipcMain.handle('editor:available', () => Boolean(app.getApplicationNameForProtocol('vscode://')));
   ipcMain.handle('session:activity', (_e, id) => manager.activity(str(id, 20)));
   ipcMain.handle('session:focusPane', (_e, id, target) => manager.focusPane(str(id, 20), str(target, 200)));
