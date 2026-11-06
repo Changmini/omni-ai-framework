@@ -6,7 +6,7 @@ const { SessionManager } = require('../src/sessions');
 
 test('prompt: first non-empty line, shortened', () => {
   const e = activityEntry({ hook_event_name: 'UserPromptSubmit', prompt: '\n  fix the login bug\nmore' }, 5);
-  assert.deepStrictEqual(e, { at: 5, who: null, kind: 'prompt', text: 'fix the login bug' });
+  assert.deepStrictEqual(e, { at: 5, who: null, kind: 'prompt', text: 'fix the login bug', detail: { prompt: '\n  fix the login bug\nmore' } });
   const long = activityEntry({ hook_event_name: 'UserPromptSubmit', prompt: 'x'.repeat(500) }, 5);
   assert.strictEqual(long.text.length, 160);
   assert.strictEqual(activityEntry({ hook_event_name: 'UserPromptSubmit', prompt: '  ' }, 5), null);
@@ -90,4 +90,31 @@ test('editorUrl: only files from the log; Windows, Linux and WSL forms', () => {
   m.reportShellCwd(id, { cwd: '/home/u/p', wslDistro: 'Ubuntu-24.04', home: '/home/u' });
   read('/home/u/p/m.py');
   assert.strictEqual(m.editorUrl(id, '/home/u/p/m.py'), 'vscode://vscode-remote/wsl+Ubuntu-24.04/home/u/p/m.py');
+});
+
+test('the log keeps the whole input and puts the result on its call', () => {
+  const { m, id, events } = setup();
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'S', prompt: 'line one\nline two' });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'b1', tool_input: { command: 'npm test\n  --silent', description: 'run tests' } });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'b1', tool_response: { stdout: 'ok', stderr: '', interrupted: false } });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'gone', tool_response: { stdout: 'x' } });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Read', tool_use_id: 'r1', tool_input: { file_path: '/home/user/sample-app/a.py' } });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'Read', tool_use_id: 'r1',
+    tool_response: { type: 'text', file: { filePath: '/home/user/sample-app/a.py', content: 'x'.repeat(100000), numLines: 900, startLine: 1, totalLines: 900 } } });
+  const log = m.activity(id).entries;
+  assert.strictEqual(log.length, 3, 'a result adds no line; an unknown call is ignored');
+  assert.strictEqual(log[0].detail.prompt, 'line one\nline two');
+  assert.deepStrictEqual(log[1].detail.input, { command: 'npm test\n  --silent', description: 'run tests' });
+  assert.deepStrictEqual(log[1].result, { stdout: 'ok', stderr: '', interrupted: false });
+  assert.deepStrictEqual(log[2].result, { type: 'text', file: { filePath: '/home/user/sample-app/a.py', numLines: 900, startLine: 1, totalLines: 900 } }, 'file content dropped');
+  assert.strictEqual(events.filter(([c]) => c === 'session:activity').length, 5);
+});
+
+test('details are cut to a bounded size', () => {
+  const { clip, DETAIL_MAX } = require('../src/activity');
+  const c = clip({ content: 'x'.repeat(200000), list: Array(500).fill('y'.repeat(300)), deep: { a: { b: { c: { d: { e: 1 } } } } } });
+  assert.ok(JSON.stringify(c).length <= DETAIL_MAX);
+  assert.match(c.content, /자 생략\)$/);
+  assert.strictEqual(clip(undefined), undefined);
+  assert.strictEqual(clip('short'), 'short');
 });

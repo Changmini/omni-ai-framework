@@ -5,6 +5,7 @@ const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
 const { activityEntry, ACTIVITY_MAX } = require('./activity');
+const gitView = require('./git-view');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
@@ -34,6 +35,7 @@ class SessionManager {
     runTmux = () => Promise.resolve(false),
     readUsage = () => Promise.resolve(null),
     platform = process.platform,
+    gitRunner = gitView.runGit,
   }) {
     this.spawn = spawn;
     this.emit = emit;
@@ -47,6 +49,7 @@ class SessionManager {
     this.runTmux = runTmux;
     this.readUsage = readUsage;
     this.platform = platform;
+    this.gitRunner = gitRunner;
     this.claudePaths = claudePaths;
     this.sessions = new Map();
     this.nextId = 1;
@@ -260,13 +263,19 @@ class SessionManager {
   recordActivity(s, ev, who) {
     const entry = activityEntry(ev, this.now(), who);
     if (!entry) return;
-    if (entry.kind === 'fail' && entry.useId) {
-      const i = s.activity.findIndex((a) => a.useId === entry.useId);
+    // A result or failure goes on the line of its call (newest first: ids repeat
+    // only across sessions, and the latest call is the one that just ran).
+    if ((entry.kind === 'fail' || entry.kind === 'result') && entry.useId) {
+      const i = s.activity.findLastIndex((a) => a.useId === entry.useId);
       if (i !== -1) {
-        s.activity[i] = { ...s.activity[i], kind: 'fail', error: entry.text };
+        const prev = s.activity[i];
+        s.activity[i] = entry.kind === 'fail'
+          ? { ...prev, kind: 'fail', error: entry.text, detail: { ...prev.detail, error: entry.detail.error } }
+          : { ...prev, result: entry.result };
         this.emit('session:activity', { id: s.id, entry: s.activity[i] });
         return;
       }
+      if (entry.kind === 'result') return; // its call is no longer in the log
     }
     const e = { ...entry, n: ++s.activitySeq };
     s.activity.push(e);
@@ -283,9 +292,22 @@ class SessionManager {
   // those: the page cannot make the app open arbitrary paths). Inside WSL it
   // opens through VS Code's WSL remote. URL forms from
   // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
+  // A file the page may open for this terminal: one from its activity log.
+  // Returns the path as Claude named it (absolute) and as this host reads it
+  // (\\wsl.localhost for a Linux path from the Windows app), or null.
+  // Also a file of the last git status listing (git tab), by its full path.
+  fileTarget(id, file) {
+    const s = this.sessions.get(id);
+    if (!s || typeof file !== 'string' || !file) return null;
+    const fromGit = s.git && s.git.paths.has(file);
+    if (!fromGit && !s.activity.some((a) => a.file === file)) return null;
+    const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
+    return { path: abs, host: this.hostPath(s, abs) };
+  }
+
   editorUrl(id, file) {
     const s = this.sessions.get(id);
-    if (!s || typeof file !== 'string' || !s.activity.some((a) => a.file === file)) return null;
+    if (!s || !this.fileTarget(id, file)) return null;
     if (s.wsl) {
       const p = file.startsWith('/') ? file : `${s.cwd.replace(/\/$/, '')}/${file}`;
       return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(p)}`;
@@ -293,6 +315,39 @@ class SessionManager {
     const abs = /^([a-zA-Z]:[\\/]|\/)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
     const p = abs.replace(/\\/g, '/');
     return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
+  }
+
+  // ---------- git tab (read-only) ----------
+  gitTarget(s, cwd = s.cwd) {
+    return { cwd, distro: s.wsl ? s.wsl.distro : null, platform: this.platform };
+  }
+
+  // Status, branch and recent commits of the repository at the terminal's
+  // folder. Remembers the listed files, which the viewer may then read.
+  async gitStatus(id) {
+    const s = this.sessions.get(id);
+    if (!s) return { error: '터미널이 없습니다' };
+    const run = (args, t) => this.gitRunner(args, t);
+    const r = await gitView.gitStatus(this.gitTarget(s), run);
+    if (r.root) {
+      const root = r.root.replace(/[\\/]$/, '');
+      s.git = { root, files: new Set(r.files.map((f) => f.path)), paths: new Set(r.files.map((f) => `${root}/${f.path}`)) };
+    } else {
+      s.git = null;
+    }
+    return r;
+  }
+
+  async gitDiff(id, path) {
+    const s = this.sessions.get(id);
+    if (!s || !s.git || !s.git.files.has(path)) return { error: '목록에 없는 파일입니다 (다시 읽어 주세요)' };
+    return gitView.gitFileDiff(this.gitTarget(s, s.git.root), path, (args, t) => this.gitRunner(args, t));
+  }
+
+  async gitShow(id, rev) {
+    const s = this.sessions.get(id);
+    if (!s || !s.git) return { error: '저장소를 먼저 읽어 주세요' };
+    return gitView.gitShow(this.gitTarget(s, s.git.root), rev, (args, t) => this.gitRunner(args, t));
   }
 
   // Context usage from the session's transcript: read asynchronously, at most

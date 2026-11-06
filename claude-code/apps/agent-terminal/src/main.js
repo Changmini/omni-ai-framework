@@ -15,6 +15,7 @@ const { scanClaudeConfig } = require('./claude-config');
 const { runTmux } = require('./tmux');
 const { readContextUsage } = require('./usage');
 const { PlanUsage } = require('./plan-usage');
+const { readTextFile } = require('./files');
 
 let win = null;
 let manager = null;
@@ -66,6 +67,23 @@ function registerIpc() {
     if (!url || !app.getApplicationNameForProtocol('vscode://')) return false;
     try { await shell.openExternal(url); return true; } catch { return false; }
   });
+  // The in-app viewer: read a file, show it in the system file manager, and
+  // whether a vscode:// handler exists. Only files the session allows.
+  ipcMain.handle('file:read', async (_e, id, file) => {
+    const t = manager.fileTarget(str(id, 20), str(file, 4000));
+    if (!t) return { error: '이 파일은 열 수 없습니다' };
+    return { path: t.path, ...(await readTextFile(t.host)) };
+  });
+  ipcMain.handle('file:reveal', (_e, id, file) => {
+    const t = manager.fileTarget(str(id, 20), str(file, 4000));
+    if (!t || !fs.existsSync(t.host)) return false;
+    shell.showItemInFolder(t.host);
+    return true;
+  });
+  ipcMain.handle('git:status', (_e, id) => manager.gitStatus(str(id, 20)));
+  ipcMain.handle('git:diff', (_e, id, path) => manager.gitDiff(str(id, 20), str(path, 4000)));
+  ipcMain.handle('git:show', (_e, id, rev) => manager.gitShow(str(id, 20), str(rev, 80)));
+  ipcMain.handle('editor:available', () => Boolean(app.getApplicationNameForProtocol('vscode://')));
   ipcMain.handle('session:activity', (_e, id) => manager.activity(str(id, 20)));
   ipcMain.handle('session:focusPane', (_e, id, target) => manager.focusPane(str(id, 20), str(target, 200)));
   ipcMain.handle('session:config', (_e, id) => manager.claudeConfig(str(id, 20)));

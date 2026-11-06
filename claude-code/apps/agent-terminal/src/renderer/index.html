@@ -101,6 +101,19 @@
           <button id="search-next" class="icon-btn" title="다음 (Enter)" aria-label="다음">↓</button>
           <button id="search-close" class="icon-btn" title="닫기 (Esc)" aria-label="닫기">✕</button>
         </div>
+        <!-- In-app file viewer over the terminal (Esc closes it). -->
+        <section id="viewer" class="viewer" hidden aria-label="파일 보기">
+          <div class="viewer-head">
+            <span id="viewer-path" class="viewer-path ellipsis"></span>
+            <span id="viewer-tabs" class="viewer-tabs" role="tablist"></span>
+            <span id="viewer-info" class="viewer-info"></span>
+            <button id="viewer-copy" class="vbtn" type="button">경로 복사</button>
+            <button id="viewer-reveal" class="vbtn" type="button">폴더에서 보기</button>
+            <button id="viewer-editor" class="vbtn" type="button" hidden>VS Code</button>
+            <button id="viewer-close" class="icon-btn" type="button" title="닫기 (Esc)" aria-label="닫기">✕</button>
+          </div>
+          <div id="viewer-body" class="viewer-body" tabindex="-1"></div>
+        </section>
       </div>
     </main>
     <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"
@@ -108,6 +121,7 @@
     <aside class="inspector" id="inspector" aria-label="상세 패널">
       <div class="inspector-head" role="tablist">
         <button class="tab" role="tab" data-tab="activity">활동</button>
+        <button class="tab" role="tab" data-tab="git">git</button>
         <button class="tab" role="tab" data-tab="config">Claude 구성</button>
         <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
       </div>
@@ -116,6 +130,10 @@
         <h2 class="inspector-h">최근 활동</h2>
         <ol id="activity-list" class="activity-list" aria-label="최근 활동"></ol>
         <p id="activity-empty" class="hint">Claude가 이 터미널에서 일하면 프롬프트, 도구 실행, 수정한 파일이 여기에 쌓입니다.</p>
+      </section>
+      <section class="tab-body" data-tab="git">
+        <div id="git-head" class="git-head"></div>
+        <div id="git-body"></div>
       </section>
       <section class="tab-body" data-tab="config">
         <div id="config-project" class="hint ellipsis"></div>

@@ -224,9 +224,10 @@ function removeAgent(id) {
 
 function select(id) {
   if (!agents.has(id)) return;
-  if (activeId !== id) closeSearch(false);
+  if (activeId !== id) { closeSearch(false); closeViewer(false); }
   activeId = id;
   loadConfig();
+  loadGit();
   renderInspector();
   for (const [aid, a] of agents) {
     const on = aid === id;
@@ -519,7 +520,7 @@ els.banner.addEventListener('click', () => {
 function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
-  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) loadConfig(); // new project
+  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); } // new project
   Object.assign(a.info, patch);
   renderItem(id);
   if (id === activeId && 'claude' in patch) renderCtxDetail();
@@ -942,7 +943,7 @@ function renderConfig(data) {
   }));
 }
 
-cfgEls.refresh.addEventListener('click', () => loadConfig(0));
+cfgEls.refresh.addEventListener('click', () => (inspectorTab === 'git' ? loadGit(0) : loadConfig(0)));
 // Coming back to the window: re-read, but not more than every 5s (the scan
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
@@ -960,7 +961,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = readPref('inspectorTab', 'activity') === 'config' ? 'config' : 'activity';
+let inspectorTab = ['config', 'git'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -971,6 +972,7 @@ function setInspectorOpen(on) {
   insp.toggle.setAttribute('aria-pressed', String(on));
   writePref('inspectorOpen', on);
   if (on && inspectorTab === 'config' && cfgStale) loadConfig(0);
+  if (on && inspectorTab === 'git' && gitStale) loadGit(0);
   applyPanelWidths();
 }
 
@@ -979,8 +981,9 @@ function setInspectorTab(tab) {
   writePref('inspectorTab', tab);
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab !== 'config';
+  cfgEls.refresh.hidden = tab !== 'config' && tab !== 'git';
   if (tab === 'config' && cfgStale) loadConfig(0);
+  if (tab === 'git' && gitStale) loadGit(0);
 }
 
 function setInspectorWidth(w, save = true) {
@@ -1043,23 +1046,311 @@ function activityRow(id, e) {
   const text = h('span', 'act-text');
   if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who} · ` : e.who));
   if (e.file) {
-    const f = h('span', 'act-file', shortPath(e.file, agents.get(id)?.info.cwd));
-    f.title = `${e.file}\n클릭: VS Code에서 열기`;
-    f.addEventListener('click', async () => {
-      const ok = await api.openFile(id, e.file).catch(() => false);
-      if (!ok) { f.classList.add('open-failed'); setTimeout(() => f.classList.remove('open-failed'), 800); }
-    });
-    text.append(f);
+    text.append(fileLink(id, e.file, shortPath(e.file, agents.get(id)?.info.cwd), e));
   } else {
     text.append(document.createTextNode(e.text || ''));
   }
   if (e.kind === 'fail' && e.error) text.append(h('span', 'act-error', ` — ${e.error}`));
-  if (!e.file) text.title = [e.who, e.text, e.error].filter(Boolean).join('\n');
   li.append(h('span', 'act-time', hhmmss(e.at)), h('span', 'act-tool', label), text);
+  li.addEventListener('mouseenter', () => cardHover(id, e.n, li));
+  li.addEventListener('mouseleave', () => cardLeave());
   return li;
 }
 
+// A file path that opens the file in the viewer (with the change of `entry`).
+function fileLink(id, file, label = file, entry = null) {
+  const f = h('span', 'act-file', label);
+  f.title = `${file}\n클릭: 보기`;
+  f.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    openActivityFile(id, file, entry);
+  });
+  return f;
+}
+
+// ---------- activity detail card ----------
+// Hovering a line shows everything Claude sent for it beside the panel:
+// the whole prompt, command, edit diff, tool output or error. The card stays
+// while the pointer is on it, so its text can be selected and copied.
+const card = h('div', 'act-card');
+card.hidden = true;
+card.setAttribute('role', 'tooltip');
+document.body.append(card);
+let cardAt = null; // { id, n, li }
+let cardTimer = null;
+
+const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+
+function cardSec(title, body, cls = '') {
+  const sec = h('div', 'card-sec');
+  sec.append(h('div', 'card-h', title));
+  sec.append(typeof body === 'string' ? h('pre', `card-pre ${cls}`.trim(), body) : body);
+  return sec;
+}
+
+// Diff lines (' ', '+', '-', '@@') as colored rows.
+function diffPre(lines) {
+  const pre = h('pre', 'card-pre diff');
+  for (const l of lines) {
+    const cls = /^(diff --git |index |\+\+\+ |--- |commit |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode|Binary files)/.test(l) ? 'd-meta'
+      : l.startsWith('@@') ? 'd-hunk' : l[0] === '+' ? 'd-add' : l[0] === '-' ? 'd-del' : 'd-ctx';
+    pre.append(h('span', cls, l || ' ')); // block spans: one line each
+  }
+  return pre;
+}
+
+// What an edit changed: the patch in the result, else the input's strings.
+function editLines(tool, input, result) {
+  const r = result && typeof result === 'object' ? result : {};
+  if (Array.isArray(r.structuredPatch) && r.structuredPatch.length) {
+    return r.structuredPatch.flatMap((hk) => [
+      `@@ -${hk.oldStart},${hk.oldLines} +${hk.newStart},${hk.newLines} @@`,
+      ...(Array.isArray(hk.lines) ? hk.lines.map(String) : []),
+    ]);
+  }
+  if (r.gitDiff && typeof r.gitDiff.patch === 'string') return r.gitDiff.patch.split('\n');
+  const pair = (o, n) => [...String(o || '').split('\n').map((x) => `-${x}`), ...String(n || '').split('\n').map((x) => `+${x}`)];
+  if (tool === 'Edit') return pair(input.old_string, input.new_string);
+  if (tool === 'MultiEdit' && Array.isArray(input.edits)) return input.edits.flatMap((x, k) => [`@@ ${k + 1}번째 수정 @@`, ...pair(x.old_string, x.new_string)]);
+  if (tool === 'Write' && typeof input.content === 'string') return input.content.split('\n').map((x) => `+${x}`);
+  if (tool === 'NotebookEdit') return pair('', input.new_source);
+  return null;
+}
+
+function cardBody(id, e) {
+  const d = e.detail || {};
+  const i = d.input && typeof d.input === 'object' ? d.input : {};
+  const r = e.result;
+  const out = [];
+  const tool = e.tool || '';
+  if (e.kind === 'prompt') out.push(cardSec('프롬프트', asText(d.prompt || e.text)));
+  else if (e.kind === 'error') out.push(cardSec('오류', asText(d.error || e.text), 'err'));
+  else if (e.kind === 'wait' && d.message) out.push(cardSec('알림', asText(d.message)));
+  else if (['tool', 'fail', 'wait'].includes(e.kind) && d.input !== undefined) {
+    if (e.file) {
+      const row = h('div', 'card-file');
+      row.append(fileLink(id, e.file, e.file, e));
+      out.push(row);
+    }
+    if (tool === 'Bash') {
+      out.push(cardSec('명령', asText(i.command)));
+      if (i.description) out.push(cardSec('설명', asText(i.description)));
+      if (r && typeof r === 'object') {
+        if (r.stdout) out.push(cardSec('출력', asText(r.stdout)));
+        if (r.stderr) out.push(cardSec('오류 출력', asText(r.stderr), 'err'));
+        if (!r.stdout && !r.stderr) out.push(h('div', 'card-note', '출력 없음'));
+        if (r.interrupted) out.push(h('div', 'card-note err', '중단됨'));
+      }
+    } else if (['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(tool)) {
+      const lines = editLines(tool, i, r);
+      if (lines) out.push(cardSec(tool === 'Write' && !(r && r.structuredPatch) ? '내용' : '변경', diffPre(lines)));
+    } else if (tool === 'Read') {
+      const range = [i.offset && `${i.offset}행부터`, i.limit && `${i.limit}행`].filter(Boolean).join(' ');
+      const f = r && r.file && typeof r.file === 'object' ? r.file : null;
+      const got = f && f.numLines != null ? `${f.numLines}행 읽음${f.totalLines ? ` (전체 ${f.totalLines}행)` : ''}` : '';
+      if (range || got) out.push(h('div', 'card-note', [range, got].filter(Boolean).join(' · ')));
+    } else if (tool === 'Grep' || tool === 'Glob') {
+      const cond = ['pattern', 'path', 'glob', 'type', 'output_mode'].filter((k) => i[k] != null).map((k) => `${k}: ${asText(i[k])}`);
+      out.push(cardSec('조건', cond.join('\n')));
+      if (r && typeof r === 'object') {
+        if (r.numFiles != null) out.push(h('div', 'card-note', `파일 ${r.numFiles}개${r.truncated ? ' (일부)' : ''}`));
+        if (r.content) out.push(cardSec('결과', asText(r.content)));
+        else if (Array.isArray(r.filenames) && r.filenames.length) out.push(cardSec('파일', r.filenames.map(asText).join('\n')));
+      }
+    } else if (tool === 'Agent' || tool === 'Task') {
+      if (i.subagent_type) out.push(h('div', 'card-note', `에이전트: ${asText(i.subagent_type)}`));
+      if (i.description) out.push(cardSec('설명', asText(i.description)));
+      if (i.prompt) out.push(cardSec('맡긴 일', asText(i.prompt)));
+      const said = r && Array.isArray(r.content) ? r.content.map((c) => (c && c.text) || '').join('\n').trim() : '';
+      if (said) out.push(cardSec('결과', said));
+    } else {
+      if (Object.keys(i).length) out.push(cardSec('입력', asText(i)));
+      if (r !== undefined) out.push(cardSec('결과', asText(r)));
+    }
+    if (e.kind === 'tool' && r === undefined && tool) out.push(h('div', 'card-note', '결과 기다리는 중'));
+  }
+  if (e.kind === 'fail' && (d.error || e.error)) out.push(cardSec('오류', asText(d.error || e.error), 'err'));
+  return out;
+}
+
+function renderCard() {
+  if (!cardAt) return;
+  const a = agents.get(cardAt.id);
+  const e = a && a.activity.find((x) => x.n === cardAt.n);
+  const body = e ? cardBody(cardAt.id, e) : [];
+  if (!e || !body.length || !cardAt.li.isConnected) { hideCard(); return; }
+  const head = h('div', 'card-head');
+  head.append(h('span', 'act-time', hhmmss(e.at)), h('span', 'act-tool', e.tool || ACT_LABEL[e.kind] || e.kind));
+  if (e.who) head.append(h('span', 'act-who', e.who));
+  card.dataset.kind = e.kind;
+  card.replaceChildren(head, ...body);
+  card.hidden = false;
+  // Beside the panel, over the terminal; on the panel itself when there is no room.
+  const panel = $('#inspector').getBoundingClientRect();
+  const row = cardAt.li.getBoundingClientRect();
+  const room = panel.left - 16;
+  const width = room >= 300 ? Math.min(560, room) : panel.width - 16;
+  card.style.width = `${width}px`;
+  card.style.left = `${room >= 300 ? panel.left - width - 8 : panel.left + 8}px`;
+  const top = Math.max(8, Math.min(row.top - 6, window.innerHeight - card.offsetHeight - 8));
+  card.style.top = `${top}px`;
+}
+
+function cardHover(id, n, li) {
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => { cardAt = { id, n, li }; renderCard(); }, cardAt ? 80 : 300);
+}
+
+function cardLeave() {
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(hideCard, 250);
+}
+
+function hideCard() {
+  clearTimeout(cardTimer);
+  cardAt = null;
+  card.hidden = true;
+}
+
+card.addEventListener('mouseenter', () => clearTimeout(cardTimer));
+card.addEventListener('mouseleave', () => cardLeave());
+// Esc closes the card first, then the viewer.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (!card.hidden) hideCard();
+  else if (viewing) closeViewer();
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+// ---------- file viewer ----------
+// Over the terminal: a change as a diff, or the file itself with line
+// numbers, read by the main process (WSL files through \\wsl.localhost, so no
+// editor is needed). Copy the path, show it in the file manager, or open it
+// in VS Code when that is installed.
+const viewer = {
+  el: $('#viewer'), path: $('#viewer-path'), tabs: $('#viewer-tabs'), info: $('#viewer-info'), body: $('#viewer-body'),
+  copy: $('#viewer-copy'), reveal: $('#viewer-reveal'), editor: $('#viewer-editor'), close: $('#viewer-close'),
+};
+let viewing = null; // { path, views, actions, token }
+let editorOk = false;
+if (api.editorAvailable) api.editorAvailable().then((v) => { editorOk = Boolean(v); }).catch(() => {});
+
+const sizeText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`);
+
+function diffStat(lines) {
+  let add = 0;
+  let del = 0;
+  for (const l of lines) {
+    if (l.startsWith('+++') || l.startsWith('---')) continue;
+    if (l[0] === '+') add++;
+    else if (l[0] === '-') del++;
+  }
+  return `+${add} −${del}`;
+}
+
+// `views`: [{ key, label, lines }] (a diff) or [{ key, label, load }] (async,
+// resolves to { text } | { lines } | { binary, size } | { error }).
+function openViewer({ path, views, key, actions = {} }) {
+  hideCard();
+  viewing = { path, views, actions, token: null };
+  viewer.path.textContent = path;
+  viewer.path.title = path;
+  viewer.tabs.replaceChildren(...views.map((v) => {
+    const b = h('button', 'tab', v.label);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.dataset.key = v.key;
+    b.addEventListener('click', () => showView(v.key));
+    return b;
+  }));
+  viewer.tabs.hidden = views.length < 2;
+  viewer.copy.textContent = actions.copy ? actions.copy.label : '경로 복사';
+  viewer.reveal.hidden = !actions.reveal;
+  viewer.editor.hidden = !(actions.editor && editorOk);
+  viewer.el.hidden = false;
+  showView(key || views[0].key);
+  viewer.body.focus({ preventScroll: true });
+}
+
+function codeView(text) {
+  const lines = text.split('\n');
+  if (lines.length > 1 && lines.at(-1) === '') lines.pop();
+  const box = h('div', 'viewer-code');
+  box.append(h('pre', 'viewer-gutter', lines.map((_, k) => k + 1).join('\n')), h('pre', 'viewer-text', lines.join('\n')));
+  return { box, count: lines.length };
+}
+
+async function showView(key) {
+  if (!viewing) return;
+  const v = viewing.views.find((x) => x.key === key) || viewing.views[0];
+  for (const b of viewer.tabs.children) b.setAttribute('aria-selected', String(b.dataset.key === v.key));
+  viewer.info.textContent = '';
+  viewer.body.scrollTop = 0;
+  viewer.body.scrollLeft = 0;
+  let r = v.lines ? { lines: v.lines } : null;
+  if (!r) {
+    viewer.body.replaceChildren(h('div', 'viewer-msg', '읽는 중…'));
+    const token = {};
+    viewing.token = token;
+    r = await Promise.resolve(v.load()).catch(() => null) || { error: '읽을 수 없습니다' };
+    if (!viewing || viewing.token !== token) return; // closed or switched meanwhile
+  }
+  if (r.error) viewer.body.replaceChildren(h('div', 'viewer-msg', r.error));
+  else if (r.binary) viewer.body.replaceChildren(h('div', 'viewer-msg', `바이너리 파일이라 표시하지 않습니다 (${sizeText(r.size || 0)})`));
+  else if (r.lines) {
+    viewer.body.replaceChildren(r.lines.length ? diffPre(r.lines) : h('div', 'viewer-msg', '변경 없음'));
+    viewer.info.textContent = diffStat(r.lines);
+  } else {
+    const { box, count } = codeView(r.text || '');
+    viewer.body.replaceChildren(box);
+    viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
+  }
+}
+
+function closeViewer(focusTerminal = true) {
+  if (!viewing) return;
+  viewing = null;
+  viewer.el.hidden = true;
+  viewer.body.replaceChildren();
+  if (focusTerminal) agents.get(activeId)?.term.focus();
+}
+
+function flashButton(btn, ok) {
+  btn.classList.add(ok ? 'done' : 'failed');
+  setTimeout(() => btn.classList.remove('done', 'failed'), 900);
+}
+
+viewer.close.addEventListener('click', () => closeViewer());
+viewer.copy.addEventListener('click', async () => {
+  if (!viewing) return;
+  const text = viewing.actions.copy ? viewing.actions.copy.text : viewing.path;
+  flashButton(viewer.copy, await Promise.resolve(api.clipboardWrite(text)).then(() => true, () => false));
+});
+viewer.reveal.addEventListener('click', async () => {
+  if (viewing && viewing.actions.reveal) flashButton(viewer.reveal, await viewing.actions.reveal().catch(() => false));
+});
+viewer.editor.addEventListener('click', async () => {
+  if (viewing && viewing.actions.editor) flashButton(viewer.editor, await viewing.actions.editor().catch(() => false));
+});
+
+// A file from the activity log: what that line changed, and the file now.
+function openActivityFile(id, file, entry) {
+  const views = [];
+  const input = entry && entry.detail && entry.detail.input;
+  const lines = input && typeof input === 'object' ? editLines(entry.tool, input, entry.result) : null;
+  if (lines) views.push({ key: 'change', label: '이번 변경', lines });
+  views.push({ key: 'file', label: '파일', load: () => api.readFile(id, file) });
+  openViewer({
+    path: file, views,
+    actions: { reveal: () => api.revealFile(id, file), editor: () => api.openFile(id, file) },
+  });
+}
+insp.list.addEventListener('scroll', () => hideCard());
+
 function renderActivity() {
+  hideCard();
   const id = activeId;
   const list = agents.get(id)?.activity || [];
   insp.list.replaceChildren(...list.slice().reverse().map((e) => activityRow(id, e)));
@@ -1097,6 +1388,8 @@ async function loadActivity(id) {
 function onActivity(id, entry) {
   const a = agents.get(id);
   if (!a) return;
+  // A change Claude just made, or the end of its turn: the git tab follows.
+  if (id === activeId && (entry.kind === 'done' || (entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')))) loadGit(1500);
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
   else {
@@ -1105,13 +1398,147 @@ function onActivity(id, entry) {
   }
   if (id !== activeId) return;
   if (i !== -1) {
-    insp.list.querySelector(`.act[data-n="${entry.n}"]`)?.replaceWith(activityRow(id, entry));
+    const row = activityRow(id, entry);
+    insp.list.querySelector(`.act[data-n="${entry.n}"]`)?.replaceWith(row);
+    // The card follows the line it shows (a result or failure just arrived).
+    if (cardAt && cardAt.id === id && cardAt.n === entry.n) { cardAt.li = row; renderCard(); }
     return;
   }
   insp.list.prepend(activityRow(id, entry));
   while (insp.list.children.length > activityMax) insp.list.lastElementChild.remove();
   insp.empty.hidden = true;
 }
+
+// ---------- git tab ----------
+// The repository at the active terminal's folder: branch, changed files and
+// recent commits (read-only; git-view.js). A file or commit opens in the viewer.
+const gitEls = { head: $('#git-head'), body: $('#git-body') };
+let gitStale = true;
+let gitTimer = null;
+let gitToken = null;
+let lastGitAt = 0;
+
+function gitVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'git';
+}
+
+function loadGit(delay = 150) {
+  clearTimeout(gitTimer);
+  gitTimer = setTimeout(async () => {
+    const id = activeId;
+    if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
+    gitStale = false;
+    const token = {};
+    gitToken = token;
+    if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
+    const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
+    lastGitAt = Date.now();
+    if (gitToken === token && id === activeId) renderGit(id, r);
+  }, delay);
+}
+
+function agoText(t) {
+  if (!t) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}초 전`;
+  if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)}일 전`;
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function gitNum(n) {
+  const box = h('span', 'git-num');
+  if (!n) return box;
+  if (n.add == null) { box.textContent = '바이너리'; return box; }
+  box.append(h('span', 'a', `+${n.add}`), h('span', 'd', `−${n.del}`));
+  return box;
+}
+
+function gitFileRow(id, root, f, st, num) {
+  const li = h('li', 'git-file');
+  const stEl = h('span', 'git-st', st);
+  stEl.dataset.st = st;
+  const name = h('span', 'git-name');
+  const slash = f.path.lastIndexOf('/');
+  const inner = h('span');
+  if (slash !== -1) inner.append(h('span', 'git-dir', f.path.slice(0, slash + 1)));
+  inner.append(document.createTextNode(f.path.slice(slash + 1)));
+  name.append(inner);
+  li.title = f.orig ? `${f.orig} → ${f.path}` : f.path;
+  li.append(stEl, name, gitNum(num));
+  li.addEventListener('click', () => openGitFile(id, root, f));
+  return li;
+}
+
+function renderGit(id, r) {
+  gitEls.head.replaceChildren();
+  if (r.error || r.notRepo) {
+    const cwd = agents.get(id)?.info.cwd || '';
+    gitEls.body.replaceChildren(h('p', 'hint', r.error || `git 저장소가 아닙니다: ${cwd}`));
+    return;
+  }
+  gitEls.head.append(h('span', 'git-branch', r.branch ? `⎇ ${r.branch}` : '⎇ (브랜치 없음)'));
+  gitEls.head.append(h('span', 'git-sync', r.upstream ? `↑${r.ahead} ↓${r.behind} · ${r.upstream}` : '원격 브랜치 없음'));
+  gitEls.head.append(h('span', 'git-root ellipsis', r.root));
+  gitEls.head.lastChild.title = r.root;
+  const groups = [
+    ['스테이징됨', r.files.filter((f) => f.index !== ' ' && f.index !== '?'), (f) => [f.index, f.staged]],
+    ['변경됨', r.files.filter((f) => f.work !== ' ' && f.work !== '?'), (f) => [f.work, f.unstaged]],
+    ['새 파일', r.files.filter((f) => f.index === '?'), () => ['?', null]],
+  ];
+  const parts = [];
+  for (const [label, files, cols] of groups) {
+    if (!files.length) continue;
+    parts.push(h('h2', 'inspector-h', `${label} ${files.length}`));
+    const ul = h('ul', 'git-list');
+    for (const f of files) { const [st, num] = cols(f); ul.append(gitFileRow(id, r.root, f, st, num)); }
+    parts.push(ul);
+  }
+  if (!parts.length) parts.push(h('p', 'hint', '바뀐 파일이 없습니다.'));
+  if (r.commits.length) {
+    parts.push(h('h2', 'inspector-h', '최근 커밋'));
+    const ul = h('ul', 'git-list');
+    for (const c of r.commits) {
+      const li = h('li', 'git-commit');
+      li.append(h('span', 'git-hash', c.short), h('span', 'git-subject', c.subject), h('span', 'git-when', agoText(c.time)));
+      li.title = `${c.subject}${c.time ? `\n${new Date(c.time).toLocaleString()}` : ''}`;
+      li.addEventListener('click', () => openViewer({
+        path: `${c.short} ${c.subject}`,
+        views: [{ key: 'show', label: '커밋', load: () => api.gitShow(id, c.hash) }],
+        actions: { copy: { label: '해시 복사', text: c.hash } },
+      }));
+      ul.append(li);
+    }
+    parts.push(ul);
+  }
+  gitEls.body.replaceChildren(...parts);
+}
+
+// A changed file: its diff against HEAD (a new file: all of it), and the file.
+function openGitFile(id, root, f) {
+  const abs = `${root}/${f.path}`;
+  const views = [];
+  if (f.index === '?') {
+    views.push({
+      key: 'change', label: '새 파일',
+      load: async () => {
+        const r = await api.readFile(id, abs);
+        return typeof r.text === 'string' ? { lines: r.text.replace(/\n$/, '').split('\n').map((l) => `+${l}`) } : r;
+      },
+    });
+  } else {
+    views.push({ key: 'change', label: '변경', load: () => api.gitDiff(id, f.path) });
+  }
+  if (f.work !== 'D' && f.index !== 'D') views.push({ key: 'file', label: '파일', load: () => api.readFile(id, abs) });
+  openViewer({
+    path: abs, views,
+    actions: { reveal: () => api.revealFile(id, abs), editor: () => api.openFile(id, abs) },
+  });
+}
+
+window.addEventListener('focus', () => { if (Date.now() - lastGitAt > 5000) loadGit(); });
 
 setInspectorTab(inspectorTab);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
