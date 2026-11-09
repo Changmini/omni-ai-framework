@@ -405,6 +405,10 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .git-sync { color: var(--muted); font-size: 11.5px; }
 .git-root { width: 100%; color: var(--muted); font-size: 11px; }
 .git-list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+/* sections fold like the config groups; the summary keeps the panel's head style */
+.git-group > summary { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--muted); margin-top: 6px; }
+.git-group > summary:hover { color: var(--text); }
+.git-group > .git-list { margin-left: 4px; }
 .git-file, .git-commit {
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: baseline;
   padding: 3px 4px; border-radius: 4px; font-size: 12px; cursor: pointer;

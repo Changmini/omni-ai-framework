@@ -1513,18 +1513,48 @@ function gitFileRow(id, root, f, st, num) {
   return li;
 }
 
-async function expandGitFolder(id, root, f, li) {
-  if (li.dataset.open) return;
-  li.dataset.open = '1';
+// New folders opened by the user, kept across refreshes (root + path).
+const gitOpenFolders = new Set();
+
+// A click opens a new folder's file list under it, the next one closes it.
+async function expandGitFolder(id, root, f, li, toggle = true) {
+  const key = `${root}\n${f.path}`;
   const caret = li.querySelector('.git-caret');
+  if (li.dataset.open) {
+    if (!toggle) return;
+    delete li.dataset.open;
+    gitOpenFolders.delete(key);
+    if (caret) caret.textContent = ' ▸';
+    while (li.nextElementSibling && li.nextElementSibling.dataset.sub === key) li.nextElementSibling.remove();
+    return;
+  }
+  li.dataset.open = '1';
+  gitOpenFolders.add(key);
   if (caret) caret.textContent = ' ▾';
   const r = await api.gitUntracked(id, f.path).catch(() => null) || { error: '읽을 수 없습니다' };
-  if (!li.isConnected) return;
+  if (!li.isConnected || !li.dataset.open) return;
   const rows = r.error ? [h('li', 'hint', r.error)]
     : r.files.map((p) => { const row = gitFileRow(id, root, { path: p, index: '?', work: '?', orig: null }, '?', null); row.classList.add('git-sub'); return row; });
   if (r.total > (r.files || []).length) rows.push(h('li', 'hint', `${r.files.length}개만 표시 (전체 ${r.total}개)`));
   if (!rows.length) rows.push(h('li', 'hint', '파일 없음'));
+  for (const row of rows) row.dataset.sub = key;
   li.after(...rows);
+}
+
+// Sections of the git tab (staged, changed, new files, commits) fold like
+// the config groups; which ones are open is remembered.
+let gitOpen = {};
+try { gitOpen = JSON.parse(readPref('gitOpen', '{}')) || {}; } catch { gitOpen = {}; }
+
+function gitSection(key, label, count, list) {
+  const d = document.createElement('details');
+  d.className = 'cfg-group git-group';
+  d.open = gitOpen[key] !== false; // open unless closed before
+  const sum = document.createElement('summary');
+  sum.append(h('span', null, label), h('span', 'count', String(count)));
+  d.append(sum, list);
+  d.addEventListener('toggle', () => { gitOpen[key] = d.open; writePref('gitOpen', JSON.stringify(gitOpen)); });
+  return d;
 }
 
 function renderGit(id, r) {
@@ -1539,22 +1569,26 @@ function renderGit(id, r) {
   gitEls.head.append(h('span', 'git-root ellipsis', r.root || '/'));
   gitEls.head.lastChild.title = r.root || '/';
   const groups = [
-    ['스테이징됨', r.files.filter((f) => f.index !== ' ' && f.index !== '?'), (f) => [f.index, f.staged]],
-    ['변경됨', r.files.filter((f) => f.work !== ' ' && f.work !== '?'), (f) => [f.work, f.unstaged]],
-    ['새 파일', r.files.filter((f) => f.index === '?'), () => ['?', null]],
+    ['staged', '스테이징됨', r.files.filter((f) => f.index !== ' ' && f.index !== '?'), (f) => [f.index, f.staged]],
+    ['changed', '변경됨', r.files.filter((f) => f.work !== ' ' && f.work !== '?'), (f) => [f.work, f.unstaged]],
+    ['new', '새 파일', r.files.filter((f) => f.index === '?'), () => ['?', null]],
   ];
   const parts = [];
-  for (const [label, files, cols] of groups) {
+  const reopen = [];
+  for (const [key, label, files, cols] of groups) {
     if (!files.length) continue;
-    parts.push(h('h2', 'inspector-h', `${label} ${files.length}`));
     const ul = h('ul', 'git-list');
-    for (const f of files) { const [st, num] = cols(f); ul.append(gitFileRow(id, r.root, f, st, num)); }
-    parts.push(ul);
+    for (const f of files) {
+      const [st, num] = cols(f);
+      const row = gitFileRow(id, r.root, f, st, num);
+      ul.append(row);
+      if (row.classList.contains('git-folder') && gitOpenFolders.has(`${r.root}\n${f.path}`)) reopen.push([f, row]);
+    }
+    parts.push(gitSection(key, label, files.length, ul));
   }
   if (!parts.length) parts.push(h('p', 'hint', '바뀐 파일이 없습니다.'));
   if (r.total > r.files.length) parts.push(h('p', 'hint', `바뀐 파일이 많아 ${r.files.length}개만 표시합니다 (전체 ${r.total}개).`));
   if (r.commits.length) {
-    parts.push(h('h2', 'inspector-h', '최근 커밋'));
     const ul = h('ul', 'git-list');
     for (const c of r.commits) {
       const li = h('li', 'git-commit');
@@ -1567,9 +1601,11 @@ function renderGit(id, r) {
       }));
       ul.append(li);
     }
-    parts.push(ul);
+    parts.push(gitSection('commits', '최근 커밋', r.commits.length, ul));
   }
   gitEls.body.replaceChildren(...parts);
+  // Folders the user had open stay open after a refresh.
+  for (const [f, row] of reopen) expandGitFolder(id, r.root, f, row, false);
 }
 
 // A changed file: its diff against HEAD (a new file: all of it), and the file.
