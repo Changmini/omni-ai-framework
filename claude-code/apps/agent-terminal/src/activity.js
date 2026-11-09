@@ -103,12 +103,14 @@ function activityEntry(ev, at, who = null) {
       };
     }
     // The result of a call already logged: sessions.js puts it on that line.
-    case 'PostToolUse':
+    case 'PostToolUse': {
       // No tool_response: the event was over the hook server's size limit.
-      return ev.tool_use_id ? {
-        ...base, kind: 'result', useId: ev.tool_use_id,
-        result: ev.tool_response === undefined ? { omitted: true } : clip(trimResult(ev.tool_response)),
-      } : null;
+      // A response with nothing to keep (null) is recorded as empty, so the
+      // card does not keep waiting for it.
+      if (!ev.tool_use_id) return null;
+      const kept = ev.tool_response === undefined ? { omitted: true } : clip(trimResult(ev.tool_response));
+      return { ...base, kind: 'result', useId: ev.tool_use_id, result: kept === undefined ? { empty: true } : kept };
+    }
     case 'PostToolUseFailure': {
       const s = toolSummary(ev.tool_name, ev.tool_input);
       return {

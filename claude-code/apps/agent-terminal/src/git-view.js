@@ -108,7 +108,10 @@ const rootDir = (root) => (root === '' ? '/' : /^[a-zA-Z]:$/.test(root) ? `${roo
 async function statusAt(target, root, run) {
   const at = { ...target, cwd: rootDir(root) };
   const [st, unstaged, staged, log] = await Promise.all([
-    run(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], at),
+    // A wholly new folder is one entry ("dir/"), as in plain `git status`:
+    // git does not walk it, however large (an unignored venv or build dir).
+    // Its files are listed on demand (gitUntrackedIn).
+    run(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=normal'], at),
     run(['diff', '--numstat', '-z'], at),
     run(['diff', '--cached', '--numstat', '-z'], at),
     run(['log', '-n', '20', '--format=%H%x1f%h%x1f%s%x1f%ct%x1e'], at),
@@ -124,6 +127,16 @@ async function statusAt(target, root, run) {
     if (f.work !== ' ' && f.work !== '?') f.unstaged = un.get(f.path) || null;
   }
   return { root, ...s, total, commits: log.ok ? parseLog(log.stdout) : [] };
+}
+
+// The untracked files inside a new folder listed by status ("dir/"), at
+// most MAX_FILES. Paths are relative to the repository root.
+async function gitUntrackedIn(target, dir, run = runGit) {
+  if (!SAFE_PATH(dir) || !dir.endsWith('/')) return { error: '잘못된 경로' };
+  const r = await run(['ls-files', '--others', '--exclude-standard', '-z', '--', dir], target);
+  if (!r.ok) return { error: firstLine(r.stderr, 'git ls-files 실패') };
+  const all = r.stdout.split('\0').filter(Boolean);
+  return { files: all.slice(0, MAX_FILES), total: all.length };
 }
 
 const firstLine = (text, fallback) => (String(text || '').trim().split('\n')[0] || fallback);
@@ -159,4 +172,4 @@ async function gitShow(target, rev, run = runGit) {
   return { lines: first === -1 ? head : [...head, '', ...lines.slice(first)] };
 }
 
-module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };
+module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, gitUntrackedIn, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };

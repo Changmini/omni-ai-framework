@@ -64,7 +64,11 @@ test('a real repository: status, diff, show, and the viewer may read listed file
   const by = Object.fromEntries(st.files.map((f) => [f.path, f]));
   assert.deepStrictEqual([by['a.py'].work, by['a.py'].unstaged], ['M', { add: 2, del: 1 }]);
   assert.deepStrictEqual([by['new.py'].index, by['new.py'].orig], ['R', 'old.py']);
-  assert.strictEqual(by['docs/노트.md'].index, '?');
+  // A new folder is one entry; its files come on demand and may then be read.
+  assert.strictEqual(by['docs/'].index, '?');
+  assert.strictEqual(m.fileTarget(id, `${root}/docs/노트.md`), null, 'not listed yet');
+  assert.deepStrictEqual(await m.gitUntracked(id, 'docs/'), { files: ['docs/노트.md'], total: 1 });
+  assert.match((await m.gitUntracked(id, 'a.py')).error, /목록에 없는 폴더/);
   assert.deepStrictEqual(st.commits.map((c) => c.subject), ['init']);
 
   // A rename is diffed with its old path: not shown as a whole new file.
@@ -153,17 +157,20 @@ test('the root found last time is reused for the same folder, and checked again 
   const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [], env: {} }, pollMs: 0, gitRunner: runner });
   const { id } = m.create({ cwd: '/home/user/sample-app/src' });
   await m.gitStatus(id);
+  await m.gitStatus(id, false);
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 1, 'a quick (not fresh) read skipped rev-parse');
   await m.gitStatus(id);
-  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 1, 'second read skipped rev-parse');
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 2, 'a fresh read finds the root again');
+  calls.length = 0;
   assert.ok(calls.filter(([c]) => c === 'status').every(([, cwd]) => cwd === '/home/user/sample-app'));
   rootOk = false;
-  const r = await m.gitStatus(id);
+  const r = await m.gitStatus(id, false);
   assert.match(r.error, /cannot change/);
-  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 2, 'stale root: found again');
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 1, 'stale root: found again');
   m.setCwd(id, '/home/user/other');
   rootOk = true;
-  await m.gitStatus(id);
-  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 3, 'another folder: not reused');
+  await m.gitStatus(id, false);
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 2, 'another folder: not reused');
 });
 
 test('rootDir: filesystem and drive roots', () => {

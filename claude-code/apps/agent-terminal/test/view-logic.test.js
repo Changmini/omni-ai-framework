@@ -52,10 +52,17 @@ test('serial: one run at a time, and one more after for calls meanwhile', async 
   assert.strictEqual(runs, 3);
 });
 
-test('serial: a failing run does not block later ones', async () => {
+test('serial: a failing run is reported and still runs the one asked for meanwhile', async () => {
   let n = 0;
-  const run = serial(async () => { n++; if (n === 1) throw new Error('boom'); });
-  await assert.rejects(run());
-  await run();
-  assert.strictEqual(n, 2);
+  const errors = [];
+  let release;
+  const run = serial(async () => {
+    n++;
+    if (n === 1) { await new Promise((r) => { release = r; }); throw new Error('boom'); }
+  }, (e) => errors.push(e.message));
+  const first = run();
+  run(); // asked for while the first runs
+  release();
+  await first; // resolves: no unhandled rejection
+  assert.deepStrictEqual([n, errors], [2, ['boom']]);
 });

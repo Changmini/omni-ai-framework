@@ -355,13 +355,16 @@ class SessionManager {
   // folder. Remembers the listed files, which the viewer may then read; only
   // the latest of overlapping reads is kept. `root` comes back without a
   // trailing slash, the form the page joins file paths to.
-  async gitStatus(id) {
+  // `fresh`: find the root again (rev-parse) instead of reusing the one
+  // found for this folder last time; the page asks for it except on the
+  // quick refreshes while Claude works (a new nested repository then shows
+  // at the next fresh read: tab shown, end of a turn, window focus, ⟳).
+  async gitStatus(id, fresh = true) {
     const s = this.sessions.get(id);
     if (!s) return { error: '터미널이 없습니다' };
     const seq = ++s.gitSeq;
     const cwd = s.cwd;
-    // The root found for this same folder last time saves a rev-parse.
-    const known = s.gitRootOf && s.gitRootOf.cwd === cwd ? s.gitRootOf.root : null;
+    const known = !fresh && s.gitRootOf && s.gitRootOf.cwd === cwd ? s.gitRootOf.root : null;
     const r = await gitView.gitStatus(this.gitTarget(s, cwd), this.gitRunner, known);
     if (seq !== s.gitSeq) return { ...r, stale: true }; // a newer read is under way
     s.gitRootOf = typeof r.root === 'string' ? { cwd, root: r.root } : null;
@@ -375,6 +378,18 @@ class SessionManager {
       };
     } else {
       s.git = null;
+    }
+    return r;
+  }
+
+  // The files of a new folder from the listing; they may then be opened.
+  async gitUntracked(id, dir) {
+    const s = this.sessions.get(id);
+    if (!s || !s.git || !s.git.files.has(dir) || !dir.endsWith('/')) return { error: '목록에 없는 폴더입니다 (다시 읽어 주세요)' };
+    const git = s.git;
+    const r = await gitView.gitUntrackedIn(this.gitTarget(s, gitView.rootDir(git.root)), dir, this.gitRunner);
+    if (r.files) {
+      for (const f of r.files) { git.files.add(f); git.paths.add(`${git.root}/${f}`); }
     }
     return r;
   }

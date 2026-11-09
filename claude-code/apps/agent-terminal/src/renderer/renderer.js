@@ -224,9 +224,11 @@ function removeAgent(id) {
 
 function select(id) {
   if (!agents.has(id)) return;
-  if (activeId !== id) { closeSearch(false); closeViewer(false); }
+  const switching = activeId !== id;
+  if (switching) { closeSearch(false); closeViewer(false); }
   activeId = id;
   loadConfig();
+  if (switching) clearGit(); // not the previous terminal's repository meanwhile
   loadGit();
   renderInspector();
   for (const [aid, a] of agents) {
@@ -1108,7 +1110,9 @@ function editLines(tool, input, result) {
     ]);
   }
   if (r.gitDiff && typeof r.gitDiff.patch === 'string') return r.gitDiff.patch.split('\n');
-  const pair = (o, n) => [...String(o || '').split('\n').map((x) => `-${x}`), ...String(n || '').split('\n').map((x) => `+${x}`)];
+  // An empty side (a new file, a notebook cell) adds no line.
+  const side = (text, mark) => (text ? String(text).split('\n').map((x) => `${mark}${x}`) : []);
+  const pair = (o, n) => [...side(o, '-'), ...side(n, '+')];
   if (tool === 'Edit') return pair(input.old_string, input.new_string);
   if (tool === 'MultiEdit' && Array.isArray(input.edits)) return input.edits.flatMap((x, k) => [`@@ ${k + 1}번째 수정 @@`, ...pair(x.old_string, x.new_string)]);
   if (tool === 'Write' && typeof input.content === 'string') return input.content.split('\n').map((x) => `+${x}`);
@@ -1134,7 +1138,7 @@ function cardBody(id, e) {
     if (tool === 'Bash') {
       out.push(cardSec('명령', asText(i.command)));
       if (i.description) out.push(cardSec('설명', asText(i.description)));
-      if (r && typeof r === 'object' && !r.omitted) {
+      if (r && typeof r === 'object' && !r.omitted && !r.empty) {
         if (r.stdout) out.push(cardSec('출력', asText(r.stdout)));
         if (r.stderr) out.push(cardSec('오류 출력', asText(r.stderr), 'err'));
         if (!r.stdout && !r.stderr) out.push(h('div', 'card-note', '출력 없음'));
@@ -1164,9 +1168,10 @@ function cardBody(id, e) {
       if (said) out.push(cardSec('결과', said));
     } else {
       if (Object.keys(i).length) out.push(cardSec('입력', asText(i)));
-      if (r !== undefined && !(r && r.omitted)) out.push(cardSec('결과', asText(r)));
+      if (r !== undefined && !(r && (r.omitted || r.empty))) out.push(cardSec('결과', asText(r)));
     }
     if (r && r.omitted) out.push(h('div', 'card-note', '결과가 너무 커서 받지 않았습니다'));
+    else if (r && r.empty) out.push(h('div', 'card-note', '결과 없음'));
     else if (e.kind === 'tool' && r === undefined && tool) out.push(h('div', 'card-note', '결과 기다리는 중'));
   }
   if (e.kind === 'fail' && (d.error || e.error)) out.push(cardSec('오류', asText(d.error || e.error), 'err'));
@@ -1295,6 +1300,12 @@ async function showView(key) {
     r = await Promise.resolve(v.load()).catch(() => null) || { error: '읽을 수 없습니다' };
     if (!viewing || viewing.token !== token) return; // closed or switched meanwhile
   }
+  // The main process resolves a relative activity path: show and copy that.
+  if (typeof r.path === 'string' && r.path) {
+    viewing.absPath = r.path;
+    viewer.path.textContent = r.path;
+    viewer.path.title = r.path;
+  }
   if (r.error) viewer.body.replaceChildren(h('div', 'viewer-msg', r.error));
   else if (r.binary) viewer.body.replaceChildren(h('div', 'viewer-msg', `바이너리 파일이라 표시하지 않습니다 (${sizeText(r.size || 0)})`));
   else if (r.lines) {
@@ -1323,7 +1334,7 @@ function flashButton(btn, ok) {
 viewer.close.addEventListener('click', () => closeViewer());
 viewer.copy.addEventListener('click', async () => {
   if (!viewing) return;
-  const text = viewing.actions.copy ? viewing.actions.copy.text : viewing.path;
+  const text = viewing.actions.copy ? viewing.actions.copy.text : viewing.absPath || viewing.path;
   flashButton(viewer.copy, await Promise.resolve(api.clipboardWrite(text)).then(() => true, () => false));
 });
 viewer.reveal.addEventListener('click', async () => {
@@ -1388,8 +1399,9 @@ function onActivity(id, entry) {
   const a = agents.get(id);
   if (!a) return;
   // A change Claude just made, or the end of its turn: the git tab follows.
-  // (debounced: a busy turn refreshes when it pauses, not after every call)
-  if (id === activeId && (entry.kind === 'done' || (entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')))) loadGit(entry.kind === 'done' ? 150 : 3000);
+  // (at most every 3 s while Claude works; see loadGit)
+  if (id === activeId && entry.kind === 'done') loadGit(150);
+  else if (id === activeId && entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')) loadGit(3000, false);
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
   else {
@@ -1422,22 +1434,40 @@ function gitVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'git';
 }
 
+let gitDue = 0; // when the scheduled read runs
+let gitFresh = false; // the scheduled read finds the repository root again
+
 // One read at a time; a request during a read runs once more after it.
 const readGit = ViewLogic.serial(async () => {
   const id = activeId;
+  const fresh = gitFresh;
+  gitFresh = false;
   if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
   gitStale = false;
   const token = {};
   gitToken = token;
   if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
-  const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
+  const r = await api.gitStatus(id, fresh).catch(() => null) || { error: '읽을 수 없습니다' };
   lastGitAt = Date.now();
-  if (gitToken === token && id === activeId) renderGit(id, r);
+  if (gitToken === token && id === activeId && !r.stale) renderGit(id, r);
 });
 
-function loadGit(delay = 150) {
+// A read in `delay` ms. An earlier one already scheduled is kept: refreshes
+// while Claude works come every few seconds, never pushed back for good.
+// `fresh` (all but those refreshes) also looks for the repository root again.
+function loadGit(delay = 150, fresh = true) {
+  if (fresh) gitFresh = true;
+  const due = Date.now() + delay;
+  if (gitTimer && gitDue <= due) return;
   clearTimeout(gitTimer);
-  gitTimer = setTimeout(readGit, delay);
+  gitDue = due;
+  gitTimer = setTimeout(() => { gitTimer = null; readGit(); }, delay);
+}
+
+function clearGit() {
+  gitToken = null;
+  gitEls.head.replaceChildren();
+  gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
 }
 
 function agoText(t) {
@@ -1471,8 +1501,30 @@ function gitFileRow(id, root, f, st, num) {
   name.append(inner);
   li.title = f.orig ? `${f.orig} → ${f.path}` : f.path;
   li.append(stEl, name, gitNum(num));
-  li.addEventListener('click', () => openGitFile(id, root, f));
+  if (f.index === '?' && f.path.endsWith('/')) {
+    // A new folder: its files are listed under it on the first click.
+    li.classList.add('git-folder');
+    inner.append(h('span', 'git-caret', ' ▸'));
+    li.title = `${f.path}\n새 폴더: 클릭해서 안의 파일 보기`;
+    li.addEventListener('click', () => expandGitFolder(id, root, f, li));
+  } else {
+    li.addEventListener('click', () => openGitFile(id, root, f));
+  }
   return li;
+}
+
+async function expandGitFolder(id, root, f, li) {
+  if (li.dataset.open) return;
+  li.dataset.open = '1';
+  const caret = li.querySelector('.git-caret');
+  if (caret) caret.textContent = ' ▾';
+  const r = await api.gitUntracked(id, f.path).catch(() => null) || { error: '읽을 수 없습니다' };
+  if (!li.isConnected) return;
+  const rows = r.error ? [h('li', 'hint', r.error)]
+    : r.files.map((p) => { const row = gitFileRow(id, root, { path: p, index: '?', work: '?', orig: null }, '?', null); row.classList.add('git-sub'); return row; });
+  if (r.total > (r.files || []).length) rows.push(h('li', 'hint', `${r.files.length}개만 표시 (전체 ${r.total}개)`));
+  if (!rows.length) rows.push(h('li', 'hint', '파일 없음'));
+  li.after(...rows);
 }
 
 function renderGit(id, r) {

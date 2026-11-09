@@ -146,3 +146,10 @@ test('a result whose call never comes is forgotten after a while', () => {
   m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'x', tool_input: { command: 'ls' } });
   assert.strictEqual(m.activity(id).entries[0].result, undefined);
 });
+
+test('a null tool response is recorded as empty, not awaited', () => {
+  const { m, id } = setup();
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'mcp__x__y', tool_use_id: 'n1', tool_input: {} });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'mcp__x__y', tool_use_id: 'n1', tool_response: null });
+  assert.deepStrictEqual(m.activity(id).entries[0].result, { empty: true });
+});
