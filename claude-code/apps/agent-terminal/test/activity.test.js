@@ -132,6 +132,7 @@ test('tmux order: a result or failure that arrives before its call still lands o
   assert.deepStrictEqual(log.map((e) => [e.kind, e.tool, e.useId]), [['tool', 'Read', 'r1'], ['fail', 'Bash', 'b1'], ['tool', 'Read', 'big']]);
   assert.deepStrictEqual(log[0].result, { type: 'text', file: { numLines: 3 } });
   assert.deepStrictEqual(log[1].detail, { input: { command: 'make' }, error: 'Exit code 2' });
+  assert.deepStrictEqual([log[1].text, log[1].error], ['make', 'Exit code 2'], 'reads like the usual order');
   assert.deepStrictEqual(log[2].result, { omitted: true });
 });
 

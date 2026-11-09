@@ -4,7 +4,7 @@ const os = require('node:os');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows } = require('./wsl');
-const { activityEntry, ACTIVITY_MAX } = require('./activity');
+const { activityEntry, oneLine, ACTIVITY_MAX } = require('./activity');
 const gitView = require('./git-view');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
@@ -288,8 +288,13 @@ class SessionManager {
       }
     } else if (entry.kind === 'tool' && i !== -1 && s.activity[i].kind === 'fail') {
       // The call of a failure logged before it: fill in what it was.
+      // It reads like a failure in the usual order: the call, then the error.
       const prev = s.activity[i];
-      this.updateActivity(s, i, { ...prev, file: prev.file || entry.file, detail: { ...entry.detail, error: prev.detail && prev.detail.error } });
+      this.updateActivity(s, i, {
+        ...prev, text: entry.text, file: prev.file || entry.file,
+        error: prev.error || oneLine(prev.detail && prev.detail.error) || undefined,
+        detail: { ...entry.detail, error: prev.detail && prev.detail.error },
+      });
       return;
     }
     if (entry.kind === 'tool' && entry.useId && s.early.has(entry.useId)) {
@@ -354,15 +359,18 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s) return { error: '터미널이 없습니다' };
     const seq = ++s.gitSeq;
-    const r = await gitView.gitStatus(this.gitTarget(s), this.gitRunner);
-    if (seq !== s.gitSeq) return r;
-    if (r.root) {
-      const root = r.root.replace(/[\\/]$/, '');
-      r.root = root;
+    const cwd = s.cwd;
+    // The root found for this same folder last time saves a rev-parse.
+    const known = s.gitRootOf && s.gitRootOf.cwd === cwd ? s.gitRootOf.root : null;
+    const r = await gitView.gitStatus(this.gitTarget(s, cwd), this.gitRunner, known);
+    if (seq !== s.gitSeq) return { ...r, stale: true }; // a newer read is under way
+    s.gitRootOf = typeof r.root === 'string' ? { cwd, root: r.root } : null;
+    if (typeof r.root === 'string') {
+      const root = r.root;
       s.git = {
         root,
         files: new Set(r.files.map((f) => f.path)),
-        orig: new Map(r.files.filter((f) => f.orig).map((f) => [f.path, f.orig])),
+        orig: new Map(r.files.filter((f) => f.orig).map((f) => [f.path, { orig: f.orig, copy: f.index === 'C' }])),
         paths: new Set(r.files.map((f) => `${root}/${f.path}`)),
       };
     } else {
@@ -374,13 +382,14 @@ class SessionManager {
   async gitDiff(id, path) {
     const s = this.sessions.get(id);
     if (!s || !s.git || !s.git.files.has(path)) return { error: '목록에 없는 파일입니다 (다시 읽어 주세요)' };
-    return gitView.gitFileDiff(this.gitTarget(s, s.git.root), path, this.gitRunner, s.git.orig.get(path) || null);
+    const o = s.git.orig.get(path);
+    return gitView.gitFileDiff(this.gitTarget(s, gitView.rootDir(s.git.root)), path, this.gitRunner, o ? o.orig : null, Boolean(o && o.copy));
   }
 
   async gitShow(id, rev) {
     const s = this.sessions.get(id);
     if (!s || !s.git) return { error: '저장소를 먼저 읽어 주세요' };
-    return gitView.gitShow(this.gitTarget(s, s.git.root), rev, this.gitRunner);
+    return gitView.gitShow(this.gitTarget(s, gitView.rootDir(s.git.root)), rev, this.gitRunner);
   }
 
   // Context usage from the session's transcript: read asynchronously, at most

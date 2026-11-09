@@ -15,8 +15,9 @@ const MAX_FILES = 500; // changed files listed; the rest are counted
 
 function runGit(args, { cwd, distro = null, platform = process.platform, exec = execFile } = {}) {
   const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', cwd, ...args];
-  // Without a distro (a Windows folder) Windows git runs.
-  const [file, argv] = wslCommand('git', base, distro, distro ? platform : 'host');
+  // A WSL folder: the distro's git; otherwise (also a Windows folder in the
+  // Windows app) the host's git.
+  const [file, argv] = distro ? wslCommand('git', base, distro, platform) : ['git', base];
   return new Promise((resolve) => {
     exec(file, argv, { timeout: 15000, maxBuffer: MAX_OUT, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
       const out = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout || '');
@@ -82,15 +83,30 @@ function parseLog(text) {
   }).filter((c) => /^[0-9a-f]{7,64}$/.test(c.hash || ''));
 }
 
-async function gitStatus(target, run = runGit) {
+// `knownRoot`: the repository root found for this folder last time, which
+// saves the rev-parse (one more wsl.exe on Windows); it is checked again
+// when status fails there. The root comes back without a trailing slash.
+async function gitStatus(target, run = runGit, knownRoot = null) {
+  if (knownRoot !== null) {
+    const r = await statusAt(target, knownRoot, run);
+    if (!r.error) return r;
+  }
   const top = await run(['rev-parse', '--show-toplevel'], target);
   if (top.missing) return { error: 'git을 찾을 수 없습니다 (설치돼 있지 않거나 PATH에 없음)' };
   // Only "not a git repository" means that; anything else (Windows git's
   // safe.directory check on a \\wsl.localhost folder, no git in the distro,
   // wsl.exe errors) is shown as it is.
   if (!top.ok) return /not a git repository/i.test(top.stderr) ? { notRepo: true } : { error: firstLine(top.stderr, 'git을 실행하지 못했습니다') };
-  const root = top.stdout.trim();
-  const at = { ...target, cwd: root };
+  return statusAt(target, top.stdout.trim().replace(/[\\/]$/, ''), run);
+}
+
+// The folder to run git in for a root without its trailing slash: '' is the
+// filesystem root, 'C:' the root of drive C (plain 'C:' would mean the
+// current folder on that drive).
+const rootDir = (root) => (root === '' ? '/' : /^[a-zA-Z]:$/.test(root) ? `${root}/` : root);
+
+async function statusAt(target, root, run) {
+  const at = { ...target, cwd: rootDir(root) };
   const [st, unstaged, staged, log] = await Promise.all([
     run(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'], at),
     run(['diff', '--numstat', '-z'], at),
@@ -116,11 +132,13 @@ const SAFE_PATH = (p) => typeof p === 'string' && p !== '' && !p.startsWith('-')
 const SAFE_REV = (r) => typeof r === 'string' && /^[0-9a-f]{7,64}$/.test(r);
 
 // The working-tree change of one file: staged and unstaged together (vs HEAD),
-// or the index alone for a repository without commits. A renamed file passes
-// its old path too, so git pairs the two instead of showing a new file.
-async function gitFileDiff(target, path, run = runGit, orig = null) {
+// or the index alone for a repository without commits. A renamed or copied
+// file passes its original path too, so git pairs the two (-M finds renames;
+// copies need --find-copies-harder, as their source is usually unchanged)
+// instead of showing a new file.
+async function gitFileDiff(target, path, run = runGit, orig = null, copy = false) {
   if (!SAFE_PATH(path) || (orig !== null && !SAFE_PATH(orig))) return { error: '잘못된 경로' };
-  const paths = orig ? ['-M', '--', orig, path] : ['--', path];
+  const paths = orig ? [...(copy ? ['-C', '--find-copies-harder'] : ['-M']), '--', orig, path] : ['--', path];
   let r = await run(['diff', 'HEAD', '--no-ext-diff', ...paths], target);
   if (!r.ok) r = await run(['diff', '--cached', '--no-ext-diff', ...paths], target);
   if (!r.ok) return { error: firstLine(r.stderr, 'git diff 실패') };
@@ -141,4 +159,4 @@ async function gitShow(target, rev, run = runGit) {
   return { lines: first === -1 ? head : [...head, '', ...lines.slice(first)] };
 }
 
-module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, SAFE_PATH, SAFE_REV, MAX_FILES };
+module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };

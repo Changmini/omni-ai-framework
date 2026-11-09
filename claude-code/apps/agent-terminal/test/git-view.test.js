@@ -72,6 +72,15 @@ test('a real repository: status, diff, show, and the viewer may read listed file
   assert.ok(ren.lines.some((l) => l === 'rename from old.py'), ren.lines.join('\n'));
   assert.ok(!ren.lines.some((l) => l === 'new file mode 100644'));
   const d = await m.gitDiff(id, 'a.py');
+  // Copy: diffed with -C against its original.
+  fs.writeFileSync(path.join(root, 'tpl.py'), 'template = 1\n'.repeat(20)); g('add', 'tpl.py'); g('commit', '-qm', 'tpl');
+  fs.copyFileSync(path.join(root, 'tpl.py'), path.join(root, 'tpl_copy.py'));
+  g('add', 'tpl_copy.py');
+  // (status lists a copy as 'C' only with copy detection on; the entry is set here)
+  m.sessions.get(id).git.orig.set('tpl_copy.py', { orig: 'tpl.py', copy: true });
+  m.sessions.get(id).git.files.add('tpl_copy.py');
+  const cp = await m.gitDiff(id, 'tpl_copy.py');
+  assert.ok(cp.lines.includes('copy from tpl.py'), cp.lines.join('\n'));
   assert.ok(d.lines.includes('-two') && d.lines.includes('+TWO') && d.lines.includes('+three'));
   assert.match((await m.gitDiff(id, 'not-listed.py')).error, /목록에 없는/);
   const show = await m.gitShow(id, st.commits[0].hash);
@@ -130,4 +139,33 @@ test('only the latest of overlapping status reads is kept for the viewer', async
   await older;
   assert.ok(m.fileTarget(id, '/home/user/sample-app/new.py'));
   assert.strictEqual(m.fileTarget(id, '/home/user/sample-app/old.py'), null);
+});
+
+test('the root found last time is reused for the same folder, and checked again when stale', async () => {
+  const calls = [];
+  let rootOk = true;
+  const runner = async (args, t) => {
+    calls.push([args[0], t.cwd]);
+    if (args[0] === 'rev-parse') return { ok: true, stdout: '/home/user/sample-app\n', stderr: '' };
+    if (args[0] === 'status') return rootOk ? { ok: true, stdout: '## main\0', stderr: '' } : { ok: false, stdout: '', stderr: 'fatal: cannot change to' };
+    return { ok: true, stdout: '', stderr: '' };
+  };
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [], env: {} }, pollMs: 0, gitRunner: runner });
+  const { id } = m.create({ cwd: '/home/user/sample-app/src' });
+  await m.gitStatus(id);
+  await m.gitStatus(id);
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 1, 'second read skipped rev-parse');
+  assert.ok(calls.filter(([c]) => c === 'status').every(([, cwd]) => cwd === '/home/user/sample-app'));
+  rootOk = false;
+  const r = await m.gitStatus(id);
+  assert.match(r.error, /cannot change/);
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 2, 'stale root: found again');
+  m.setCwd(id, '/home/user/other');
+  rootOk = true;
+  await m.gitStatus(id);
+  assert.strictEqual(calls.filter(([c]) => c === 'rev-parse').length, 3, 'another folder: not reused');
+});
+
+test('rootDir: filesystem and drive roots', () => {
+  assert.deepStrictEqual([gv.rootDir(''), gv.rootDir('C:'), gv.rootDir('/home/user/sample-app')], ['/', 'C:/', '/home/user/sample-app']);
 });

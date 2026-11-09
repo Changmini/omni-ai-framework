@@ -74,9 +74,10 @@ function registerIpc() {
     if (!t) return { error: '이 파일은 열 수 없습니다' };
     return { path: t.path, ...(await readTextFile(t.host)) };
   });
-  ipcMain.handle('file:reveal', (_e, id, file) => {
+  ipcMain.handle('file:reveal', async (_e, id, file) => {
     const t = manager.fileTarget(str(id, 20), str(file, 4000));
-    if (!t || !fs.existsSync(t.host)) return false;
+    // Asynchronous: over \\wsl.localhost this can wait for WSL to start.
+    if (!t || !(await fs.promises.access(t.host).then(() => true, () => false))) return false;
     shell.showItemInFolder(t.host);
     return true;
   });
