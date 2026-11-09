@@ -186,12 +186,22 @@ class SessionManager {
     if (!s) return null;
     const w = s.wsl && s.wsl.home ? s.wsl : null;
     const home = w ? w.home.replace(/\/$/, '') : null;
-    return this.scanConfig({
+    const config = this.scanConfig({
       claudeDir: w ? wslToWindows(`${home}/.claude`, w.distro) : this.claudePaths.dir,
       claudeJson: w ? wslToWindows(`${home}/.claude.json`, w.distro) : this.claudePaths.json,
       cwd: this.hostPath(s, s.cwd),
       mapPath: w ? (p) => wslToWindows(p, w.distro) || p : (p) => p,
     });
+    // The files behind the listed items (SKILL.md, agent and command files,
+    // settings, plugin README): the viewer may read these. Paths are already
+    // as this host reads them.
+    s.configFiles = new Set();
+    if (config) {
+      for (const key of ['skills', 'plugins', 'hooks', 'agents', 'mcp']) {
+        for (const item of config[key] || []) if (typeof item.file === 'string' && item.file) s.configFiles.add(item.file);
+      }
+    }
+    return config;
   }
 
   // A name the user gave the terminal; empty goes back to the folder name.
@@ -321,9 +331,12 @@ class SessionManager {
   // Returns the path as Claude named it (absolute) and as this host reads it
   // (\\wsl.localhost for a Linux path from the Windows app), or null.
   // Also a file of the last git status listing (git tab), by its full path.
+  // Also a file behind an item of the last Claude config listing, by the
+  // path given there (already readable on this host).
   fileTarget(id, file) {
     const s = this.sessions.get(id);
     if (!s || typeof file !== 'string' || !file) return null;
+    if (s.configFiles && s.configFiles.has(file)) return { path: file, host: file };
     const fromGit = s.git && s.git.paths.has(file);
     if (!fromGit && !s.activity.some((a) => a.file === file)) return null;
     const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
