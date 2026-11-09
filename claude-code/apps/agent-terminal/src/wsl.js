@@ -21,4 +21,25 @@ function withWslEnv(existing) {
   return [...have, ...WSLENV_VARS.filter((v) => !have.has(v))].join(':');
 }
 
-module.exports = { wslToWindows, withWslEnv, WSLENV_VARS };
+// How to run a Linux command where the reporting shell lives: inside WSL from
+// the Windows app (wsl.exe [-d distro] -e cmd ...), directly elsewhere. -e
+// runs it without the Linux shell, so arguments arrive as given (a ";" or a
+// path with spaces stays one argument). A distro name that is not a plain
+// name is left out (default distro) rather than passed on.
+function wslCommand(cmd, args, distro, platform = process.platform) {
+  if (platform !== 'win32') return [cmd, args];
+  const d = distro && /^[\w.@:+-]+$/.test(distro) ? ['-d', distro] : [];
+  return ['wsl.exe', [...d, '-e', cmd, ...args]];
+}
+
+// Text from wsl.exe itself (an unknown distro, WSL not running) is UTF-16LE;
+// what the Linux command prints is UTF-8. Decodes either.
+function decodeOutput(buf) {
+  if (!Buffer.isBuffer(buf)) return String(buf || '');
+  let nulOdd = 0;
+  const n = Math.min(buf.length, 512);
+  for (let i = 1; i < n; i += 2) if (buf[i] === 0) nulOdd++;
+  return n >= 4 && nulOdd > n / 4 ? buf.toString('utf16le').replace(/^\uFEFF/, '') : buf.toString('utf8');
+}
+
+module.exports = { wslToWindows, withWslEnv, wslCommand, decodeOutput, WSLENV_VARS };

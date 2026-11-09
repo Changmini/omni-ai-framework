@@ -10,6 +10,7 @@ const gitView = require('./git-view');
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
+const EARLY_MS = 10000; // how long a result that came before its call waits for it
 
 const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
 
@@ -98,6 +99,9 @@ class SessionManager {
       lastAgent: null,
       activity: [], // inspector log, oldest first
       activitySeq: 0,
+      early: new Map(), // tool_use_id -> result that arrived before its call (tmux hook)
+      git: null, // last git status: { root, files, orig, paths }
+      gitSeq: 0,
     };
     this.sessions.set(id, session);
 
@@ -258,24 +262,39 @@ class SessionManager {
     this.emitAgent(s);
   }
 
-  // One line of the inspector's log. A failed tool call marks the line of
-  // that call instead of adding one.
+  // One line of the inspector's log. A result or failure goes on the line of
+  // its call (newest first: ids repeat only across sessions, and the latest
+  // call is the one that just ran). claude-hook.sh (tmux) sends without
+  // waiting, so a fast tool's result can arrive before its call: it is kept
+  // for EARLY_MS and put on the call's line when that arrives; a failure that
+  // came first has its own line, which the call then fills in.
   recordActivity(s, ev, who) {
     const entry = activityEntry(ev, this.now(), who);
     if (!entry) return;
-    // A result or failure goes on the line of its call (newest first: ids repeat
-    // only across sessions, and the latest call is the one that just ran).
-    if ((entry.kind === 'fail' || entry.kind === 'result') && entry.useId) {
-      const i = s.activity.findLastIndex((a) => a.useId === entry.useId);
+    const now = this.now();
+    for (const [k, v] of s.early) if (now - v.at > EARLY_MS) s.early.delete(k);
+    const i = entry.useId ? s.activity.findLastIndex((a) => a.useId === entry.useId) : -1;
+    if (entry.kind === 'fail' || entry.kind === 'result') {
       if (i !== -1) {
         const prev = s.activity[i];
-        s.activity[i] = entry.kind === 'fail'
+        this.updateActivity(s, i, entry.kind === 'fail'
           ? { ...prev, kind: 'fail', error: entry.text, detail: { ...prev.detail, error: entry.detail.error } }
-          : { ...prev, result: entry.result };
-        this.emit('session:activity', { id: s.id, entry: s.activity[i] });
+          : { ...prev, result: entry.result });
         return;
       }
-      if (entry.kind === 'result') return; // its call is no longer in the log
+      if (entry.kind === 'result') {
+        if (entry.useId && s.early.size < 100) s.early.set(entry.useId, { result: entry.result, at: now });
+        return;
+      }
+    } else if (entry.kind === 'tool' && i !== -1 && s.activity[i].kind === 'fail') {
+      // The call of a failure logged before it: fill in what it was.
+      const prev = s.activity[i];
+      this.updateActivity(s, i, { ...prev, file: prev.file || entry.file, detail: { ...entry.detail, error: prev.detail && prev.detail.error } });
+      return;
+    }
+    if (entry.kind === 'tool' && entry.useId && s.early.has(entry.useId)) {
+      entry.result = s.early.get(entry.useId).result;
+      s.early.delete(entry.useId);
     }
     const e = { ...entry, n: ++s.activitySeq };
     s.activity.push(e);
@@ -283,15 +302,16 @@ class SessionManager {
     this.emit('session:activity', { id: s.id, entry: e });
   }
 
+  updateActivity(s, i, entry) {
+    s.activity[i] = entry;
+    this.emit('session:activity', { id: s.id, entry });
+  }
+
   activity(id) {
     const s = this.sessions.get(id);
     return { max: ACTIVITY_MAX, entries: s ? s.activity.slice() : [] };
   }
 
-  // A vscode:// link for a file from this terminal's activity log (only
-  // those: the page cannot make the app open arbitrary paths). Inside WSL it
-  // opens through VS Code's WSL remote. URL forms from
-  // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
   // A file the page may open for this terminal: one from its activity log.
   // Returns the path as Claude named it (absolute) and as this host reads it
   // (\\wsl.localhost for a Linux path from the Windows app), or null.
@@ -305,6 +325,10 @@ class SessionManager {
     return { path: abs, host: this.hostPath(s, abs) };
   }
 
+  // A vscode:// link for a file fileTarget allows (the page cannot make the
+  // app open arbitrary paths). Inside WSL it opens through VS Code's WSL
+  // remote. URL forms from
+  // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
   editorUrl(id, file) {
     const s = this.sessions.get(id);
     if (!s || !this.fileTarget(id, file)) return null;
@@ -323,15 +347,24 @@ class SessionManager {
   }
 
   // Status, branch and recent commits of the repository at the terminal's
-  // folder. Remembers the listed files, which the viewer may then read.
+  // folder. Remembers the listed files, which the viewer may then read; only
+  // the latest of overlapping reads is kept. `root` comes back without a
+  // trailing slash, the form the page joins file paths to.
   async gitStatus(id) {
     const s = this.sessions.get(id);
     if (!s) return { error: '터미널이 없습니다' };
-    const run = (args, t) => this.gitRunner(args, t);
-    const r = await gitView.gitStatus(this.gitTarget(s), run);
+    const seq = ++s.gitSeq;
+    const r = await gitView.gitStatus(this.gitTarget(s), this.gitRunner);
+    if (seq !== s.gitSeq) return r;
     if (r.root) {
       const root = r.root.replace(/[\\/]$/, '');
-      s.git = { root, files: new Set(r.files.map((f) => f.path)), paths: new Set(r.files.map((f) => `${root}/${f.path}`)) };
+      r.root = root;
+      s.git = {
+        root,
+        files: new Set(r.files.map((f) => f.path)),
+        orig: new Map(r.files.filter((f) => f.orig).map((f) => [f.path, f.orig])),
+        paths: new Set(r.files.map((f) => `${root}/${f.path}`)),
+      };
     } else {
       s.git = null;
     }
@@ -341,13 +374,13 @@ class SessionManager {
   async gitDiff(id, path) {
     const s = this.sessions.get(id);
     if (!s || !s.git || !s.git.files.has(path)) return { error: '목록에 없는 파일입니다 (다시 읽어 주세요)' };
-    return gitView.gitFileDiff(this.gitTarget(s, s.git.root), path, (args, t) => this.gitRunner(args, t));
+    return gitView.gitFileDiff(this.gitTarget(s, s.git.root), path, this.gitRunner, s.git.orig.get(path) || null);
   }
 
   async gitShow(id, rev) {
     const s = this.sessions.get(id);
     if (!s || !s.git) return { error: '저장소를 먼저 읽어 주세요' };
-    return gitView.gitShow(this.gitTarget(s, s.git.root), rev, (args, t) => this.gitRunner(args, t));
+    return gitView.gitShow(this.gitTarget(s, s.git.root), rev, this.gitRunner);
   }
 
   // Context usage from the session's transcript: read asynchronously, at most

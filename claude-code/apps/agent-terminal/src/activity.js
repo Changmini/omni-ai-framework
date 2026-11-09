@@ -104,7 +104,11 @@ function activityEntry(ev, at, who = null) {
     }
     // The result of a call already logged: sessions.js puts it on that line.
     case 'PostToolUse':
-      return ev.tool_use_id ? { ...base, kind: 'result', useId: ev.tool_use_id, result: clip(trimResult(ev.tool_response)) } : null;
+      // No tool_response: the event was over the hook server's size limit.
+      return ev.tool_use_id ? {
+        ...base, kind: 'result', useId: ev.tool_use_id,
+        result: ev.tool_response === undefined ? { omitted: true } : clip(trimResult(ev.tool_response)),
+      } : null;
     case 'PostToolUseFailure': {
       const s = toolSummary(ev.tool_name, ev.tool_input);
       return {

@@ -8,18 +8,23 @@
 // running git itself. Nothing here changes the repository.
 
 const { execFile } = require('node:child_process');
+const { wslCommand, decodeOutput } = require('./wsl');
 
-const MAX_OUT = 8 * 1024 * 1024;
+const MAX_OUT = 16 * 1024 * 1024;
+const MAX_FILES = 500; // changed files listed; the rest are counted
 
 function runGit(args, { cwd, distro = null, platform = process.platform, exec = execFile } = {}) {
   const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', cwd, ...args];
-  const [file, argv] = platform === 'win32' && distro
-    ? ['wsl.exe', ['-d', distro, '-e', 'git', ...base]]
-    : ['git', base];
+  // Without a distro (a Windows folder) Windows git runs.
+  const [file, argv] = wslCommand('git', base, distro, distro ? platform : 'host');
   return new Promise((resolve) => {
-    exec(file, argv, { timeout: 10000, maxBuffer: MAX_OUT, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
+    exec(file, argv, { timeout: 15000, maxBuffer: MAX_OUT, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
       const out = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout || '');
-      const errText = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : String(stderr || '');
+      // On failure the reason may be wsl.exe's own (UTF-16) message, on stdout.
+      let errText = decodeOutput(stderr);
+      if (err && !errText.trim()) errText = decodeOutput(stdout);
+      if (err && !errText.trim() && err.killed) errText = 'git이 응답하지 않습니다 (시간 초과)';
+      if (err && !errText.trim() && /maxBuffer/i.test(String(err.message))) errText = '출력이 너무 큽니다';
       const missing = err && err.code === 'ENOENT';
       resolve({ ok: !err, code: err && typeof err.code === 'number' ? err.code : err ? -1 : 0, stdout: out, stderr: errText, missing });
     });
@@ -80,7 +85,10 @@ function parseLog(text) {
 async function gitStatus(target, run = runGit) {
   const top = await run(['rev-parse', '--show-toplevel'], target);
   if (top.missing) return { error: 'git을 찾을 수 없습니다 (설치돼 있지 않거나 PATH에 없음)' };
-  if (!top.ok) return { notRepo: true };
+  // Only "not a git repository" means that; anything else (Windows git's
+  // safe.directory check on a \\wsl.localhost folder, no git in the distro,
+  // wsl.exe errors) is shown as it is.
+  if (!top.ok) return /not a git repository/i.test(top.stderr) ? { notRepo: true } : { error: firstLine(top.stderr, 'git을 실행하지 못했습니다') };
   const root = top.stdout.trim();
   const at = { ...target, cwd: root };
   const [st, unstaged, staged, log] = await Promise.all([
@@ -89,34 +97,42 @@ async function gitStatus(target, run = runGit) {
     run(['diff', '--cached', '--numstat', '-z'], at),
     run(['log', '-n', '20', '--format=%H%x1f%h%x1f%s%x1f%ct%x1e'], at),
   ]);
-  if (!st.ok) return { error: (st.stderr || 'git status 실패').trim().split('\n')[0] };
+  if (!st.ok) return { error: firstLine(st.stderr, 'git status 실패') };
   const s = parseStatus(st.stdout);
+  const total = s.files.length;
+  if (total > MAX_FILES) s.files = s.files.slice(0, MAX_FILES);
   const un = parseNumstat(unstaged.stdout);
   const sg = parseNumstat(staged.stdout);
   for (const f of s.files) {
     if (f.index !== ' ' && f.index !== '?') f.staged = sg.get(f.path) || null;
     if (f.work !== ' ' && f.work !== '?') f.unstaged = un.get(f.path) || null;
   }
-  return { root, ...s, commits: log.ok ? parseLog(log.stdout) : [] };
+  return { root, ...s, total, commits: log.ok ? parseLog(log.stdout) : [] };
 }
+
+const firstLine = (text, fallback) => (String(text || '').trim().split('\n')[0] || fallback);
 
 const SAFE_PATH = (p) => typeof p === 'string' && p !== '' && !p.startsWith('-') && !/(^|[\\/])\.\.([\\/]|$)/.test(p) && !p.includes('\0');
 const SAFE_REV = (r) => typeof r === 'string' && /^[0-9a-f]{7,64}$/.test(r);
 
 // The working-tree change of one file: staged and unstaged together (vs HEAD),
-// or the index alone for a repository without commits.
-async function gitFileDiff(target, path, run = runGit) {
-  if (!SAFE_PATH(path)) return { error: '잘못된 경로' };
-  let r = await run(['diff', 'HEAD', '--no-ext-diff', '--', path], target);
-  if (!r.ok) r = await run(['diff', '--cached', '--no-ext-diff', '--', path], target);
-  if (!r.ok) return { error: (r.stderr || 'git diff 실패').trim().split('\n')[0] };
+// or the index alone for a repository without commits. A renamed file passes
+// its old path too, so git pairs the two instead of showing a new file.
+async function gitFileDiff(target, path, run = runGit, orig = null) {
+  if (!SAFE_PATH(path) || (orig !== null && !SAFE_PATH(orig))) return { error: '잘못된 경로' };
+  const paths = orig ? ['-M', '--', orig, path] : ['--', path];
+  let r = await run(['diff', 'HEAD', '--no-ext-diff', ...paths], target);
+  if (!r.ok) r = await run(['diff', '--cached', '--no-ext-diff', ...paths], target);
+  if (!r.ok) return { error: firstLine(r.stderr, 'git diff 실패') };
   return { lines: r.stdout.replace(/\n$/, '').split('\n').filter((l, i, a) => a.length > 1 || l) };
 }
 
 async function gitShow(target, rev, run = runGit) {
   if (!SAFE_REV(rev)) return { error: '잘못된 커밋' };
-  const r = await run(['show', '--no-ext-diff', '--format=commit %H%n%n    %s%n%n%b', rev], target);
-  if (!r.ok) return { error: (r.stderr || 'git show 실패').trim().split('\n')[0] };
+  // The body is indented like `git log`: a "- item" line in it must not read
+  // as a removed line of the diff.
+  const r = await run(['show', '--no-ext-diff', '--format=commit %H%n%n    %s%n%n%w(0,4,4)%b', rev], target);
+  if (!r.ok) return { error: firstLine(r.stderr, 'git show 실패') };
   const text = r.stdout.length > 600000 ? `${r.stdout.slice(0, 600000)}\n… (일부만 표시)` : r.stdout;
   // An empty body leaves blank lines before the first diff: keep one.
   const lines = text.replace(/\n$/, '').split('\n');
@@ -125,4 +141,4 @@ async function gitShow(target, rev, run = runGit) {
   return { lines: first === -1 ? head : [...head, '', ...lines.slice(first)] };
 }
 
-module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, SAFE_PATH, SAFE_REV };
+module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, SAFE_PATH, SAFE_REV, MAX_FILES };

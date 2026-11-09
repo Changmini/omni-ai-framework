@@ -968,6 +968,7 @@ function configVisible() {
 }
 
 function setInspectorOpen(on) {
+  if (!on) hideCard();
   app.classList.toggle('inspector-closed', !on);
   insp.toggle.setAttribute('aria-pressed', String(on));
   writePref('inspectorOpen', on);
@@ -977,6 +978,7 @@ function setInspectorOpen(on) {
 }
 
 function setInspectorTab(tab) {
+  hideCard();
   inspectorTab = tab;
   writePref('inspectorTab', tab);
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
@@ -1135,7 +1137,7 @@ function cardBody(id, e) {
     if (tool === 'Bash') {
       out.push(cardSec('명령', asText(i.command)));
       if (i.description) out.push(cardSec('설명', asText(i.description)));
-      if (r && typeof r === 'object') {
+      if (r && typeof r === 'object' && !r.omitted) {
         if (r.stdout) out.push(cardSec('출력', asText(r.stdout)));
         if (r.stderr) out.push(cardSec('오류 출력', asText(r.stderr), 'err'));
         if (!r.stdout && !r.stderr) out.push(h('div', 'card-note', '출력 없음'));
@@ -1165,9 +1167,10 @@ function cardBody(id, e) {
       if (said) out.push(cardSec('결과', said));
     } else {
       if (Object.keys(i).length) out.push(cardSec('입력', asText(i)));
-      if (r !== undefined) out.push(cardSec('결과', asText(r)));
+      if (r !== undefined && !(r && r.omitted)) out.push(cardSec('결과', asText(r)));
     }
-    if (e.kind === 'tool' && r === undefined && tool) out.push(h('div', 'card-note', '결과 기다리는 중'));
+    if (r && r.omitted) out.push(h('div', 'card-note', '결과가 너무 커서 받지 않았습니다'));
+    else if (e.kind === 'tool' && r === undefined && tool) out.push(h('div', 'card-note', '결과 기다리는 중'));
   }
   if (e.kind === 'fail' && (d.error || e.error)) out.push(cardSec('오류', asText(d.error || e.error), 'err'));
   return out;
@@ -1214,12 +1217,15 @@ function hideCard() {
 
 card.addEventListener('mouseenter', () => clearTimeout(cardTimer));
 card.addEventListener('mouseleave', () => cardLeave());
-// Esc closes the card first, then the viewer.
+// Esc closes the card first, then the viewer. Typed into a terminal it also
+// closes the card but still reaches the terminal (Esc interrupts Claude).
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const inTerminal = Boolean(e.target && e.target.closest && e.target.closest('.term'));
   if (!card.hidden) hideCard();
-  else if (viewing) closeViewer();
+  else if (viewing && !inTerminal) closeViewer();
   else return;
+  if (inTerminal) return;
   e.preventDefault();
   e.stopPropagation();
 }, true);
@@ -1347,7 +1353,8 @@ function openActivityFile(id, file, entry) {
     actions: { reveal: () => api.revealFile(id, file), editor: () => api.openFile(id, file) },
   });
 }
-insp.list.addEventListener('scroll', () => hideCard());
+// The panel body scrolls (not the list): the card would stay beside another line.
+insp.list.closest('.tab-body').addEventListener('scroll', () => hideCard(), { passive: true });
 
 function renderActivity() {
   hideCard();
@@ -1417,6 +1424,8 @@ let gitStale = true;
 let gitTimer = null;
 let gitToken = null;
 let lastGitAt = 0;
+let gitBusy = false; // a read is running: one more follows it instead of overlapping
+let gitAgain = false;
 
 function gitVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'git';
@@ -1427,13 +1436,17 @@ function loadGit(delay = 150) {
   gitTimer = setTimeout(async () => {
     const id = activeId;
     if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
+    if (gitBusy) { gitAgain = true; return; }
     gitStale = false;
+    gitBusy = true;
     const token = {};
     gitToken = token;
     if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
     const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
+    gitBusy = false;
     lastGitAt = Date.now();
     if (gitToken === token && id === activeId) renderGit(id, r);
+    if (gitAgain) { gitAgain = false; loadGit(0); }
   }, delay);
 }
 
@@ -1481,8 +1494,8 @@ function renderGit(id, r) {
   }
   gitEls.head.append(h('span', 'git-branch', r.branch ? `⎇ ${r.branch}` : '⎇ (브랜치 없음)'));
   gitEls.head.append(h('span', 'git-sync', r.upstream ? `↑${r.ahead} ↓${r.behind} · ${r.upstream}` : '원격 브랜치 없음'));
-  gitEls.head.append(h('span', 'git-root ellipsis', r.root));
-  gitEls.head.lastChild.title = r.root;
+  gitEls.head.append(h('span', 'git-root ellipsis', r.root || '/'));
+  gitEls.head.lastChild.title = r.root || '/';
   const groups = [
     ['스테이징됨', r.files.filter((f) => f.index !== ' ' && f.index !== '?'), (f) => [f.index, f.staged]],
     ['변경됨', r.files.filter((f) => f.work !== ' ' && f.work !== '?'), (f) => [f.work, f.unstaged]],
@@ -1497,6 +1510,7 @@ function renderGit(id, r) {
     parts.push(ul);
   }
   if (!parts.length) parts.push(h('p', 'hint', '바뀐 파일이 없습니다.'));
+  if (r.total > r.files.length) parts.push(h('p', 'hint', `바뀐 파일이 많아 ${r.files.length}개만 표시합니다 (전체 ${r.total}개).`));
   if (r.commits.length) {
     parts.push(h('h2', 'inspector-h', '최근 커밋'));
     const ul = h('ul', 'git-list');

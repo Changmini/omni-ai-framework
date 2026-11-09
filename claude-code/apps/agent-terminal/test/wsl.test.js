@@ -93,3 +93,13 @@ test('the app running inside WSL itself reads Linux paths directly', async () =>
   await new Promise((r) => setImmediate(r));
   assert.deepStrictEqual(read, ['/home/user/.claude/projects/p/s.jsonl']);
 });
+
+test('wslCommand and decodeOutput', () => {
+  const { wslCommand, decodeOutput } = require('../src/wsl');
+  assert.deepStrictEqual(wslCommand('git', ['status'], 'Ubuntu-24.04', 'win32'), ['wsl.exe', ['-d', 'Ubuntu-24.04', '-e', 'git', 'status']]);
+  assert.deepStrictEqual(wslCommand('git', ['status'], 'bad name; rm', 'win32'), ['wsl.exe', ['-e', 'git', 'status']]);
+  assert.deepStrictEqual(wslCommand('git', ['status'], 'Ubuntu', 'linux'), ['git', ['status']]);
+  assert.strictEqual(decodeOutput(Buffer.from('오류 message', 'utf8')), '오류 message');
+  assert.strictEqual(decodeOutput(Buffer.from('\uFEFFWSL error', 'utf16le')), 'WSL error');
+  assert.strictEqual(decodeOutput(undefined), '');
+});

@@ -11,6 +11,7 @@
 // (preTokens); until the next answer that is the usage.
 
 const fs = require('node:fs');
+const { readFully } = require('./files');
 
 const TAIL_FIRST = 64 * 1024; // usually holds the last answer
 const TAIL_BYTES = 512 * 1024; // a long tool result can push it further back
@@ -63,8 +64,8 @@ async function readContextUsage(file) {
     const tail = async (bytes) => {
       const len = Math.min(size, bytes);
       const buf = Buffer.alloc(len);
-      await fh.read(buf, 0, len, size - len);
-      return usageFromTail(buf.toString('utf8'));
+      const got = await readFully(fh, buf, size - len);
+      return usageFromTail(buf.subarray(0, got).toString('utf8'));
     };
     const first = await tail(TAIL_FIRST);
     return first || size <= TAIL_FIRST ? first : await tail(TAIL_BYTES);
