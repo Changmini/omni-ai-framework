@@ -12,6 +12,17 @@ function wslToWindows(linuxPath, distro) {
   return `\\\\wsl.localhost\\${distro}${linuxPath.replace(/\//g, '\\')}`;
 }
 
+// The reverse for a path this host reads inside WSL: \\wsl.localhost\<distro>\x
+// (or \\wsl$\...) -> /x, C:\x -> /mnt/c/x. Returns null for anything else.
+function windowsToWsl(p) {
+  if (typeof p !== 'string') return null;
+  const unc = /^\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)?$/i.exec(p);
+  if (unc) return (unc[1] || '\\').replace(/\\/g, '/');
+  const drive = /^([a-zA-Z]):[\\/](.*)$/.exec(p);
+  if (drive) return `/mnt/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}`;
+  return null;
+}
+
 // WSLENV entries that carry the app's variables into WSL; /p converts a
 // Windows path to its /mnt/... form (see Microsoft's WSLENV documentation).
 const WSLENV_VARS = ['OMNI_TERMINAL_ID', 'OMNI_HOOK_TOKEN', 'OMNI_CWD_URL', 'OMNI_CLAUDE_SETTINGS/p', 'OMNI_INIT_BASH/p'];
@@ -42,4 +53,4 @@ function decodeOutput(buf) {
   return n >= 4 && nulOdd > n / 4 ? buf.toString('utf16le').replace(/^\uFEFF/, '') : buf.toString('utf8');
 }
 
-module.exports = { wslToWindows, withWslEnv, wslCommand, decodeOutput, WSLENV_VARS };
+module.exports = { wslToWindows, windowsToWsl, withWslEnv, wslCommand, decodeOutput, WSLENV_VARS };

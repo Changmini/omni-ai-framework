@@ -166,7 +166,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 | MCP 서버 | `~/.claude.json`의 `mcpServers`(사용자)와 `projects.<경로>.mcpServers`(로컬), `<프로젝트>/.mcp.json`, 켜진 플러그인의 `.mcp.json` |
 
 - 항목에 마우스를 올리면 설명, 명령, 전체 이름이 보입니다.
-- **항목을 클릭하면 그 파일을 뷰어로 엽니다:** 스킬은 `SKILL.md`, 명령·서브에이전트는 그 `.md` 파일, 플러그인은 `README.md`(없으면 `.claude-plugin/plugin.json`), 훅은 정의된 설정 파일(`settings.json`, 플러그인 `hooks/hooks.json`), MCP 서버는 정의된 파일(`.mcp.json`, `~/.claude.json`)입니다. Markdown은 `읽기`(제목·목록·표·코드 블록을 정리해 보여 줌, 앞머리 정보는 표로)와 `원문` 탭으로 봅니다. 앱은 구성 목록에 나온 파일만 읽고, 파일 속 HTML은 실행하지 않습니다.
+- **항목을 클릭하면 그 파일을 뷰어로 엽니다:** 스킬은 `SKILL.md`, 명령·서브에이전트는 그 `.md` 파일, 플러그인은 `README.md`(없으면 `.claude-plugin/plugin.json`), 훅은 정의된 설정 파일(`settings.json`, 플러그인 `hooks/hooks.json`), MCP 서버는 정의된 파일(`.mcp.json`, `~/.claude.json`)입니다. Markdown은 `읽기`(제목·목록·표·코드 블록을 정리해 보여 줌, 앞머리 정보는 표로)와 `원문` 탭으로 봅니다. `읽기`에서 웹 링크는 브라우저로, 상대 링크(스킬의 `reference.md` 등)는 같은 폴더 안이면 뷰어로 엽니다. 앱은 구성 목록에 나온 파일과 스킬·서브에이전트·플러그인 파일이 있는 폴더 안의 파일만 읽고(`..`로 나갈 수 없음), 파일 속 HTML은 실행하지 않습니다.
 - 그룹 펼침 상태는 기억됩니다.
 - `installed_plugins.json`과 플러그인 캐시 형식은 Claude Code 2.1.318에서 실제 파일을 보고 맞췄고, 공식 문서에는 없습니다.
 
@@ -211,7 +211,7 @@ claude.ai `사용량` 화면의 `현재 세션`(5시간 한도)과 같은 값입
 - **파일 경로를 클릭하면** 앱 안의 뷰어가 터미널 위에 열립니다. 그 줄이 바꾼 부분(`이번 변경`)과 파일 전체(`파일`)를 탭으로 봅니다. 파일은 최대 1MB까지(넘으면 앞부분), 바이너리는 표시하지 않습니다. WSL 터미널의 파일은 `\\wsl.localhost`로 읽습니다. 위쪽 버튼은 경로 복사, 폴더에서 보기, VS Code로 열기(`vscode://` 링크를 처리할 앱이 있을 때만 보임)입니다. 앱은 활동 기록이나 git 탭 목록에 나온 파일만 읽습니다.
 - 승인 요청은 `PermissionRequest` 한 줄만 남깁니다(같은 내용의 `permission_prompt` 알림은 생략).
 
-**컨텍스트 사용량**은 훅 신호에 들어 있는 대화 기록 파일(`transcript_path`, JSONL)의 마지막 응답 `usage`에서 계산합니다: `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`. 파일 끝 64KB를 먼저 읽고, 거기에 응답이 없을 때만 512KB까지 읽습니다. 세션마다 3초에 한 번 이하로 읽고, 응답이 끝나면(`Stop`) 항상 읽습니다(그때 읽기가 진행 중이면 끝난 뒤 한 번 더). `/compact`나 자동 압축 직후에는 기록의 `compact_boundary` 줄에 적힌 압축 후 크기(`postTokens`)를 씁니다. 컨텍스트 창 크기는 기록에 없어서 **추정값**입니다: 200k로 보고, 그보다 많이 쓰면 1M 창으로 보며, 한 번 1M으로 본 세션은 압축 후에도 1M으로 봅니다. 상세 패널 맨 위에는 메인과, 사이드바에 보이는 팀원·서브에이전트 각각의 사용량이 같은 순서로 `142k/200k`처럼 표시됩니다. 값을 모르면 양쪽 모두 `—`입니다: 앱이 아직 그 팀원의 신호를 받지 못한 경우(앱보다 먼저 시작해 대기 중이면 다음에 일할 때 표시), 또는 메인 세션 안에서 실행되는 서브에이전트입니다. 마우스를 올리면 이유가 보입니다.
+**컨텍스트 사용량**은 훅 신호에 들어 있는 대화 기록 파일(`transcript_path`, JSONL)의 마지막 응답 `usage`에서 계산합니다: `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`. 파일 끝 64KB를 먼저 읽고, 거기에 응답이 없을 때만 512KB까지 읽습니다. 세션마다 3초에 한 번 이하로 읽고, 응답이 끝나면(`Stop`) 항상 읽습니다(그때 읽기가 진행 중이면 끝난 뒤 한 번 더). `/compact`나 자동 압축 직후에는 기록의 `compact_boundary` 줄에 적힌 압축 후 크기(`postTokens`)를 씁니다. 컨텍스트 창 크기는 기록에 없어서 **추정값**입니다: 200k로 보고, 그보다 많이 쓰면 1M 창으로 보며, 한 번 1M으로 본 세션은 압축 후에도 1M으로 봅니다. 상세 패널 맨 위에는 메인과, 사이드바에 보이는 팀원·서브에이전트 각각의 사용량이 같은 순서로 `142k/200k`처럼 표시됩니다. 값을 모르면 `—`입니다: 메인이 아직 첫 응답을 기록하지 않았거나, 앱이 아직 그 팀원의 신호를 받지 못한 경우(앱보다 먼저 시작해 대기 중이면 다음에 일할 때 표시)입니다. 메인 세션 안에서 실행되는 서브에이전트는 따로 재지 않아 상세 패널에만 `—`로 나오고 사이드바에는 숫자를 붙이지 않습니다. 마우스를 올리면 이유가 보입니다.
 
 ## git 변경 내역
 
@@ -277,7 +277,7 @@ src/
 ├── tmux.js            # tmux 명령 실행 (Windows면 wsl.exe 경유)
 ├── status.js          # 셸 출력의 오류 줄 감지
 └── renderer/          # index.html · styles.css · renderer.js (xterm.js 화면, 사이드바 트리, 상세 패널, 단축키)
-                       #   view-logic.js: DOM 없이 테스트하는 화면 판단(diff 줄 종류, Esc, git 읽기 순서)
+                       #   view-logic.js: DOM 없이 테스트하는 화면 판단(diff 줄 종류, Esc, git 읽기 순서, Markdown)
 scripts/setup-linux.sh # Linux·WSL 설치 자동화 (패키지, npm install, 샌드박스, 실행기)
 test/                  # node --test
 ```
