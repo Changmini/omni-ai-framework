@@ -480,9 +480,13 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 
 /* context detail */
 .ctx-detail:empty { display: none; }
-.ctx-row { display: grid; grid-template-columns: minmax(56px, 1fr) minmax(40px, 120px) auto; align-items: center; gap: 8px; font-size: 11.5px; padding: 3px 0; }
+/* One grid for all rows (each row a subgrid), so names, bars and numbers
+   line up whatever the length of a name or a number. */
+.ctx-detail { display: grid; grid-template-columns: fit-content(45%) minmax(40px, 1fr) max-content; column-gap: 8px; }
+.ctx-detail > .inspector-h { grid-column: 1 / -1; }
+.ctx-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; font-size: 11.5px; padding: 3px 0; }
 .ctx-row .ctx-bar { max-width: none; }
-.ctx-row .ctx-num { color: var(--muted); font-size: 10.5px; min-width: 70px; text-align: right; white-space: nowrap; }
+.ctx-row .ctx-num { color: var(--muted); font-size: 10.5px; text-align: right; white-space: nowrap; }
 .ctx-row.lead .ctx-who { font-weight: 700; }
 .ctx-row.unknown .ctx-who, .ctx-row.unknown .ctx-num { color: var(--muted); }
 .ctx-row[data-level="mid"] .ctx-fill { background: var(--busy); }
