@@ -117,4 +117,11 @@ test('each item names the file behind it, and the viewer may read only those', (
   const skill = path.join(cd, 'skills/writing/SKILL.md');
   assert.deepStrictEqual(m.fileTarget(id, skill), { path: skill, host: skill });
   assert.strictEqual(m.fileTarget(id, path.join(cd, 'settings.json.omni-backup')), null);
+  // A file in a listed skill's folder (a linked reference) may be opened; '..' cannot leave it.
+  fs.writeFileSync(path.join(cd, 'skills/writing/reference.md'), '# ref');
+  const ref = path.join(cd, 'skills/writing/reference.md');
+  assert.deepStrictEqual(m.fileTarget(id, ref), { path: ref, host: ref });
+  fs.writeFileSync(path.join(cd, 'notes.md'), 'x');
+  assert.strictEqual(m.fileTarget(id, `${cd}/skills/writing/../../notes.md`), null, "'..' cannot leave the skill folder");
+  assert.strictEqual(m.fileTarget(id, path.join(cd, 'notes.md')), null, "a settings file's folder is not opened up");
 });

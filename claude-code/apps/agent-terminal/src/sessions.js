@@ -1,9 +1,10 @@
 'use strict';
 
 const os = require('node:os');
+const path = require('node:path');
 const { StatusTracker } = require('./status');
 const { emptyState, reduce, withTeam } = require('./agent-state');
-const { wslToWindows } = require('./wsl');
+const { wslToWindows, windowsToWsl } = require('./wsl');
 const { activityEntry, oneLine, ACTIVITY_MAX } = require('./activity');
 const gitView = require('./git-view');
 
@@ -102,6 +103,7 @@ class SessionManager {
       early: new Map(), // tool_use_id -> result that arrived before its call (tmux hook)
       git: null, // last git status: { root, files, orig, paths }
       gitSeq: 0,
+      gitFolders: new Map(), // "root\ndir/" -> files listed in that new folder
     };
     this.sessions.set(id, session);
 
@@ -195,10 +197,18 @@ class SessionManager {
     // The files behind the listed items (SKILL.md, agent and command files,
     // settings, plugin README): the viewer may read these. Paths are already
     // as this host reads them.
+    // The folders of skills, agents, commands and plugins too: a file there
+    // may be linked from the one shown (a skill's reference.md), not the
+    // folders of settings files (a home or project folder).
     s.configFiles = new Set();
+    s.configDirs = new Set();
     if (config) {
       for (const key of ['skills', 'plugins', 'hooks', 'agents', 'mcp']) {
-        for (const item of config[key] || []) if (typeof item.file === 'string' && item.file) s.configFiles.add(item.file);
+        for (const item of config[key] || []) {
+          if (typeof item.file !== 'string' || !item.file) continue;
+          s.configFiles.add(item.file);
+          if (key === 'skills' || key === 'agents' || key === 'plugins') s.configDirs.add(path.dirname(item.file));
+        }
       }
     }
     return config;
@@ -337,6 +347,13 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s || typeof file !== 'string' || !file) return null;
     if (s.configFiles && s.configFiles.has(file)) return { path: file, host: file };
+    if (s.configDirs && s.configDirs.size && path.isAbsolute(file)) {
+      // ".." cannot leave the folder: compared after resolving.
+      const full = path.resolve(file);
+      for (const dir of s.configDirs) {
+        if (full.startsWith(path.resolve(dir) + path.sep)) return { path: full, host: full };
+      }
+    }
     const fromGit = s.git && s.git.paths.has(file);
     if (!fromGit && !s.activity.some((a) => a.file === file)) return null;
     const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
@@ -347,15 +364,18 @@ class SessionManager {
   // app open arbitrary paths). Inside WSL it opens through VS Code's WSL
   // remote. URL forms from
   // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
+  // Built from fileTarget's path: a Linux path (activity, git) or this host's
+  // path (config files, which inside WSL are \\wsl.localhost paths: mapped
+  // back to the Linux path for the WSL remote).
   editorUrl(id, file) {
     const s = this.sessions.get(id);
-    if (!s || !this.fileTarget(id, file)) return null;
+    const t = s && this.fileTarget(id, file);
+    if (!t) return null;
     if (s.wsl) {
-      const p = file.startsWith('/') ? file : `${s.cwd.replace(/\/$/, '')}/${file}`;
-      return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(p)}`;
+      const linux = t.path.startsWith('/') ? t.path : windowsToWsl(t.path);
+      if (linux) return `vscode://vscode-remote/wsl+${encodeURIComponent(s.wsl.distro)}${uriPath(linux)}`;
     }
-    const abs = /^([a-zA-Z]:[\\/]|\/)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
-    const p = abs.replace(/\\/g, '/');
+    const p = t.host.replace(/\\/g, '/');
     return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
   }
 
@@ -389,6 +409,13 @@ class SessionManager {
         orig: new Map(r.files.filter((f) => f.orig).map((f) => [f.path, { orig: f.orig, copy: f.index === 'C' }])),
         paths: new Set(r.files.map((f) => `${root}/${f.path}`)),
       };
+      // New folders listed before stay readable while still listed, so the
+      // page can show their files right away after a refresh.
+      for (const [key, files] of s.gitFolders) {
+        const [froot, dir] = key.split('\n');
+        if (froot !== root || !s.git.files.has(dir)) { s.gitFolders.delete(key); continue; }
+        for (const f of files) { s.git.files.add(f); s.git.paths.add(`${root}/${f}`); }
+      }
     } else {
       s.git = null;
     }
@@ -403,6 +430,7 @@ class SessionManager {
     const r = await gitView.gitUntrackedIn(this.gitTarget(s, gitView.rootDir(git.root)), dir, this.gitRunner);
     if (r.files) {
       for (const f of r.files) { git.files.add(f); git.paths.add(`${git.root}/${f}`); }
+      s.gitFolders.set(`${git.root}\n${dir}`, r.files);
     }
     return r;
   }

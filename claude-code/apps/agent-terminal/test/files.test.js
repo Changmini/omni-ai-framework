@@ -60,3 +60,15 @@ test('readFully keeps reading after a short read', async () => {
   const tail = Buffer.alloc(8);
   assert.strictEqual(await readFully(fh, tail, 6), 4, 'stops at end of file');
 });
+
+test('editorUrl for a config file inside WSL uses the Linux path', () => {
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [], env: {} }, pollMs: 0, platform: 'win32',
+    scanConfig: () => ({ project: null, skills: [{ name: 's', file: '\\\\wsl.localhost\\Ubuntu\\home\\user\\.claude\\skills\\s\\SKILL.md' }], plugins: [], hooks: [], agents: [], mcp: [] }),
+  });
+  const { id } = m.create({ cwd: '/home/user/sample-app' });
+  m.reportShellCwd(id, { cwd: '/home/user/sample-app', wslDistro: 'Ubuntu', home: '/home/user' });
+  m.claudeConfig(id);
+  assert.strictEqual(m.editorUrl(id, '\\\\wsl.localhost\\Ubuntu\\home\\user\\.claude\\skills\\s\\SKILL.md'),
+    'vscode://vscode-remote/wsl+Ubuntu/home/user/.claude/skills/s/SKILL.md');
+});

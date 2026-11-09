@@ -81,7 +81,9 @@ test('markdown blocks: front matter, headings, lists, code, quote, table, rule',
     { type: 'table', rows: [['a', 'b'], ['1', '2']] },
     { type: 'hr' },
   ]);
-  assert.deepStrictEqual(markdownBlocks('no front\n---'), [{ type: 'p', text: 'no front' }, { type: 'hr' }]);
+  // "---" under a line is a heading (setext); a leading "---" without keys is a rule.
+  assert.deepStrictEqual(markdownBlocks('no front\n---'), [{ type: 'h', level: 2, text: 'no front' }]);
+  assert.deepStrictEqual(markdownBlocks('---\n\nIntro\n\n---\nAfter'), [{ type: 'hr' }, { type: 'p', text: 'Intro' }, { type: 'hr' }, { type: 'p', text: 'After' }]);
 });
 
 test('inline spans keep snake_case and turn markup into spans', () => {
@@ -90,4 +92,30 @@ test('inline spans keep snake_case and turn markup into spans', () => {
     { t: 'text', s: 'run ' }, { t: 'code', s: 'npm test' }, { t: 'text', s: ', ' }, { t: 'b', s: 'now' }, { t: 'text', s: ', ' },
     { t: 'i', s: 'maybe' }, { t: 'text', s: ' see ' }, { t: 'link', s: 'docs', href: 'https://example.com' }, { t: 'text', s: ' in snake_case_name' },
   ]);
+});
+
+test('front matter: block values and lists; indented code; single-dash tables', () => {
+  const { markdownBlocks, frontMatter } = require('../src/renderer/view-logic');
+  const md = '---\nname: reviewer\ndescription: >-\n  Reviews diffs\n  for bugs.\ntools:\n  - Read\n  - Grep\nnotes: |\n  line one\n  line two\n---\nTitle\n=====\n\n    code here\n    more\n\n| a | b |\n|-|-|\n| 1 | 2 |';
+  assert.deepStrictEqual(markdownBlocks(md), [
+    { type: 'front', pairs: [['name', 'reviewer'], ['description', 'Reviews diffs for bugs.'], ['tools', 'Read, Grep'], ['notes', 'line one\nline two']] },
+    { type: 'h', level: 1, text: 'Title' },
+    { type: 'code', lang: '', text: 'code here\nmore' },
+    { type: 'table', rows: [['a', 'b'], ['1', '2']] },
+  ]);
+  assert.strictEqual(frontMatter(['---', 'just text', '---']), null);
+  // The config list reads descriptions the same way.
+  assert.deepStrictEqual(require('../src/claude-config').frontMatter('---\nname: x\ndescription: >-\n  multi\n  line\n---\n'), { name: 'x', description: 'multi line' });
+});
+
+test('relativeInside keeps a relative link in the folder of the file shown', () => {
+  const { relativeInside } = require('../src/renderer/view-logic');
+  assert.strictEqual(relativeInside('reference.md'), 'reference.md');
+  assert.strictEqual(relativeInside('./docs/a%20b.md#part'), 'docs/a b.md');
+  assert.strictEqual(relativeInside('docs/../ref.md'), 'ref.md');
+  assert.strictEqual(relativeInside('docs\\ref.md'), 'docs/ref.md');
+  assert.strictEqual(relativeInside('../../notes.md'), null);
+  assert.strictEqual(relativeInside('docs/../../x.md'), null);
+  assert.strictEqual(relativeInside('%E0%A4%A'), null, 'bad escapes');
+  assert.strictEqual(relativeInside('#top'), null);
 });

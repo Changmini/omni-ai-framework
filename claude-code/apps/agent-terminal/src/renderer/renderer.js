@@ -292,9 +292,11 @@ const contextLevel = (pct) => (pct >= 85 ? 'high' : pct >= 60 ? 'mid' : 'low');
 const kTokens = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`);
 // The same name and "unknown" reason in the sidebar tree and the panel.
 const agentName = (ag) => ag.name || ag.type || 'agent';
-const noContextWhy = (ag) => (ag.teammate
-  ? '컨텍스트: 아직 모름 (이 팀원의 신호를 받지 못했습니다. 앱보다 먼저 시작해 대기 중이면 다음에 일할 때 표시됩니다)'
-  : '컨텍스트: 따로 재지 않음 (서브에이전트는 메인 세션 안에서 실행됩니다)');
+const noContextWhy = (ag) => (ag.main
+  ? '컨텍스트: 아직 모름 (Claude의 첫 응답이 기록되면 표시됩니다)'
+  : ag.teammate
+    ? '컨텍스트: 아직 모름 (이 팀원의 신호를 받지 못했습니다. 앱보다 먼저 시작해 대기 중이면 다음에 일할 때 표시됩니다)'
+    : '컨텍스트: 따로 재지 않음 (서브에이전트는 메인 세션 안에서 실행됩니다)');
 const contextTitle = (ctx) => `컨텍스트 ${kTokens(ctx.tokens)} / ${kTokens(ctx.window)} (${ctx.pct}%)`
   + `${ctx.model ? ` · ${ctx.model}` : ''}\n창 크기는 추정값입니다: 200k, 넘으면 1M으로 봅니다.`;
 
@@ -344,9 +346,12 @@ function renderItem(id) {
     led.dataset.status = ag.status || 'working';
     const kind = ag.teammate ? '팀원' : '서브에이전트';
     const meta = h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind);
-    const pct = h('span', 'child-ctx', ag.context ? ` ${ag.context.pct}%` : ' —');
-    if (ag.context) pct.dataset.level = contextLevel(ag.context.pct);
-    meta.append(pct);
+    // A teammate's value may come later ("—" until then); a subagent's never.
+    if (ag.context || ag.teammate) {
+      const pct = h('span', 'child-ctx', ag.context ? ` ${ag.context.pct}%` : ' —');
+      if (ag.context) pct.dataset.level = contextLevel(ag.context.pct);
+      meta.append(pct);
+    }
     li.append(led, h('span', 'child-name ellipsis', agentName(ag)), meta);
     li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ')
       + `\n${ag.context ? contextTitle(ag.context) : noContextWhy(ag)}`;
@@ -1027,7 +1032,8 @@ function renderCtxDetail() {
   const rows = [];
   if (c.context) rows.push(['메인', c.context, true, null]);
   for (const ag of c.agents || []) rows.push([agentName(ag), ag.context || null, false, ag]);
-  if (!rows.some(([, ctx]) => ctx)) { insp.ctx.replaceChildren(); return; }
+  if (!c.status && !(c.agents || []).length) { insp.ctx.replaceChildren(); return; }
+  if (!c.context && c.status) rows.unshift(['메인', null, true, { main: true }]);
   insp.ctx.replaceChildren(h('h2', 'inspector-h', '컨텍스트'), ...rows.map(([who, ctx, lead, ag]) => {
     const row = h('div', `ctx-row${lead ? ' lead' : ''}${ctx ? '' : ' unknown'}`);
     const bar = h('span', 'ctx-bar');
@@ -1295,8 +1301,10 @@ function openViewer({ path, views, key, actions = {} }) {
 }
 
 // Markdown as read-only DOM (view-logic.js markdownBlocks/inlineSpans):
-// text only, links open in the browser.
-function inlineNodes(text) {
+// text only; web links open in the browser.
+// `link`: { id, base } of the file shown, so a relative link (a skill's
+// reference.md) opens that file in the viewer when it stays in its folder.
+function inlineNodes(text, link = null) {
   return ViewLogic.inlineSpans(text).map((sp) => {
     if (sp.t === 'text') return document.createTextNode(sp.s);
     if (sp.t === 'code') return h('code', null, sp.s);
@@ -1305,11 +1313,26 @@ function inlineNodes(text) {
     const a = h('a', null, sp.s);
     a.title = sp.href;
     if (/^https?:\/\//i.test(sp.href)) a.addEventListener('click', () => api.openExternal(sp.href));
+    else if (link && !/^[a-z][\w+.-]*:/i.test(sp.href) && !sp.href.startsWith('#') && !sp.href.startsWith('/')) {
+      const rel = ViewLogic.relativeInside(sp.href);
+      const cut = Math.max(link.base.lastIndexOf('/'), link.base.lastIndexOf('\\'));
+      if (rel) {
+        const target = `${link.base.slice(0, cut + 1)}${rel}`;
+        a.title = `${target}\n클릭: 열기`;
+        a.addEventListener('click', () => openConfigFile(link.id, target));
+      } else {
+        a.classList.add('inert');
+        a.title = `${sp.href}\n이 파일의 폴더 밖이라 열 수 없습니다`;
+      }
+    } else {
+      a.classList.add('inert');
+    }
     return a;
   });
 }
 
-function markdownView(text) {
+function markdownView(text, link = null) {
+  const nodes = (t) => inlineNodes(t, link);
   const box = h('div', 'md');
   for (const b of ViewLogic.markdownBlocks(text)) {
     if (b.type === 'front') {
@@ -1318,7 +1341,7 @@ function markdownView(text) {
       box.append(dl);
     } else if (b.type === 'h') {
       const el = h(`h${b.level}`);
-      el.append(...inlineNodes(b.text));
+      el.append(...nodes(b.text));
       box.append(el);
     } else if (b.type === 'code') {
       box.append(h('pre', 'md-code', b.text));
@@ -1327,19 +1350,19 @@ function markdownView(text) {
       for (const it of b.items) {
         const li = h('li');
         li.style.marginLeft = `${it.depth * 18}px`;
-        li.append(...inlineNodes(it.text));
+        li.append(...nodes(it.text));
         ul.append(li);
       }
       box.append(ul);
     } else if (b.type === 'quote') {
       const q = h('blockquote');
-      q.append(...inlineNodes(b.text));
+      q.append(...nodes(b.text));
       box.append(q);
     } else if (b.type === 'table') {
       const t = h('table');
       b.rows.forEach((row, k) => {
         const tr = h('tr');
-        for (const c of row) { const cell = h(k === 0 ? 'th' : 'td'); cell.append(...inlineNodes(c)); tr.append(cell); }
+        for (const c of row) { const cell = h(k === 0 ? 'th' : 'td'); cell.append(...nodes(c)); tr.append(cell); }
         t.append(tr);
       });
       box.append(t);
@@ -1347,7 +1370,7 @@ function markdownView(text) {
       box.append(h('hr'));
     } else {
       const para = h('p');
-      para.append(...inlineNodes(b.text));
+      para.append(...nodes(b.text));
       box.append(para);
     }
   }
@@ -1361,7 +1384,7 @@ function openConfigFile(id, file) {
   const read = () => api.readFile(id, file);
   const views = /\.(md|markdown)$/i.test(file)
     ? [
-      { key: 'read', label: '읽기', load: async () => { const r = await read(); return typeof r.text === 'string' ? { ...r, markdown: r.text } : r; } },
+      { key: 'read', label: '읽기', load: async () => { const r = await read(); return typeof r.text === 'string' ? { ...r, markdown: r.text, link: { id, base: r.path || file } } : r; } },
       { key: 'file', label: '원문', load: read },
     ]
     : [{ key: 'file', label: '파일', load: read }];
@@ -1399,7 +1422,7 @@ async function showView(key) {
   if (r.error) viewer.body.replaceChildren(h('div', 'viewer-msg', r.error));
   else if (r.binary) viewer.body.replaceChildren(h('div', 'viewer-msg', `바이너리 파일이라 표시하지 않습니다 (${sizeText(r.size || 0)})`));
   else if (typeof r.markdown === 'string') {
-    viewer.body.replaceChildren(markdownView(r.markdown));
+    viewer.body.replaceChildren(markdownView(r.markdown, r.link || null));
     viewer.info.textContent = `${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
   } else if (r.lines) {
     viewer.body.replaceChildren(r.lines.length ? diffPre(r.lines) : h('div', 'viewer-msg', '변경 없음'));
@@ -1548,7 +1571,7 @@ const readGit = ViewLogic.serial(async () => {
   if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
   const r = await api.gitStatus(id, fresh).catch(() => null) || { error: '읽을 수 없습니다' };
   lastGitAt = Date.now();
-  if (gitToken === token && id === activeId && !r.stale) renderGit(id, r);
+  if (gitToken === token && id === activeId && !r.stale) renderGit(id, r, fresh);
 });
 
 // A read in `delay` ms. An earlier one already scheduled is kept: refreshes
@@ -1612,32 +1635,49 @@ function gitFileRow(id, root, f, st, num) {
   return li;
 }
 
-// New folders opened by the user, kept across refreshes (root + path).
+// New folders opened by the user, kept across refreshes (root + path), with
+// their last file list: shown at once after a refresh, listed again only on
+// the fresh reads (not every few seconds while Claude works).
 const gitOpenFolders = new Set();
+const gitFolderFiles = new Map();
 
 // A click opens a new folder's file list under it, the next one closes it.
-async function expandGitFolder(id, root, f, li, toggle = true) {
+function folderRows(id, root, key, r) {
+  const rows = r.error ? [h('li', 'hint', r.error)]
+    : r.files.map((p) => { const row = gitFileRow(id, root, { path: p, index: '?', work: '?', orig: null }, '?', null); row.classList.add('git-sub'); return row; });
+  if (r.total > (r.files || []).length) rows.push(h('li', 'hint', `${r.files.length}개만 표시 (전체 ${r.total}개)`));
+  if (!rows.length) rows.push(h('li', 'hint', '파일 없음'));
+  for (const row of rows) row.dataset.sub = key;
+  return rows;
+}
+
+function dropFolderRows(li, key) {
+  while (li.nextElementSibling && li.nextElementSibling.dataset.sub === key) li.nextElementSibling.remove();
+}
+
+async function expandGitFolder(id, root, f, li, toggle = true, relist = true) {
   const key = `${root}\n${f.path}`;
   const caret = li.querySelector('.git-caret');
   if (li.dataset.open) {
     if (!toggle) return;
     delete li.dataset.open;
     gitOpenFolders.delete(key);
+    gitFolderFiles.delete(key);
     if (caret) caret.textContent = ' ▸';
-    while (li.nextElementSibling && li.nextElementSibling.dataset.sub === key) li.nextElementSibling.remove();
+    dropFolderRows(li, key);
     return;
   }
   li.dataset.open = '1';
   gitOpenFolders.add(key);
   if (caret) caret.textContent = ' ▾';
+  const cached = gitFolderFiles.get(key);
+  if (cached) li.after(...folderRows(id, root, key, cached));
+  if (cached && !relist) return;
   const r = await api.gitUntracked(id, f.path).catch(() => null) || { error: '읽을 수 없습니다' };
   if (!li.isConnected || !li.dataset.open) return;
-  const rows = r.error ? [h('li', 'hint', r.error)]
-    : r.files.map((p) => { const row = gitFileRow(id, root, { path: p, index: '?', work: '?', orig: null }, '?', null); row.classList.add('git-sub'); return row; });
-  if (r.total > (r.files || []).length) rows.push(h('li', 'hint', `${r.files.length}개만 표시 (전체 ${r.total}개)`));
-  if (!rows.length) rows.push(h('li', 'hint', '파일 없음'));
-  for (const row of rows) row.dataset.sub = key;
-  li.after(...rows);
+  if (!r.error) gitFolderFiles.set(key, r);
+  dropFolderRows(li, key);
+  li.after(...folderRows(id, root, key, r));
 }
 
 // Sections of the git tab (staged, changed, new files, commits) fold like
@@ -1656,7 +1696,7 @@ function gitSection(key, label, count, list) {
   return d;
 }
 
-function renderGit(id, r) {
+function renderGit(id, r, fresh = true) {
   gitEls.head.replaceChildren();
   if (r.error || r.notRepo) {
     const cwd = agents.get(id)?.info.cwd || '';
@@ -1703,8 +1743,9 @@ function renderGit(id, r) {
     parts.push(gitSection('commits', '최근 커밋', r.commits.length, ul));
   }
   gitEls.body.replaceChildren(...parts);
-  // Folders the user had open stay open after a refresh.
-  for (const [f, row] of reopen) expandGitFolder(id, r.root, f, row, false);
+  // Folders the user had open stay open after a refresh (listed again only
+  // on a fresh read).
+  for (const [f, row] of reopen) expandGitFolder(id, r.root, f, row, false, fresh);
 }
 
 // A changed file: its diff against HEAD (a new file: all of it), and the file.

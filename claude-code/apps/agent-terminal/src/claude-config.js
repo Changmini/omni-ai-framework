@@ -11,6 +11,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const ViewLogic = require('./renderer/view-logic');
 
 const MAX_ITEMS = 300;
 const MAX_FILE = 512 * 1024;
@@ -21,6 +22,11 @@ function readText(file) {
     if (!st.isFile() || st.size > MAX_FILE) return null;
     return fs.readFileSync(file, 'utf8');
   } catch { return null; }
+}
+
+// Whether `file` exists as a file, without reading it.
+function isFile(file) {
+  try { return fs.statSync(file).isFile(); } catch { return false; }
 }
 
 function readJson(file) {
@@ -34,15 +40,11 @@ function listDir(dir) {
 }
 
 // `key: value` lines of a markdown file's YAML front matter (flat subset).
+// (the same reader as the viewer's, so block values such as
+// "description: >-" read the same in the list and in the file)
 function frontMatter(text) {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text || '');
-  const out = {};
-  if (!m) return out;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (kv) out[kv[1]] = kv[2].replace(/^["']|["']$/g, '').trim();
-  }
-  return out;
+  const fm = ViewLogic.frontMatter(String(text || '').replace(/\r\n?/g, '\n').split('\n'));
+  return fm ? Object.fromEntries(fm.pairs) : {};
 }
 
 // Nearest folder at or above `dir` with .git or .claude; else `dir` itself.
@@ -165,7 +167,7 @@ function scanClaudeConfig({ claudeDir, claudeJson, cwd, mapPath = (p) => p }) {
       enabled: enabled[id] === true,
       dir,
       // What to read for a plugin: its README, else its manifest.
-      file: dir ? [path.join(dir, 'README.md'), path.join(dir, '.claude-plugin', 'plugin.json')].find((f) => readText(f) != null) || null : null,
+      file: dir ? [path.join(dir, 'README.md'), path.join(dir, '.claude-plugin', 'plugin.json')].find(isFile) || null : null,
     });
   }
   // Enabled in settings but not installed (e.g. not fetched yet).
