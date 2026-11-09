@@ -64,8 +64,9 @@
   }
 
   // Runs `task` (async) one at a time: a call while it runs asks for one more
-  // run after it, however many calls came meanwhile.
-  function serial(task) {
+  // run after it, however many calls came meanwhile. A failing run is
+  // reported to `onError` and does not cancel that next run.
+  function serial(task, onError = (e) => { if (typeof console !== 'undefined') console.error(e); }) {
     let busy = false;
     let again = false;
     return async function run() {
@@ -73,6 +74,8 @@
       busy = true;
       try {
         await task();
+      } catch (e) {
+        onError(e);
       } finally {
         busy = false;
       }
