@@ -86,3 +86,35 @@ test('mapPath lets WSL install paths be read from the host', () => {
   const c = scanClaudeConfig({ claudeDir: cd, claudeJson: json, cwd: null, mapPath: (p) => (p.startsWith('/home/user/') ? real : p) });
   assert.ok(c.skills.some((s) => s.name === 'tools:deploying'));
 });
+
+test('each item names the file behind it, and the viewer may read only those', () => {
+  const { cd, proj, json } = fixture();
+  const c = scanClaudeConfig({ claudeDir: cd, claudeJson: json, cwd: proj });
+  const fileOf = (k, name) => c[k].find((x) => x.name === name).file;
+  assert.strictEqual(fileOf('skills', 'writing-docs'), path.join(cd, 'skills/writing/SKILL.md'));
+  assert.strictEqual(fileOf('skills', '/ship'), path.join(proj, '.claude/commands/ship.md'));
+  assert.strictEqual(fileOf('agents', 'reviewer'), path.join(cd, 'agents/reviewer.md'));
+  assert.strictEqual(fileOf('agents', 'tools:builder'), path.join(cd, 'plugins/cache/mk/tools/1.2.0/agents/builder.md'));
+  assert.strictEqual(fileOf('mcp', 'db'), path.join(proj, '.mcp.json'));
+  assert.strictEqual(fileOf('mcp', 'web'), json);
+  assert.ok(c.hooks.some((h) => h.event === 'SessionStart' && h.file === path.join(proj, '.claude/settings.json')));
+  assert.ok(c.hooks.some((h) => h.event === 'PreToolUse' && h.file.endsWith(path.join('tools', '1.2.0', 'hooks', 'hooks.json'))));
+  // A plugin without README falls back to its manifest; none at all: no file.
+  assert.strictEqual(c.plugins.find((p) => p.name === 'tools').file, null);
+  fs.mkdirSync(path.join(cd, 'plugins/cache/mk/tools/1.2.0/.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(cd, 'plugins/cache/mk/tools/1.2.0/.claude-plugin/plugin.json'), '{"name":"tools"}');
+  const c2 = scanClaudeConfig({ claudeDir: cd, claudeJson: json, cwd: proj });
+  assert.strictEqual(c2.plugins.find((p) => p.name === 'tools').file, path.join(cd, 'plugins/cache/mk/tools/1.2.0/.claude-plugin/plugin.json'));
+
+  const { SessionManager } = require('../src/sessions');
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [], env: {} }, pollMs: 0,
+    scanConfig: scanClaudeConfig, claudePaths: { dir: cd, json },
+  });
+  const { id } = m.create({ cwd: proj });
+  assert.strictEqual(m.fileTarget(id, path.join(cd, 'agents/reviewer.md')), null, 'not before the list is read');
+  m.claudeConfig(id);
+  const skill = path.join(cd, 'skills/writing/SKILL.md');
+  assert.deepStrictEqual(m.fileTarget(id, skill), { path: skill, host: skill });
+  assert.strictEqual(m.fileTarget(id, path.join(cd, 'settings.json.omni-backup')), null);
+});

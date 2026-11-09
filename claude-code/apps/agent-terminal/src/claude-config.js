@@ -61,10 +61,11 @@ function skillsIn(dir, source) {
   const out = [];
   for (const e of listDir(dir)) {
     if (!e.isDirectory()) continue;
-    const text = readText(path.join(dir, e.name, 'SKILL.md'));
+    const file = path.join(dir, e.name, 'SKILL.md');
+    const text = readText(file);
     if (text == null) continue;
     const fm = frontMatter(text);
-    out.push({ name: fm.name || e.name, description: fm.description || '', source });
+    out.push({ name: fm.name || e.name, description: fm.description || '', source, file });
   }
   return out;
 }
@@ -73,8 +74,9 @@ function commandsIn(dir, source) {
   const out = [];
   for (const e of listDir(dir)) {
     if (!e.isFile() || !e.name.endsWith('.md')) continue;
-    const fm = frontMatter(readText(path.join(dir, e.name)));
-    out.push({ name: `/${e.name.slice(0, -3)}`, description: fm.description || '', source });
+    const file = path.join(dir, e.name);
+    const fm = frontMatter(readText(file));
+    out.push({ name: `/${e.name.slice(0, -3)}`, description: fm.description || '', source, file });
   }
   return out;
 }
@@ -83,14 +85,15 @@ function agentsIn(dir, source) {
   const out = [];
   for (const e of listDir(dir)) {
     if (!e.isFile() || !e.name.endsWith('.md')) continue;
-    const fm = frontMatter(readText(path.join(dir, e.name)));
-    out.push({ name: fm.name || e.name.slice(0, -3), description: fm.description || '', source });
+    const file = path.join(dir, e.name);
+    const fm = frontMatter(readText(file));
+    out.push({ name: fm.name || e.name.slice(0, -3), description: fm.description || '', source, file });
   }
   return out;
 }
 
 // hooks: { Event: [{ matcher, hooks: [{ type, command | url | prompt }] }] }
-function hooksIn(hooks, source) {
+function hooksIn(hooks, source, file = null) {
   const out = [];
   if (!hooks || typeof hooks !== 'object') return out;
   for (const [event, groups] of Object.entries(hooks)) {
@@ -105,6 +108,7 @@ function hooksIn(hooks, source) {
           type: h.type || 'command',
           target: String(target).slice(0, 300),
           source,
+          file,
           omni: /omni-agent-terminal\/claude-hook\.sh/.test(String(target)),
         });
       }
@@ -113,13 +117,14 @@ function hooksIn(hooks, source) {
   return out;
 }
 
-function mcpIn(servers, source) {
+function mcpIn(servers, source, file = null) {
   if (!servers || typeof servers !== 'object') return [];
   return Object.entries(servers).map(([name, s]) => ({
     name,
     type: (s && (s.type || (s.url ? 'http' : 'stdio'))) || 'stdio',
     description: s && (s.url || [s.command, ...(Array.isArray(s.args) ? s.args : [])].filter(Boolean).join(' ')) || '',
     source,
+    file,
   }));
 }
 
@@ -135,9 +140,12 @@ function scanClaudeConfig({ claudeDir, claudeJson, cwd, mapPath = (p) => p }) {
   const project = cwd ? projectRoot(cwd) : null;
   const pc = project ? path.join(project, '.claude') : null;
 
-  const userSettings = readJson(path.join(claudeDir, 'settings.json')) || {};
-  const projSettings = (pc && readJson(path.join(pc, 'settings.json'))) || {};
-  const localSettings = (pc && readJson(path.join(pc, 'settings.local.json'))) || {};
+  const userFile = path.join(claudeDir, 'settings.json');
+  const projFile = pc && path.join(pc, 'settings.json');
+  const localFile = pc && path.join(pc, 'settings.local.json');
+  const userSettings = readJson(userFile) || {};
+  const projSettings = (pc && readJson(projFile)) || {};
+  const localSettings = (pc && readJson(localFile)) || {};
 
   // enabledPlugins: later scopes override earlier ones.
   const enabled = { ...userSettings.enabledPlugins, ...projSettings.enabledPlugins, ...localSettings.enabledPlugins };
@@ -149,12 +157,15 @@ function scanClaudeConfig({ claudeDir, claudeJson, cwd, mapPath = (p) => p }) {
     const list = Array.isArray(entries) ? entries : [entries];
     const e = list.find((x) => x && x.installPath) || list[0] || {};
     const [name, marketplace] = id.split('@');
+    const dir = e.installPath ? mapPath(e.installPath) : null;
     plugins.push({
       id, name, marketplace: marketplace || '',
       version: e.version || '',
       scope: e.scope || '',
       enabled: enabled[id] === true,
-      dir: e.installPath ? mapPath(e.installPath) : null,
+      dir,
+      // What to read for a plugin: its README, else its manifest.
+      file: dir ? [path.join(dir, 'README.md'), path.join(dir, '.claude-plugin', 'plugin.json')].find((f) => readText(f) != null) || null : null,
     });
   }
   // Enabled in settings but not installed (e.g. not fetched yet).
@@ -175,18 +186,18 @@ function scanClaudeConfig({ claudeDir, claudeJson, cwd, mapPath = (p) => p }) {
     ...(pc ? agentsIn(path.join(pc, 'agents'), '프로젝트') : []),
   ];
   const hooks = [
-    ...hooksIn(userSettings.hooks, '사용자'),
-    ...hooksIn(projSettings.hooks, '프로젝트'),
-    ...hooksIn(localSettings.hooks, '로컬'),
+    ...hooksIn(userSettings.hooks, '사용자', userFile),
+    ...hooksIn(projSettings.hooks, '프로젝트', projFile),
+    ...hooksIn(localSettings.hooks, '로컬', localFile),
   ];
   const cj = readJson(claudeJson) || {};
   const projEntry = project && cj.projects && typeof cj.projects === 'object'
     ? Object.entries(cj.projects).find(([p]) => path.resolve(mapPath(p)) === path.resolve(project))
     : null;
   const mcp = [
-    ...mcpIn(cj.mcpServers, '사용자'),
-    ...mcpIn(projEntry && projEntry[1] && projEntry[1].mcpServers, '로컬'),
-    ...(project ? mcpIn((readJson(path.join(project, '.mcp.json')) || {}).mcpServers, '프로젝트') : []),
+    ...mcpIn(cj.mcpServers, '사용자', claudeJson),
+    ...mcpIn(projEntry && projEntry[1] && projEntry[1].mcpServers, '로컬', claudeJson),
+    ...(project ? mcpIn((readJson(path.join(project, '.mcp.json')) || {}).mcpServers, '프로젝트', path.join(project, '.mcp.json')) : []),
   ];
 
   // Only enabled plugins contribute.
@@ -196,8 +207,8 @@ function scanClaudeConfig({ claudeDir, claudeJson, cwd, mapPath = (p) => p }) {
     skills.push(...skillsIn(path.join(p.dir, 'skills'), src).map((s) => ({ ...s, name: `${p.name}:${s.name}` })));
     skills.push(...commandsIn(path.join(p.dir, 'commands'), src).map((s) => ({ ...s, name: `/${p.name}:${s.name.slice(1)}` })));
     agents.push(...agentsIn(path.join(p.dir, 'agents'), src).map((a) => ({ ...a, name: `${p.name}:${a.name}` })));
-    hooks.push(...hooksIn((readJson(path.join(p.dir, 'hooks', 'hooks.json')) || {}).hooks, src));
-    mcp.push(...mcpIn((readJson(path.join(p.dir, '.mcp.json')) || {}).mcpServers, src));
+    hooks.push(...hooksIn((readJson(path.join(p.dir, 'hooks', 'hooks.json')) || {}).hooks, src, path.join(p.dir, 'hooks', 'hooks.json')));
+    mcp.push(...mcpIn((readJson(path.join(p.dir, '.mcp.json')) || {}).mcpServers, src, path.join(p.dir, '.mcp.json')));
   }
 
   const cap = (a) => a.slice(0, MAX_ITEMS);

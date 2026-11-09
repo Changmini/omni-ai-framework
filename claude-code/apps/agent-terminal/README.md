@@ -166,6 +166,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 | MCP 서버 | `~/.claude.json`의 `mcpServers`(사용자)와 `projects.<경로>.mcpServers`(로컬), `<프로젝트>/.mcp.json`, 켜진 플러그인의 `.mcp.json` |
 
 - 항목에 마우스를 올리면 설명, 명령, 전체 이름이 보입니다.
+- **항목을 클릭하면 그 파일을 뷰어로 엽니다:** 스킬은 `SKILL.md`, 명령·서브에이전트는 그 `.md` 파일, 플러그인은 `README.md`(없으면 `.claude-plugin/plugin.json`), 훅은 정의된 설정 파일(`settings.json`, 플러그인 `hooks/hooks.json`), MCP 서버는 정의된 파일(`.mcp.json`, `~/.claude.json`)입니다. Markdown은 `읽기`(제목·목록·표·코드 블록을 정리해 보여 줌, 앞머리 정보는 표로)와 `원문` 탭으로 봅니다. 앱은 구성 목록에 나온 파일만 읽고, 파일 속 HTML은 실행하지 않습니다.
 - 그룹 펼침 상태는 기억됩니다.
 - `installed_plugins.json`과 플러그인 캐시 형식은 Claude Code 2.1.318에서 실제 파일을 보고 맞췄고, 공식 문서에는 없습니다.
 

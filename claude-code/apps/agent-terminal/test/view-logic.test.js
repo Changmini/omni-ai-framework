@@ -66,3 +66,28 @@ test('serial: a failing run is reported and still runs the one asked for meanwhi
   await first; // resolves: no unhandled rejection
   assert.deepStrictEqual([n, errors], [2, ['boom']]);
 });
+
+test('markdown blocks: front matter, headings, lists, code, quote, table, rule', () => {
+  const { markdownBlocks } = require('../src/renderer/view-logic');
+  const md = '---\nname: planning\ndescription: "Plans work"\n---\n# Title\n\nSome **bold** text\ncontinued.\n- one\n  - two\n1. first\n```bash\nnpm test\n# not a heading\n```\n> quoted\n| a | b |\n|---|---|\n| 1 | 2 |\n***';
+  assert.deepStrictEqual(markdownBlocks(md), [
+    { type: 'front', pairs: [['name', 'planning'], ['description', 'Plans work']] },
+    { type: 'h', level: 1, text: 'Title' },
+    { type: 'p', text: 'Some **bold** text continued.' },
+    { type: 'list', ordered: false, items: [{ depth: 0, text: 'one' }, { depth: 1, text: 'two' }] },
+    { type: 'list', ordered: true, items: [{ depth: 0, text: 'first' }] },
+    { type: 'code', lang: 'bash', text: 'npm test\n# not a heading' },
+    { type: 'quote', text: 'quoted' },
+    { type: 'table', rows: [['a', 'b'], ['1', '2']] },
+    { type: 'hr' },
+  ]);
+  assert.deepStrictEqual(markdownBlocks('no front\n---'), [{ type: 'p', text: 'no front' }, { type: 'hr' }]);
+});
+
+test('inline spans keep snake_case and turn markup into spans', () => {
+  const { inlineSpans } = require('../src/renderer/view-logic');
+  assert.deepStrictEqual(inlineSpans('run `npm test`, **now**, *maybe* see [docs](https://example.com) in snake_case_name'), [
+    { t: 'text', s: 'run ' }, { t: 'code', s: 'npm test' }, { t: 'text', s: ', ' }, { t: 'b', s: 'now' }, { t: 'text', s: ', ' },
+    { t: 'i', s: 'maybe' }, { t: 'text', s: ' see ' }, { t: 'link', s: 'docs', href: 'https://example.com' }, { t: 'text', s: ' in snake_case_name' },
+  ]);
+});

@@ -906,11 +906,14 @@ function loadConfig(delay = 150) {
     let data = null;
     try { data = await api.claudeConfig(id); } catch { data = null; }
     lastConfigAt = Date.now();
-    if (id === activeId) renderConfig(data); // null shows '읽을 수 없습니다', not the previous list
+    if (id === activeId) renderConfig(data, id); // null shows '읽을 수 없습니다', not the previous list
   }, delay);
 }
 
-function renderConfig(data) {
+let cfgFor = null; // the terminal the shown config belongs to
+
+function renderConfig(data, id = activeId) {
+  cfgFor = id;
   if (!data) {
     cfgEls.project.textContent = '';
     cfgEls.body.replaceChildren(h('div', 'cfg-empty', '읽을 수 없습니다'));
@@ -941,6 +944,12 @@ function renderConfig(data) {
       if (key === 'hooks' && x.omni) li.classList.add('omni');
       li.title = [fullName, plugin ? `플러그인: ${plugin[1]}` : rawSrc, tip].filter(Boolean).join('\n');
       li.append(h('span', 'cfg-name', name), h('span', 'cfg-src', src || ''));
+      if (x.file) {
+        // Its file (SKILL.md, agent or command file, settings, README) in the viewer.
+        li.classList.add('has-file');
+        li.title += `\n\n${x.file}\n클릭: 파일 보기`;
+        li.addEventListener('click', () => openConfigFile(cfgFor, x.file));
+      }
       ul.append(li);
     }
     d.append(ul);
@@ -1267,8 +1276,7 @@ function diffStat(lines) {
 function openViewer({ path, views, key, actions = {} }) {
   hideCard();
   viewing = { path, views, actions, token: null };
-  viewer.path.textContent = path;
-  viewer.path.title = path;
+  setViewerPath(path);
   viewer.tabs.replaceChildren(...views.map((v) => {
     const b = h('button', 'tab', v.label);
     b.type = 'button';
@@ -1284,6 +1292,80 @@ function openViewer({ path, views, key, actions = {} }) {
   viewer.el.hidden = false;
   showView(key || views[0].key);
   viewer.body.focus({ preventScroll: true });
+}
+
+// Markdown as read-only DOM (view-logic.js markdownBlocks/inlineSpans):
+// text only, links open in the browser.
+function inlineNodes(text) {
+  return ViewLogic.inlineSpans(text).map((sp) => {
+    if (sp.t === 'text') return document.createTextNode(sp.s);
+    if (sp.t === 'code') return h('code', null, sp.s);
+    if (sp.t === 'b') return h('strong', null, sp.s);
+    if (sp.t === 'i') return h('em', null, sp.s);
+    const a = h('a', null, sp.s);
+    a.title = sp.href;
+    if (/^https?:\/\//i.test(sp.href)) a.addEventListener('click', () => api.openExternal(sp.href));
+    return a;
+  });
+}
+
+function markdownView(text) {
+  const box = h('div', 'md');
+  for (const b of ViewLogic.markdownBlocks(text)) {
+    if (b.type === 'front') {
+      const dl = h('dl', 'md-front');
+      for (const [k, v] of b.pairs) dl.append(h('dt', null, k), h('dd', null, v));
+      box.append(dl);
+    } else if (b.type === 'h') {
+      const el = h(`h${b.level}`);
+      el.append(...inlineNodes(b.text));
+      box.append(el);
+    } else if (b.type === 'code') {
+      box.append(h('pre', 'md-code', b.text));
+    } else if (b.type === 'list') {
+      const ul = h(b.ordered ? 'ol' : 'ul');
+      for (const it of b.items) {
+        const li = h('li');
+        li.style.marginLeft = `${it.depth * 18}px`;
+        li.append(...inlineNodes(it.text));
+        ul.append(li);
+      }
+      box.append(ul);
+    } else if (b.type === 'quote') {
+      const q = h('blockquote');
+      q.append(...inlineNodes(b.text));
+      box.append(q);
+    } else if (b.type === 'table') {
+      const t = h('table');
+      b.rows.forEach((row, k) => {
+        const tr = h('tr');
+        for (const c of row) { const cell = h(k === 0 ? 'th' : 'td'); cell.append(...inlineNodes(c)); tr.append(cell); }
+        t.append(tr);
+      });
+      box.append(t);
+    } else if (b.type === 'hr') {
+      box.append(h('hr'));
+    } else {
+      const para = h('p');
+      para.append(...inlineNodes(b.text));
+      box.append(para);
+    }
+  }
+  return box;
+}
+
+// A file behind a Claude config item: Markdown is shown read ("읽기") and as
+// written ("원문"); other files (settings JSON) as they are.
+function openConfigFile(id, file) {
+  if (!id) return;
+  const read = () => api.readFile(id, file);
+  const views = /\.(md|markdown)$/i.test(file)
+    ? [
+      { key: 'read', label: '읽기', load: async () => { const r = await read(); return typeof r.text === 'string' ? { ...r, markdown: r.text } : r; } },
+      { key: 'file', label: '원문', load: read },
+    ]
+    : [{ key: 'file', label: '파일', load: read }];
+  openViewer({ path: file, views, actions: { reveal: () => api.revealFile(id, file) } });
 }
 
 function codeView(text) {
@@ -1312,12 +1394,14 @@ async function showView(key) {
   // The main process resolves a relative activity path: show and copy that.
   if (typeof r.path === 'string' && r.path) {
     viewing.absPath = r.path;
-    viewer.path.textContent = r.path;
-    viewer.path.title = r.path;
+    setViewerPath(r.path);
   }
   if (r.error) viewer.body.replaceChildren(h('div', 'viewer-msg', r.error));
   else if (r.binary) viewer.body.replaceChildren(h('div', 'viewer-msg', `바이너리 파일이라 표시하지 않습니다 (${sizeText(r.size || 0)})`));
-  else if (r.lines) {
+  else if (typeof r.markdown === 'string') {
+    viewer.body.replaceChildren(markdownView(r.markdown));
+    viewer.info.textContent = `${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
+  } else if (r.lines) {
     viewer.body.replaceChildren(r.lines.length ? diffPre(r.lines) : h('div', 'viewer-msg', '변경 없음'));
     viewer.info.textContent = diffStat(r.lines);
   } else {
@@ -1325,6 +1409,12 @@ async function showView(key) {
     viewer.body.replaceChildren(box);
     viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
   }
+}
+
+// A long path is cut at its start, so the file name stays visible.
+function setViewerPath(p) {
+  viewer.path.replaceChildren(h('span', null, p));
+  viewer.path.title = p;
 }
 
 function closeViewer(focusTerminal = true) {

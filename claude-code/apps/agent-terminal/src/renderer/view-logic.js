@@ -83,5 +83,105 @@
     };
   }
 
-  return { diffKinds, diffStat, escapeAction, serial };
+  // A small Markdown reader for the viewer (skills, agents, commands,
+  // READMEs): blocks and inline spans as data, which the page turns into
+  // DOM nodes with textContent only (no HTML from the file is ever used).
+  // Front matter (--- ... ---) becomes key/value pairs.
+  function markdownBlocks(text) {
+    const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let i = 0;
+    if (lines[0] === '---') {
+      const end = lines.indexOf('---', 1);
+      if (end > 0) {
+        const pairs = lines.slice(1, end).map((l) => /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(l)).filter(Boolean)
+          .map((m) => [m[1], m[2].replace(/^["']|["']$/g, '')]);
+        if (pairs.length) out.push({ type: 'front', pairs });
+        i = end + 1;
+      }
+    }
+    let para = [];
+    const flush = () => { if (para.length) { out.push({ type: 'p', text: para.join(' ') }); para = []; } };
+    while (i < lines.length) {
+      const l = lines[i];
+      const fence = /^\s*(```|~~~)\s*([\w+-]*)/.exec(l);
+      if (fence) {
+        flush();
+        const body = [];
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]);
+        out.push({ type: 'code', lang: fence[2] || '', text: body.join('\n') });
+        i++;
+        continue;
+      }
+      const head = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l);
+      if (head) { flush(); out.push({ type: 'h', level: head[1].length, text: head[2] }); i++; continue; }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push({ type: 'hr' }); i++; continue; }
+      if (/^\s*>/.test(l)) {
+        flush();
+        const body = [];
+        while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''));
+        out.push({ type: 'quote', text: body.join(' ') });
+        continue;
+      }
+      const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(l);
+      if (item) {
+        flush();
+        const ordered = /\d/.test(item[2]);
+        const items = [];
+        while (i < lines.length) {
+          const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
+          if (m) {
+            const depth = Math.floor(m[1].replace(/\t/g, '  ').length / 2);
+            if (depth === 0 && /\d/.test(m[2]) !== ordered) break; // a list of the other kind starts
+            items.push({ depth, text: m[3] });
+            i++;
+            continue;
+          }
+          // a wrapped line continues the item before it
+          if (lines[i].trim() && /^\s+\S/.test(lines[i]) && items.length) { items[items.length - 1].text += ` ${lines[i].trim()}`; i++; continue; }
+          break;
+        }
+        out.push({ type: 'list', ordered, items });
+        continue;
+      }
+      if (/^\s*\|.*\|\s*$/.test(l)) {
+        flush();
+        const rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+          const cells = lines[i].trim().slice(1, -1).split('|').map((c) => c.trim());
+          if (!cells.every((c) => /^:?-{2,}:?$/.test(c))) rows.push(cells); // skip the |---| line
+          i++;
+        }
+        out.push({ type: 'table', rows });
+        continue;
+      }
+      if (!l.trim()) { flush(); i++; continue; }
+      para.push(l.trim());
+      i++;
+    }
+    flush();
+    return out;
+  }
+
+  // Inline spans: `code`, **bold**, *em* / _em_, [text](url), plain text.
+  function inlineSpans(text) {
+    const out = [];
+    const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|(?<![\w])_([^_\s][^_]*)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
+    let last = 0;
+    let m;
+    const s = String(text || '');
+    while ((m = re.exec(s))) {
+      if (m.index > last) out.push({ t: 'text', s: s.slice(last, m.index) });
+      if (m[1] !== undefined) out.push({ t: 'code', s: m[1] });
+      else if (m[2] !== undefined || m[3] !== undefined) out.push({ t: 'b', s: m[2] !== undefined ? m[2] : m[3] });
+      else if (m[4] !== undefined || m[5] !== undefined) out.push({ t: 'i', s: m[4] !== undefined ? m[4] : m[5] });
+      else out.push({ t: 'link', s: m[6], href: m[7] });
+      last = re.lastIndex;
+    }
+    if (last < s.length) out.push({ t: 'text', s: s.slice(last) });
+    return out;
+  }
+
+  return { diffKinds, diffStat, escapeAction, serial, markdownBlocks, inlineSpans };
 }));
