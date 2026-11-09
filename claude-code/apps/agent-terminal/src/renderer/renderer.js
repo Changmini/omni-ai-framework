@@ -1090,14 +1090,11 @@ function cardSec(title, body, cls = '') {
   return sec;
 }
 
-// Diff lines (' ', '+', '-', '@@') as colored rows.
+// Diff lines as colored rows (kinds from view-logic.js).
 function diffPre(lines) {
   const pre = h('pre', 'card-pre diff');
-  for (const l of lines) {
-    const cls = /^(diff --git |index |\+\+\+ |--- |commit |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode|Binary files)/.test(l) ? 'd-meta'
-      : l.startsWith('@@') ? 'd-hunk' : l[0] === '+' ? 'd-add' : l[0] === '-' ? 'd-del' : 'd-ctx';
-    pre.append(h('span', cls, l || ' ')); // block spans: one line each
-  }
+  const kinds = ViewLogic.diffKinds(lines);
+  lines.forEach((l, k) => pre.append(h('span', `d-${kinds[k]}`, l || ' '))); // block spans: one line each
   return pre;
 }
 
@@ -1217,15 +1214,16 @@ function hideCard() {
 
 card.addEventListener('mouseenter', () => clearTimeout(cardTimer));
 card.addEventListener('mouseleave', () => cardLeave());
-// Esc closes the card first, then the viewer. Typed into a terminal it also
-// closes the card but still reaches the terminal (Esc interrupts Claude).
+// Esc closes the card first, then the viewer (view-logic.js escapeAction).
+// Typed into a terminal or a text field it still reaches it.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
-  const inTerminal = Boolean(e.target && e.target.closest && e.target.closest('.term'));
-  if (!card.hidden) hideCard();
-  else if (viewing && !inTerminal) closeViewer();
-  else return;
-  if (inTerminal) return;
+  const t = e.target instanceof Element ? e.target : null;
+  const inField = Boolean(t && (t.closest('.term') || t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')));
+  const act = ViewLogic.escapeAction({ cardOpen: !card.hidden, viewerOpen: Boolean(viewing), inField });
+  if (act.hideCard) hideCard();
+  if (act.closeViewer) closeViewer();
+  if (!act.consume) return;
   e.preventDefault();
   e.stopPropagation();
 }, true);
@@ -1246,13 +1244,7 @@ if (api.editorAvailable) api.editorAvailable().then((v) => { editorOk = Boolean(
 const sizeText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`);
 
 function diffStat(lines) {
-  let add = 0;
-  let del = 0;
-  for (const l of lines) {
-    if (l.startsWith('+++') || l.startsWith('---')) continue;
-    if (l[0] === '+') add++;
-    else if (l[0] === '-') del++;
-  }
+  const { add, del } = ViewLogic.diffStat(lines);
   return `+${add} −${del}`;
 }
 
@@ -1396,7 +1388,8 @@ function onActivity(id, entry) {
   const a = agents.get(id);
   if (!a) return;
   // A change Claude just made, or the end of its turn: the git tab follows.
-  if (id === activeId && (entry.kind === 'done' || (entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')))) loadGit(1500);
+  // (debounced: a busy turn refreshes when it pauses, not after every call)
+  if (id === activeId && (entry.kind === 'done' || (entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')))) loadGit(entry.kind === 'done' ? 150 : 3000);
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
   else {
@@ -1424,30 +1417,27 @@ let gitStale = true;
 let gitTimer = null;
 let gitToken = null;
 let lastGitAt = 0;
-let gitBusy = false; // a read is running: one more follows it instead of overlapping
-let gitAgain = false;
 
 function gitVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'git';
 }
 
+// One read at a time; a request during a read runs once more after it.
+const readGit = ViewLogic.serial(async () => {
+  const id = activeId;
+  if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
+  gitStale = false;
+  const token = {};
+  gitToken = token;
+  if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
+  const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
+  lastGitAt = Date.now();
+  if (gitToken === token && id === activeId) renderGit(id, r);
+});
+
 function loadGit(delay = 150) {
   clearTimeout(gitTimer);
-  gitTimer = setTimeout(async () => {
-    const id = activeId;
-    if (!id || !api.gitStatus || !gitVisible()) { gitStale = true; return; }
-    if (gitBusy) { gitAgain = true; return; }
-    gitStale = false;
-    gitBusy = true;
-    const token = {};
-    gitToken = token;
-    if (!gitEls.body.childElementCount) gitEls.body.replaceChildren(h('p', 'hint', '읽는 중…'));
-    const r = await api.gitStatus(id).catch(() => null) || { error: '읽을 수 없습니다' };
-    gitBusy = false;
-    lastGitAt = Date.now();
-    if (gitToken === token && id === activeId) renderGit(id, r);
-    if (gitAgain) { gitAgain = false; loadGit(0); }
-  }, delay);
+  gitTimer = setTimeout(readGit, delay);
 }
 
 function agoText(t) {
