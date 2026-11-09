@@ -118,3 +118,30 @@ test('details are cut to a bounded size', () => {
   assert.strictEqual(clip(undefined), undefined);
   assert.strictEqual(clip('short'), 'short');
 });
+
+test('tmux order: a result or failure that arrives before its call still lands on it', () => {
+  const { m, id } = setup();
+  const pre = (use, extra = {}) => m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Read', tool_use_id: use, tool_input: { file_path: '/home/user/sample-app/a.py' }, ...extra });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'Read', tool_use_id: 'r1', tool_response: { type: 'text', file: { numLines: 3 } } });
+  pre('r1');
+  m.onHookEvent(id, { hook_event_name: 'PostToolUseFailure', session_id: 'S', tool_name: 'Bash', tool_use_id: 'b1', error: 'Exit code 2' });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'b1', tool_input: { command: 'make' } });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_name: 'Read', tool_use_id: 'big' }); // over the size limit: no response
+  pre('big');
+  const log = m.activity(id).entries;
+  assert.deepStrictEqual(log.map((e) => [e.kind, e.tool, e.useId]), [['tool', 'Read', 'r1'], ['fail', 'Bash', 'b1'], ['tool', 'Read', 'big']]);
+  assert.deepStrictEqual(log[0].result, { type: 'text', file: { numLines: 3 } });
+  assert.deepStrictEqual(log[1].detail, { input: { command: 'make' }, error: 'Exit code 2' });
+  assert.deepStrictEqual(log[2].result, { omitted: true });
+});
+
+test('a result whose call never comes is forgotten after a while', () => {
+  const events = [];
+  let t = 0;
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: (c, p) => events.push(p), shell: { file: 'sh', args: [], env: {} }, now: () => t, pollMs: 0 });
+  const { id } = m.create({ cwd: '/home/user/sample-app' });
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'S', tool_use_id: 'x', tool_response: { stdout: 'old' } });
+  t = 60000;
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'S', tool_name: 'Bash', tool_use_id: 'x', tool_input: { command: 'ls' } });
+  assert.strictEqual(m.activity(id).entries[0].result, undefined);
+});

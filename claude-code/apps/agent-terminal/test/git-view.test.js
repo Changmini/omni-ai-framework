@@ -15,8 +15,10 @@ test('git runs read-only, through wsl.exe -e (no shell) inside WSL', async () =>
   const exec = (f, a, o, cb) => { calls.push([f, a]); cb(null, Buffer.from('x'), Buffer.from('')); };
   await gv.runGit(['status'], { cwd: '/home/user/sample-app', distro: 'Ubuntu', platform: 'win32', exec });
   await gv.runGit(['status'], { cwd: '/home/user/sample-app', platform: 'linux', exec });
+  await gv.runGit(['status'], { cwd: 'C:/Users/user/sample-app', platform: 'win32', exec }); // a Windows folder: Windows git
   const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', '/home/user/sample-app', 'status'];
-  assert.deepStrictEqual(calls, [['wsl.exe', ['-d', 'Ubuntu', '-e', 'git', ...base]], ['git', base]]);
+  const winBase = base.map((a) => (a === '/home/user/sample-app' ? 'C:/Users/user/sample-app' : a));
+  assert.deepStrictEqual(calls, [['wsl.exe', ['-d', 'Ubuntu', '-e', 'git', ...base]], ['git', base], ['git', winBase]]);
   const missing = await gv.runGit(['status'], { cwd: '/x', exec: (f, a, o, cb) => cb(Object.assign(new Error('no'), { code: 'ENOENT' }), '', '') });
   assert.strictEqual(missing.missing, true);
 });
@@ -48,7 +50,7 @@ test('a real repository: status, diff, show, and the viewer may read listed file
   g('init', '-q', '-b', 'feature/sample');
   fs.writeFileSync(path.join(root, 'a.py'), 'one\ntwo\n');
   fs.writeFileSync(path.join(root, 'old.py'), 'x\n');
-  g('add', '.'); g('commit', '-qm', 'init');
+  g('add', '.'); g('commit', '-qm', 'init', '-m', '- first item\n+ second item');
   fs.writeFileSync(path.join(root, 'a.py'), 'one\nTWO\nthree\n');          // modified
   g('mv', 'old.py', 'new.py');                                              // renamed (staged)
   fs.mkdirSync(path.join(root, 'docs'));
@@ -65,11 +67,17 @@ test('a real repository: status, diff, show, and the viewer may read listed file
   assert.strictEqual(by['docs/노트.md'].index, '?');
   assert.deepStrictEqual(st.commits.map((c) => c.subject), ['init']);
 
+  // A rename is diffed with its old path: not shown as a whole new file.
+  const ren = await m.gitDiff(id, 'new.py');
+  assert.ok(ren.lines.some((l) => l === 'rename from old.py'), ren.lines.join('\n'));
+  assert.ok(!ren.lines.some((l) => l === 'new file mode 100644'));
   const d = await m.gitDiff(id, 'a.py');
   assert.ok(d.lines.includes('-two') && d.lines.includes('+TWO') && d.lines.includes('+three'));
   assert.match((await m.gitDiff(id, 'not-listed.py')).error, /목록에 없는/);
   const show = await m.gitShow(id, st.commits[0].hash);
   assert.ok(show.lines.some((l) => l.startsWith('diff --git a/a.py')));
+  // Body lines are indented, so "- item" never reads as a removed line.
+  assert.ok(show.lines.includes('    - first item') && show.lines.includes('    + second item'), show.lines.join('\n'));
   const blanks = show.lines.slice(0, show.lines.findIndex((l) => l.startsWith('diff --git'))).join('\n');
   assert.doesNotMatch(blanks, /\n\n\n/, 'no run of blank lines before the diff');
 
@@ -78,4 +86,48 @@ test('a real repository: status, diff, show, and the viewer may read listed file
 
   const outside = m.create({ cwd: os.tmpdir() === root ? '/' : fs.mkdtempSync(path.join(os.tmpdir(), 'plain-')) });
   assert.deepStrictEqual(await m.gitStatus(outside.id), { notRepo: true });
+});
+
+test('only "not a git repository" is shown as such; other failures show their reason', async () => {
+  const fail = (stderr) => async () => ({ ok: false, code: 128, stdout: '', stderr });
+  assert.deepStrictEqual(await gv.gitStatus({ cwd: '/x' }, fail('fatal: not a git repository (or any of the parent directories): .git')), { notRepo: true });
+  assert.deepStrictEqual(await gv.gitStatus({ cwd: '/x' }, fail("fatal: detected dubious ownership in repository at '//wsl.localhost/Ubuntu/home/user/sample-app'\nTo add an exception...")),
+    { error: "fatal: detected dubious ownership in repository at '//wsl.localhost/Ubuntu/home/user/sample-app'" });
+  assert.deepStrictEqual(await gv.gitStatus({ cwd: '/x' }, fail('')), { error: 'git을 실행하지 못했습니다' });
+});
+
+test('wsl.exe messages (UTF-16) are decoded', async () => {
+  const msg = Buffer.from('There is no distribution with the supplied name.\r\n', 'utf16le');
+  const r = await gv.runGit(['status'], { cwd: '/x', distro: 'Gone', platform: 'win32',
+    exec: (f, a, o, cb) => cb(Object.assign(new Error('exit 1'), { code: 1 }), msg, Buffer.alloc(0)) });
+  assert.strictEqual(r.stderr.trim(), 'There is no distribution with the supplied name.');
+});
+
+test('a long list of changes is cut at MAX_FILES and counted', async () => {
+  const n = gv.MAX_FILES + 30;
+  const status = ['## main', ...Array.from({ length: n }, (_, k) => `?? build/f${k}.o`)].join('\0');
+  const run = async (args) => ({ ok: true, stdout: args[0] === 'rev-parse' ? '/home/user/sample-app\n' : args[0] === 'status' ? status : '', stderr: '' });
+  const r = await gv.gitStatus({ cwd: '/home/user/sample-app' }, run);
+  assert.deepStrictEqual([r.files.length, r.total], [gv.MAX_FILES, n]);
+});
+
+test('only the latest of overlapping status reads is kept for the viewer', async () => {
+  const { SessionManager: SM } = require('../src/sessions');
+  const gates = [];
+  const runner = (args) => new Promise((resolve) => {
+    if (args.includes('rev-parse')) { resolve({ ok: true, stdout: '/home/user/sample-app\n', stderr: '' }); return; }
+    if (args.includes('status')) { gates.push(resolve); return; }
+    resolve({ ok: true, stdout: '', stderr: '' });
+  });
+  const m = new SM({ spawn: () => ({ onData() {}, onExit() {}, write() {}, resize() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [], env: {} }, pollMs: 0, gitRunner: runner });
+  const { id } = m.create({ cwd: '/home/user/sample-app' });
+  const older = m.gitStatus(id);
+  const newer = m.gitStatus(id);
+  await new Promise((r) => setImmediate(r));
+  gates[1]({ ok: true, stdout: '## main\0 M new.py\0', stderr: '' }); // the newer read finishes first
+  await newer;
+  gates[0]({ ok: true, stdout: '## main\0 M old.py\0', stderr: '' });
+  await older;
+  assert.ok(m.fileTarget(id, '/home/user/sample-app/new.py'));
+  assert.strictEqual(m.fileTarget(id, '/home/user/sample-app/old.py'), null);
 });

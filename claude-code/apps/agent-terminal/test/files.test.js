@@ -49,3 +49,14 @@ test('fileTarget: only files from the log, mapped for WSL on Windows', () => {
   assert.deepStrictEqual(win.m.fileTarget(win.id, '/home/user/sample-app/src/a.py'),
     { path: '/home/user/sample-app/src/a.py', host: '\\\\wsl.localhost\\Ubuntu\\home\\user\\sample-app\\src\\a.py' });
 });
+
+test('readFully keeps reading after a short read', async () => {
+  const { readFully } = require('../src/files');
+  const src = Buffer.from('abcdefghij');
+  const fh = { read: async (buf, off, len, pos) => { const n = Math.min(3, len, src.length - pos); src.copy(buf, off, pos, pos + n); return { bytesRead: Math.max(0, n) }; } };
+  const buf = Buffer.alloc(8);
+  assert.strictEqual(await readFully(fh, buf, 2), 8);
+  assert.strictEqual(buf.toString(), 'cdefghij');
+  const tail = Buffer.alloc(8);
+  assert.strictEqual(await readFully(fh, tail, 6), 4, 'stops at end of file');
+});
