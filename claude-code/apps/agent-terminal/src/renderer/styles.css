@@ -484,6 +484,7 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .ctx-row .ctx-bar { max-width: none; }
 .ctx-row .ctx-num { color: var(--muted); font-size: 10.5px; min-width: 70px; text-align: right; white-space: nowrap; }
 .ctx-row.lead .ctx-who { font-weight: 700; }
+.ctx-row.unknown .ctx-who, .ctx-row.unknown .ctx-num { color: var(--muted); }
 .ctx-row[data-level="mid"] .ctx-fill { background: var(--busy); }
 .ctx-row[data-level="high"] .ctx-fill { background: var(--err); }
 .ctx-row[data-level="high"] .ctx-num { color: var(--err); }

@@ -290,6 +290,11 @@ function shellError(info) {
 // ---------- context usage ----------
 const contextLevel = (pct) => (pct >= 85 ? 'high' : pct >= 60 ? 'mid' : 'low');
 const kTokens = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(2)}M` : `${Math.round(n / 1000)}k`);
+// The same name and "unknown" reason in the sidebar tree and the panel.
+const agentName = (ag) => ag.name || ag.type || 'agent';
+const noContextWhy = (ag) => (ag.teammate
+  ? '컨텍스트: 아직 모름 (이 팀원의 신호를 받지 못했습니다. 앱보다 먼저 시작해 대기 중이면 다음에 일할 때 표시됩니다)'
+  : '컨텍스트: 따로 재지 않음 (서브에이전트는 메인 세션 안에서 실행됩니다)');
 const contextTitle = (ctx) => `컨텍스트 ${kTokens(ctx.tokens)} / ${kTokens(ctx.window)} (${ctx.pct}%)`
   + `${ctx.model ? ` · ${ctx.model}` : ''}\n창 크기는 추정값입니다: 200k, 넘으면 1M으로 봅니다.`;
 
@@ -339,14 +344,12 @@ function renderItem(id) {
     led.dataset.status = ag.status || 'working';
     const kind = ag.teammate ? '팀원' : '서브에이전트';
     const meta = h('span', 'child-meta ellipsis', ag.tool ? `${ag.tool}` : kind);
-    if (ag.context) {
-      const pct = h('span', 'child-ctx', ` ${ag.context.pct}%`);
-      pct.dataset.level = contextLevel(ag.context.pct);
-      meta.append(pct);
-    }
-    li.append(led, h('span', 'child-name ellipsis', ag.name || ag.type || 'agent'), meta);
+    const pct = h('span', 'child-ctx', ag.context ? ` ${ag.context.pct}%` : ' —');
+    if (ag.context) pct.dataset.level = contextLevel(ag.context.pct);
+    meta.append(pct);
+    li.append(led, h('span', 'child-name ellipsis', agentName(ag)), meta);
     li.title = [kind, ag.name, ag.type, CLAUDE_LABEL[ag.status]].filter(Boolean).join(' · ')
-      + (ag.context ? `\n${contextTitle(ag.context)}` : '');
+      + `\n${ag.context ? contextTitle(ag.context) : noContextWhy(ag)}`;
     if (ag.focusable) {
       // Split-pane teammate: jump to its tmux pane.
       li.classList.add('focusable');
@@ -1008,23 +1011,29 @@ dragResize(insp.resizer, 'resizing', () => {
 });
 insp.resizer.addEventListener('dblclick', () => setInspectorWidth(INSPECTOR.def));
 
-// Context use of the main session and of every session listed beside it.
+// Context use of the main session and of every agent the sidebar lists
+// under it, in the same order; an unknown one shows "—" with the reason.
 function renderCtxDetail() {
   const c = agents.get(activeId)?.info.claude || {};
   const rows = [];
-  if (c.context) rows.push(['메인', c.context, true]);
-  for (const ag of c.agents || []) if (ag.context) rows.push([ag.name || ag.type || '세션', ag.context, false]);
-  if (!rows.length) { insp.ctx.replaceChildren(); return; }
-  insp.ctx.replaceChildren(h('h2', 'inspector-h', '컨텍스트'), ...rows.map(([who, ctx, lead]) => {
-    const row = h('div', `ctx-row${lead ? ' lead' : ''}`);
-    row.dataset.level = contextLevel(ctx.pct);
-    row.title = contextTitle(ctx);
+  if (c.context) rows.push(['메인', c.context, true, null]);
+  for (const ag of c.agents || []) rows.push([agentName(ag), ag.context || null, false, ag]);
+  if (!rows.some(([, ctx]) => ctx)) { insp.ctx.replaceChildren(); return; }
+  insp.ctx.replaceChildren(h('h2', 'inspector-h', '컨텍스트'), ...rows.map(([who, ctx, lead, ag]) => {
+    const row = h('div', `ctx-row${lead ? ' lead' : ''}${ctx ? '' : ' unknown'}`);
     const bar = h('span', 'ctx-bar');
     const fill = h('span', 'ctx-fill');
-    fill.style.width = `${ctx.pct}%`;
     bar.append(fill);
+    if (ctx) {
+      row.dataset.level = contextLevel(ctx.pct);
+      row.title = contextTitle(ctx);
+      fill.style.width = `${ctx.pct}%`;
+    } else {
+      row.title = noContextWhy(ag);
+      fill.style.width = '0'; // an empty bar, not a full one
+    }
     row.append(h('span', 'ctx-who ellipsis', who), bar,
-      h('span', 'ctx-num', `${ctx.pct}% · ${kTokens(ctx.tokens)}/${kTokens(ctx.window)}`));
+      h('span', 'ctx-num', ctx ? `${ctx.pct}% · ${kTokens(ctx.tokens)}/${kTokens(ctx.window)}` : '—'));
     return row;
   }));
 }
