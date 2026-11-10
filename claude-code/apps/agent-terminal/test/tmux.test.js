@@ -144,7 +144,7 @@ test('the tmux status line reports to the app terminal showing the session', { s
   });
   const input = { session_id: 's', rate_limits: { five_hour: { used_percentage: 12, resets_at: 1793893800 } } };
   const send = (extraEnv = '') => spawnSync('tmux', ['-L', sock, 'send-keys', '-t', 'sl',
-    `env -u OMNI_TERMINAL_ID -u OMNI_CWD_URL -u OMNI_HOOK_TOKEN ${extraEnv} bash ${script} <<< '${JSON.stringify(input)}'`, 'Enter']);
+    `env -u OMNI_TERMINAL_ID -u OMNI_CWD_URL -u OMNI_HOOK_TOKEN XDG_RUNTIME_DIR=${dir} ${extraEnv} bash ${script} <<< '${JSON.stringify(input)}'`, 'Enter']);
   try {
     await sleep(700);
     send();
@@ -152,7 +152,14 @@ test('the tmux status line reports to the app terminal showing the session', { s
     assert.deepStrictEqual(got[0], ['4', input]);
     assert.ok(await waitFor(() => fs.existsSync(path.join(dir, 'orig-ran'))), "the user's line ran");
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'orig-ran'), 'utf8')), input);
+    // The same plan usage again within a minute: not reported again.
+    fs.rmSync(path.join(dir, 'orig-ran'));
+    send();
+    assert.ok(await waitFor(() => fs.existsSync(path.join(dir, 'orig-ran'))), "the user's line still runs");
+    await sleep(500);
+    assert.strictEqual(got.length, 1);
     // Run from the app's own status line (wrapper claude): no second report.
+    input.rate_limits.five_hour.used_percentage = 13;
     send('OMNI_HOOKED=1');
     await sleep(1200);
     assert.strictEqual(got.length, 1);
