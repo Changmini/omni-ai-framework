@@ -232,3 +232,95 @@ test('runTmux goes through wsl.exe on Windows and checks the distro name', async
     ['tmux', ['select-pane', '-t', '%3']],
   ]);
 });
+
+test('listPanes: pane ids, an empty set when the server is gone, null when tmux could not be asked', async () => {
+  const { listPanes } = require('../src/tmux');
+  const calls = [];
+  const exec = (out, err, stderr = '') => (f, a, o, cb) => { calls.push([f, a]); cb(err, out, stderr); };
+  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('%0\n%3\r\n\n'))], ['%0', '%3']);
+  assert.deepStrictEqual(calls[0], ['tmux', ['-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pane_id}']]);
+  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('', new Error('1'), 'no server running on /tmp/s\n'))], []);
+  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('', new Error('1'), 'error connecting to /tmp/s (No such file or directory)\n'))], []);
+  assert.strictEqual(await listPanes('/tmp/s', null, 'linux', exec('', new Error('ENOENT'), '')), null);
+  await listPanes('/tmp/s', 'Ubuntu', 'win32', exec('%1\n'));
+  assert.deepStrictEqual(calls.at(-1), ['wsl.exe', ['-d', 'Ubuntu', '-e', 'tmux', '-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pane_id}']]);
+});
+
+test('a session whose tmux pane is gone is dropped, unless it was heard from after the check began', async () => {
+  const { SessionManager } = require('../src/sessions');
+  let t = 1000;
+  let panes = new Set(['%0', '%1', '%2']);
+  let onList = () => {};
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, listPanes: async () => { onList(); return panes; },
+  });
+  const { id } = m.create({});
+  const meta = (pane) => ({ pane, socket: '/tmp/tmux-1000/default', title: '' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead' }, meta('%0'));
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'mate1', teammate_name: 'critic' }, meta('%1'));
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'mate2', tool_name: 'Bash', agent_type: 'builder' }, meta('%2'));
+  const names = () => m.list()[0].claude.agents.map((a) => a.name);
+  assert.deepStrictEqual(names(), ['critic', 'builder']);
+  const s = m.sessions.get(id);
+
+  // builder's pane closed without a SessionEnd: dropped at the next check.
+  t += 5000;
+  panes = new Set(['%0', '%1']);
+  await m.checkPanes(s);
+  assert.deepStrictEqual(names(), ['critic']);
+  assert.strictEqual(m.list()[0].claude.status, 'working', 'the lead stays');
+
+  // An event that arrives while the panes are being listed keeps its session.
+  panes = new Set(['%0']);
+  onList = () => { t += 10; m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'mate1', tool_name: 'Read' }, meta('%1')); };
+  await m.checkPanes(s);
+  assert.deepStrictEqual(names(), ['critic']);
+  onList = () => {};
+  t += 5000;
+  await m.checkPanes(s);
+  assert.deepStrictEqual(names(), []);
+
+  // The lead's own pane closed: the terminal shows no claude any more.
+  panes = new Set();
+  t += 5000;
+  await m.checkPanes(s);
+  assert.strictEqual(m.list()[0].claude.status, null);
+  assert.strictEqual(s.primarySid, null);
+
+  // tmux could not be asked (null): nothing is dropped.
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead2' }, meta('%5'));
+  panes = null;
+  t += 5000;
+  await m.checkPanes(s);
+  assert.strictEqual(m.list()[0].claude.status, 'working');
+});
+
+test('SessionEnd from a pane that closes right after, or was killed, still reaches the app (real tmux)', { skip }, async () => {
+  const got = [];
+  const srv = await startHookServer({ onEvent: (id, ev) => got.push(ev.session_id), token: 'tok' });
+  const sock = `omni-end-${process.pid}`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-end-'));
+  const ev = (sid) => { const f = path.join(dir, `${sid}.json`); fs.writeFileSync(f, JSON.stringify({ hook_event_name: 'SessionEnd', session_id: sid })); return f; };
+  const t = (...a) => spawnSync('tmux', ['-L', sock, ...a], { encoding: 'utf8' });
+  t('-f', '/dev/null', 'new-session', '-d', '-s', 'team', '-x', '120', '-y', '30');
+  const client = pty.spawn('tmux', ['-L', sock, 'attach', '-t', 'team'], {
+    cols: 120, rows: 30, env: { ...process.env, OMNI_TERMINAL_ID: '1', OMNI_CWD_URL: srv.cwdUrl, OMNI_HOOK_TOKEN: 'tok' },
+  });
+  const clean = 'env -u OMNI_TERMINAL_ID -u OMNI_CWD_URL -u OMNI_HOOK_TOKEN';
+  try {
+    await sleep(700);
+    // A teammate that exits by itself: the hook runs, then the pane closes.
+    t('split-window', '-d', `${clean} bash -c "bash ${HOOK} < ${ev('exited')}"`);
+    // A teammate whose pane is killed: claude runs SessionEnd after the pane is gone.
+    const killed = t('split-window', '-d', '-P', '-F', '#{pane_id}',
+      `${clean} bash -c 'trap "bash ${HOOK} < ${ev('killed')}; exit" HUP; while :; do sleep 0.2; done'`).stdout.trim();
+    await sleep(800);
+    t('kill-pane', '-t', killed);
+    assert.ok(await waitFor(() => got.includes('exited') && got.includes('killed')), `got ${got.join(',')}`);
+  } finally {
+    client.kill();
+    t('kill-server');
+    srv.close();
+  }
+});
