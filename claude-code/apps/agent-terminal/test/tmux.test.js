@@ -240,17 +240,74 @@ test('runTmux goes through wsl.exe on Windows and checks the distro name', async
   ]);
 });
 
-test('listPanes: pane ids, an empty set when the server is gone, null when tmux could not be asked', async () => {
+test('listPanes: server pid and pane ids, gone only when nothing listens there, else null', async () => {
   const { listPanes } = require('../src/tmux');
   const calls = [];
   const exec = (out, err, stderr = '') => (f, a, o, cb) => { calls.push([f, a]); cb(err, out, stderr); };
-  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('%0\n%3\r\n\n'))], ['%0', '%3']);
-  assert.deepStrictEqual(calls[0], ['tmux', ['-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pane_id}']]);
-  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('', new Error('1'), 'no server running on /tmp/s\n'))], []);
-  assert.deepStrictEqual([...await listPanes('/tmp/s', null, 'linux', exec('', new Error('1'), 'error connecting to /tmp/s (No such file or directory)\n'))], []);
+  const r = await listPanes('/tmp/s', null, 'linux', exec('41 %0\n41 %3\r\n\n'));
+  assert.deepStrictEqual([r.pid, [...r.panes]], ['41', ['%0', '%3']]);
+  assert.deepStrictEqual(calls[0], ['tmux', ['-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pid} #{pane_id}']]);
+  const fail = (stderr) => listPanes('/tmp/s', null, 'linux', exec('', new Error('1'), stderr));
+  assert.deepStrictEqual(await fail('no server running on /tmp/s\n'), { gone: true });
+  assert.deepStrictEqual(await fail('error connecting to /tmp/s (No such file or directory)\n'), { gone: true });
+  assert.deepStrictEqual(await fail('error connecting to /tmp/s (Connection refused)\n'), { gone: true });
+  assert.strictEqual(await fail('error connecting to /tmp/s (Permission denied)\n'), null, 'cannot tell');
   assert.strictEqual(await listPanes('/tmp/s', null, 'linux', exec('', new Error('ENOENT'), '')), null);
-  await listPanes('/tmp/s', 'Ubuntu', 'win32', exec('%1\n'));
-  assert.deepStrictEqual(calls.at(-1), ['wsl.exe', ['-d', 'Ubuntu', '-e', 'tmux', '-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pane_id}']]);
+  await listPanes('/tmp/s', 'Ubuntu', 'win32', exec('7 %1\n'));
+  assert.deepStrictEqual(calls.at(-1), ['wsl.exe', ['-d', 'Ubuntu', '-e', 'tmux', '-S', '/tmp/s', 'list-panes', '-a', '-F', '#{pid} #{pane_id}']]);
+});
+
+test('a tmux server the app cannot see, or another one at the same path, never makes sessions look gone', async () => {
+  const { SessionManager } = require('../src/sessions');
+  let t = 1000;
+  let answer = null;
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, listPanes: async () => answer,
+  });
+  const { id } = m.create({});
+  const meta = (pane) => ({ pane, socket: '/tmp/tmux-1000/default', server: '42', title: '' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead' }, meta('%0'));
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'mate', teammate_name: 'critic' }, meta('%1'));
+  const s = m.sessions.get(id);
+  const names = () => m.list()[0].claude.agents.map((a) => a.name);
+  // Never listed from here (a container, another user): "gone" is not believed.
+  answer = { gone: true };
+  t += 5000; await m.checkPanes(s);
+  assert.deepStrictEqual(names(), ['critic']);
+  assert.strictEqual(m.list()[0].claude.status, 'working');
+  // Another server at the same path (pid 7, not 42): its panes say nothing.
+  answer = { pid: '7', panes: new Set(['%0']) };
+  t += 5000; await m.checkPanes(s);
+  assert.deepStrictEqual(names(), ['critic']);
+  // The reported server, seen once: then its absence is believed.
+  answer = { pid: '42', panes: new Set(['%0', '%1']) };
+  t += 5000; await m.checkPanes(s);
+  assert.deepStrictEqual(names(), ['critic']);
+  answer = { gone: true };
+  t += 5000; await m.checkPanes(s);
+  assert.deepStrictEqual(names(), []);
+  assert.strictEqual(m.list()[0].claude.status, null);
+});
+
+test('clicking selects the pane in the tmux server of that session, and an exited terminal stops checking', async () => {
+  const { SessionManager } = require('../src/sessions');
+  const calls = [];
+  let exit;
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit(cb) { exit = cb; }, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    runTmux: async (args) => { calls.push(args); return true; }, listPanes: async () => { calls.push('list'); return null; },
+  });
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead' }, { pane: '%0', socket: '/tmp/a', title: '' });
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'mate', teammate_name: 'critic' }, { pane: '%4', socket: '/tmp/b', title: '' });
+  await m.focusPane(id, 'main');
+  await m.focusPane(id, 'session:mate');
+  assert.deepStrictEqual(calls.map((a) => a[1]), ['/tmp/a', '/tmp/b']);
+  exit({ exitCode: 0 });
+  calls.length = 0;
+  await m.checkPanes(m.sessions.get(id));
+  assert.deepStrictEqual(calls, [], 'nothing left to check');
 });
 
 test('a session whose tmux pane is gone is dropped, unless it was heard from after the check began', async () => {
@@ -260,7 +317,7 @@ test('a session whose tmux pane is gone is dropped, unless it was heard from aft
   let onList = () => {};
   const m = new SessionManager({
     spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
-    now: () => t, listPanes: async () => { onList(); return panes; },
+    now: () => t, listPanes: async () => { onList(); return panes && { pid: '42', panes }; },
   });
   const { id } = m.create({});
   const meta = (pane) => ({ pane, socket: '/tmp/tmux-1000/default', title: '' });
@@ -330,4 +387,20 @@ test('SessionEnd from a pane that closes right after, or was killed, still reach
     t('kill-server');
     srv.close();
   }
+});
+
+test('tmux status line: its state file is never evaluated, and the first run is quiet', { skip: !has('bash') && 'needs bash' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-slstate-'));
+  const marker = path.join(dir, 'ran');
+  fs.writeFileSync(path.join(dir, 'omni-plan-tmux'), `a[$(touch ${marker})] x\n`);
+  const input = JSON.stringify({ rate_limits: { five_hour: { used_percentage: 12, resets_at: 1 } } });
+  const run = () => spawnSync('bash', [STATUSLINE], {
+    input, encoding: 'utf8', env: { ...process.env, TMUX: '/nonexistent/sock,1,0', TMUX_PANE: '%9', XDG_RUNTIME_DIR: dir, PATH: process.env.PATH },
+  });
+  const r = run();
+  assert.strictEqual(fs.existsSync(marker), false, 'planted text not run');
+  assert.strictEqual(r.stderr, '');
+  assert.match(fs.readFileSync(path.join(dir, 'omni-plan-tmux'), 'utf8'), /^\d+ "five_hour"/);
+  fs.rmSync(path.join(dir, 'omni-plan-tmux'));
+  assert.strictEqual(run().stderr, '', 'no state file yet: quiet');
 });

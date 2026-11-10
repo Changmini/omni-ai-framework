@@ -271,7 +271,7 @@ test('tmux panes are checked every 5 s while active, every 30 s when quiet, once
   const calls = [];
   const m = new SessionManager({
     spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
-    now: () => t, listPanes: async (socket) => { calls.push(socket); return new Set(['%0', '%1']); },
+    now: () => t, listPanes: async (socket) => { calls.push(socket); return { pid: '1', panes: new Set(['%0', '%1']) }; },
   });
   const a = m.create({}).id;
   const b = m.create({}).id;
@@ -311,9 +311,9 @@ test('a pane listing shared by terminals keeps sessions heard from after it was 
   t += 1000;
   m.onHookEvent(a, { hook_event_name: 'PreToolUse', session_id: 'mate', tool_name: 'Read' }, meta('%7')); // %7 is new
   t += 1000;
-  lists.default(new Set(['%1']));
+  lists.default({ pid: '1', panes: new Set(['%1']) });
   await new Promise((r) => setImmediate(r));
-  lists.other(new Set(['%0', '%3'])); // terminal a reaches the shared listing only now
+  lists.other({ pid: '2', panes: new Set(['%0', '%3']) }); // terminal a reaches the shared listing only now
   await Promise.all([pa, pb]);
   assert.deepStrictEqual(m.list()[0].claude.agents.map((x) => x.name), ['docs', 'critic'], 'heard from after the listing: kept');
 });

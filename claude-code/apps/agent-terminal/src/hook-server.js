@@ -23,7 +23,7 @@ function salvage(head) {
   // For the activity log: the file a Write/Edit is about (before its content).
   const file = field('file_path');
   if (file !== undefined) ev.tool_input = { file_path: file };
-  const meta = { pane: field('pane') || '', title: field('title') || '', socket: field('socket') || '' };
+  const meta = { pane: field('pane') || '', title: field('title') || '', socket: field('socket') || '', server: field('server') || '' };
   return [ev.hook_event_name ? ev : null, meta];
 }
 
@@ -65,8 +65,10 @@ function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, t
       } else if (req.url === '/status') {
         onStatusLine(terminalId, ev);
       } else if (ev.omni && ev.event && typeof ev.event === 'object') {
-        // From claude-hook.sh (tmux): { omni: { pane, title }, event }
-        const meta = { pane: String(ev.omni.pane || ''), title: String(ev.omni.title || ''), socket: String(ev.omni.socket || '') };
+        // From claude-hook.sh (tmux): { omni: { pane, title, socket, server }, event }
+        const meta = {
+          pane: String(ev.omni.pane || ''), title: String(ev.omni.title || ''), socket: String(ev.omni.socket || ''), server: String(ev.omni.server || ''),
+        };
         onEvent(terminalId, ev.event, meta);
       } else {
         onEvent(terminalId, ev, {});

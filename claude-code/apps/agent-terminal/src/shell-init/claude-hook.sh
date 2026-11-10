@@ -33,7 +33,8 @@ pane="${TMUX_PANE:-}"
 title="$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null)"
 esc() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 socket="${TMUX%%,*}" # tmux server socket, so the app can select this pane
-body="{\"omni\":{\"pane\":\"$(esc "$pane")\",\"title\":\"$(esc "$title")\",\"socket\":\"$(esc "$socket")\"},\"event\":$input}"
+server="${TMUX#*,}"; server="${server%%,*}" # its pid: the app checks it asks the same server
+body="{\"omni\":{\"pane\":\"$(esc "$pane")\",\"title\":\"$(esc "$title")\",\"socket\":\"$(esc "$socket")\",\"server\":\"$(esc "$server")\"},\"event\":$input}"
 for pid in $clients; do
   [ -r "/proc/$pid/environ" ] || continue
   envs="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null)" || continue
@@ -42,14 +43,15 @@ for pid in $clients; do
   token="$(printf '%s\n' "$envs" | sed -n 's/^OMNI_HOOK_TOKEN=//p' | head -1)"
   [ -n "$tid" ] && [ -n "$url" ] && [ -n "$token" ] || continue
   send() {
-    printf '%s' "$body" | curl -s -m 2 -o /dev/null -X POST \
+    printf '%s' "$body" | curl -s -m "$1" -o /dev/null -X POST \
       -H 'Content-Type: application/json' \
       -H "X-Omni-Token: $token" -H "X-Omni-Terminal: $tid" \
       --data-binary @- "${url%/cwd}/hook" >/dev/null 2>&1
   }
-  # Fire and forget: Claude does not wait on the app. SessionEnd is sent
-  # before returning: the pane may close right after, and a send left in the
-  # background is killed with it.
-  if [ "$last" = 1 ]; then send; else ( send & ); fi
+  # Fire and forget: Claude does not wait on the app. SessionEnd is waited
+  # for (all apps at once, 1 s at most): the pane may close right after, and
+  # a send left in the background is killed with it.
+  if [ "$last" = 1 ]; then send 1 & else ( send 2 & ); fi
 done
+[ "$last" = 1 ] && wait
 exit 0

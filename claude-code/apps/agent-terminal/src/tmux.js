@@ -15,19 +15,24 @@ function runTmux(args, distro, platform = process.platform, exec = execFile) {
   });
 }
 
-// The pane ids (%N) of the tmux server at `socket`: a Set, empty when that
-// server is gone, null when tmux could not be asked (not installed, wsl.exe
-// failed, timeout), so a failed check never drops anything.
+// The tmux server at `socket`: { pid, panes: Set of pane ids (%N) }, or
+// { gone: true } when nothing listens there, or null when tmux could not be
+// asked or could not tell (not installed, wsl.exe failed, timeout, no
+// permission), so a failed check never drops anything.
 function listPanes(socket, distro, platform = process.platform, exec = execFile) {
-  const [file, argv] = wslCommand('tmux', ['-S', socket, 'list-panes', '-a', '-F', '#{pane_id}'], distro, platform);
+  const [file, argv] = wslCommand('tmux', ['-S', socket, 'list-panes', '-a', '-F', '#{pid} #{pane_id}'], distro, platform);
   return new Promise((resolve) => {
     exec(file, argv, { timeout: 5000, windowsHide: true }, (err, stdout, stderr) => {
       if (!err) {
-        resolve(new Set(String(stdout || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => /^%\d+$/.test(l))));
-      } else {
-        // tmux 3.x: "no server running on <socket>" / "error connecting to <socket> (...)"
-        resolve(/no server running on|error connecting to/.test(String(stderr || '')) ? new Set() : null);
+        const rows = String(stdout || '').split(/\r?\n/).map((l) => /^(\d+) (%\d+)$/.exec(l.trim())).filter(Boolean);
+        resolve({ pid: rows.length ? rows[0][1] : null, panes: new Set(rows.map((m) => m[2])) });
+        return;
       }
+      // tmux 3.4: "error connecting to <socket> (No such file or directory)"
+      // for a missing socket, "no server running on <socket>" for one nobody
+      // listens on. Other errors (Permission denied) say nothing about it.
+      const msg = String(stderr || '');
+      resolve(/no server running on|error connecting to .*\((No such file or directory|Connection refused)\)/.test(msg) ? { gone: true } : null);
     });
   });
 }
