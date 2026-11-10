@@ -31,14 +31,15 @@ const HOOK_EVENTS = [
 // https://code.claude.com/docs/en/statusline
 // The status line runs on every conversation update: it reports only when
 // there is plan usage and it changed since the last report to this app run
-// (OMNI_CWD_URL carries the app's port, new on each start). The last one is
-// kept per terminal in the user's runtime folder (else $TMPDIR or ~/.cache,
-// never a shared /tmp); without grep it reports every time. POSIX sh.
+// (OMNI_CWD_URL carries the app's port, new on each start). Plan usage is
+// account-wide: the last report is kept in one file per user, in the user's
+// runtime folder or ~/.cache (never a shared temp folder, where a planted
+// link would be written through); without grep it reports every time. POSIX sh.
 const STATUS_LINE_COMMAND = [
   'input=$(cat)',
   'case "$input" in *\'"five_hour"\'*)'
     + ' seg=$(printf \'%s\' "$input" | grep -o \'"five_hour"[^}]*}\' | head -1)'
-    + '; f="${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/omni-plan-$OMNI_TERMINAL_ID"'
+    + '; f="${XDG_RUNTIME_DIR:-$HOME/.cache}/omni-plan"'
     + '; if [ -z "$seg" ] || [ "$(cat "$f" 2>/dev/null)" != "$OMNI_CWD_URL $seg" ]; then'
     + ' printf \'%s\' "$OMNI_CWD_URL $seg" > "$f" 2>/dev/null'
     + '; ( printf \'%s\' "$input" | curl -s -m 2 -o /dev/null -X POST -H \'Content-Type: application/json\''

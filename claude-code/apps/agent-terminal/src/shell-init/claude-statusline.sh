@@ -20,10 +20,15 @@ due=0
 if [ -z "${OMNI_HOOKED:-}" ] && [ -n "${TMUX:-}" ] && [[ $input =~ \"five_hour\"[^}]*\} ]]; then
   seg="${BASH_REMATCH[0]}"
   now="${EPOCHSECONDS:-$(date +%s)}"
-  # The user's runtime folder (else $TMPDIR or ~/.cache), never a shared /tmp.
-  last="${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/omni-plan-tmux-${UID:-0}-${TMUX_PANE#%}"
-  read -r at prev < "$last" 2>/dev/null || at=0
-  if [ "$prev" != "$seg" ] || [ $((now - ${at:-0})) -ge 60 ]; then
+  # Plan usage is account-wide: one file per user, in the user's runtime
+  # folder or ~/.cache (never a shared temp folder).
+  stash="${XDG_RUNTIME_DIR:-$HOME/.cache}"
+  [ -d "$stash" ] || mkdir -p "$stash" 2>/dev/null
+  last="$stash/omni-plan-tmux"
+  read -r at prev 2>/dev/null < "$last" || at=0
+  # Only digits reach the arithmetic below (bash evaluates what it is given).
+  case "$at" in ''|*[!0-9]*) at=0 ;; esac
+  if [ "$prev" != "$seg" ] || [ $((now - at)) -ge 60 ]; then
     due=1
     printf '%s %s\n' "$now" "$seg" > "$last" 2>/dev/null
   fi

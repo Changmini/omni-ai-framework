@@ -59,6 +59,7 @@ class SessionManager {
     this.scanConfig = scanConfig;
     this.runTmux = runTmux;
     this.listPanes = listPanes;
+    this.seenServers = new Set(); // "distro\nsocket\npid" tmux servers this app has listed
     this.readUsage = readUsage;
     this.platform = platform;
     this.gitRunner = gitRunner;
@@ -104,6 +105,7 @@ class SessionManager {
       usage: new Map(), // session_id -> { tokens, window, pct, model, readAt, pending }
       primaryPane: null,
       primarySocket: null, // tmux server of primaryPane
+      serverPids: new Map(), // tmux socket -> server pid, as the hooks report it
       paneCheck: false, // a pane check is running
       teamReadAt: 0,
       teamDirty: false, // a team or task tool ran since the files were read
@@ -129,6 +131,8 @@ class SessionManager {
       session.tracker.onExit();
       session.claude = emptyState();
       session.primarySid = null;
+      session.primaryPane = null;
+      session.primarySocket = null;
       session.others.clear();
       session.team = null;
       session.tasks = null;
@@ -255,6 +259,7 @@ class SessionManager {
     if (!s) return;
     const sid = ev.session_id || '';
     if (meta.socket) s.tmuxSocket = meta.socket;
+    if (meta.socket && /^\d+$/.test(meta.server || '')) s.serverPids.set(meta.socket, meta.server);
     if (sid && ev.transcript_path && !ev.agent_id) this.scheduleUsage(s, sid, ev.transcript_path, ev.hook_event_name);
     // Several claude sessions can report into one terminal through tmux. The
     // first one is the main session (LED, banner); later ones are listed
@@ -521,9 +526,9 @@ class SessionManager {
         // When the panes were listed (maybe for another terminal earlier in
         // this round): only entries quiet since then can be dropped.
         const key = `${distro || ''}\n${socket}`;
-        if (!round.has(key)) round.set(key, { at: this.now(), panes: Promise.resolve(this.listPanes(socket, distro)).catch(() => null) });
-        const { at: asked, panes: pending } = round.get(key);
-        const panes = await pending;
+        if (!round.has(key)) round.set(key, { at: this.now(), list: Promise.resolve(this.listPanes(socket, distro)).catch(() => null) });
+        const { at: asked, list: pending } = round.get(key);
+        const panes = this.panesOf(await pending, key, s.serverPids.get(socket));
         if (!panes || !this.sessions.has(s.id)) continue;
         let changed = false;
         for (const [sid, o] of s.others) {
@@ -543,6 +548,18 @@ class SessionManager {
     } finally {
       s.paneCheck = false;
     }
+  }
+
+  // The panes to trust from a listing, or null. A listing of another server
+  // than the hooks reported (another pid: a container or another user with
+  // the same socket path) says nothing. "Gone" counts only for a server this
+  // app has listed before: one it cannot reach from here never looks gone.
+  panesOf(r, key, pid) {
+    if (!r) return null;
+    if (r.gone) return pid && this.seenServers.has(`${key}\n${pid}`) ? new Set() : null;
+    if (pid && r.pid !== pid) return null;
+    if (r.pid) this.seenServers.add(`${key}\n${r.pid}`);
+    return r.panes;
   }
 
   // The main session turned out to be a teammate (e.g. the app was opened
@@ -591,7 +608,7 @@ class SessionManager {
       status: o.state.status || 'idle',
       tool: o.state.tool,
       teammate: o.teammate,
-      focusable: Boolean(o.pane && s.tmuxSocket),
+      focusable: Boolean(o.pane && (o.socket || s.tmuxSocket)),
       context: this.contextOf(s, sid),
     }));
     // Teammates already listed as their own sessions are not repeated from the config.
@@ -607,7 +624,7 @@ class SessionManager {
       team: hasTeammates ? (s.team ? s.team.name : `session-${(s.primarySid || '').slice(0, 8)}`) : null,
       agents: [...Object.entries(view.agents).map(([agentId, a]) => ({ id: agentId, ...a })), ...others],
       tasks: s.tasks,
-      focusable: Boolean(view.status && s.primaryPane && s.tmuxSocket),
+      focusable: Boolean(view.status && s.primaryPane && (s.primarySocket || s.tmuxSocket)),
       context: view.status ? this.contextOf(s, s.primarySid) : null,
     };
   }
@@ -624,12 +641,19 @@ class SessionManager {
   // beside it ('session:<id>'), in the tmux server that reported it.
   async focusPane(id, target) {
     const s = this.sessions.get(id);
-    if (!s || !s.tmuxSocket) return false;
+    if (!s) return false;
     let pane = null;
-    if (target === 'main') pane = s.primaryPane;
-    else if (typeof target === 'string' && target.startsWith('session:')) pane = s.others.get(target.slice(8))?.pane;
-    if (!pane || !/^%\d+$/.test(pane) || !/^\/[\w./@:+-]+$/.test(s.tmuxSocket)) return false;
-    const args = ['-S', s.tmuxSocket, 'select-window', '-t', pane, ';', 'select-pane', '-t', pane];
+    let socket = null;
+    if (target === 'main') {
+      pane = s.primaryPane;
+      socket = s.primarySocket || s.tmuxSocket;
+    } else if (typeof target === 'string' && target.startsWith('session:')) {
+      const o = s.others.get(target.slice(8));
+      pane = o ? o.pane : null;
+      socket = o ? o.socket || s.tmuxSocket : null;
+    }
+    if (!pane || !socket || !/^%\d+$/.test(pane) || !/^\/[\w./@:+-]+$/.test(socket)) return false;
+    const args = ['-S', socket, 'select-window', '-t', pane, ';', 'select-pane', '-t', pane];
     return this.runTmux(args, s.wsl ? s.wsl.distro : null);
   }
 

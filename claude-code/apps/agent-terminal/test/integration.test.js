@@ -105,8 +105,8 @@ test('hook server answers 200 to an oversized event and still passes its key fie
     assert.deepStrictEqual(got[0], ['2', {
       session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Write', tool_use_id: 'toolu_1',
       transcript_path: '/h/.claude/projects/p/s1.jsonl', tool_input: { file_path: '/r/big.txt' },
-    }, { pane: '', title: '', socket: '' }]);
+    }, { pane: '', title: '', socket: '', server: '' }]);
     assert.deepStrictEqual(got[1][1], { session_id: 's2', hook_event_name: 'PostToolUse', agent_type: 'general-purpose', tool_name: 'Write' });
-    assert.deepStrictEqual(got[1][2], { pane: '%3', title: '@builder', socket: '' });
+    assert.deepStrictEqual(got[1][2], { pane: '%3', title: '@builder', socket: '', server: '' });
   } finally { srv.close(); }
 });
