@@ -45,23 +45,56 @@ test('the status line command posts its input to /status and runs the user statu
   if (spawnSync('curl', ['--version']).status !== 0) return t.skip('no curl');
   const got = [];
   const srv = await startHookServer({ onEvent() {}, onStatusLine: (id, d) => got.push([id, d]), token: 'tok' });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-slrun-'));
   try {
-    const run = (extra) => spawnSync('bash', ['-c', STATUS_LINE_COMMAND], {
-      input: JSON.stringify(STATUS), encoding: 'utf8',
-      env: { ...process.env, OMNI_HOOK_TOKEN: 'tok', OMNI_TERMINAL_ID: '3', OMNI_CWD_URL: srv.cwdUrl, ...extra },
+    // sh as well as bash: the command is POSIX.
+    const run = (extra, input = STATUS, shell = 'bash') => spawnSync(shell, ['-c', STATUS_LINE_COMMAND], {
+      input: JSON.stringify(input), encoding: 'utf8',
+      env: { ...process.env, XDG_RUNTIME_DIR: tmp, OMNI_HOOK_TOKEN: 'tok', OMNI_TERMINAL_ID: '3', OMNI_CWD_URL: srv.cwdUrl, ...extra },
     });
+    const settle = async (n) => { for (let i = 0; i < 100 && got.length < n; i++) await new Promise((r) => setTimeout(r, 20)); await new Promise((r) => setTimeout(r, 150)); };
     const plain = run({ OMNI_USER_STATUSLINE: '' });
     assert.strictEqual(plain.stdout, '', 'no status line of its own');
+    await settle(1);
+    assert.deepStrictEqual(got, [['3', STATUS]]);
     // The user's own command gets the same input; ~ and pipes work as in settings.
     const mine = run({ OMNI_USER_STATUSLINE: 'python3 -c "import json,sys; print(\'mine\', json.load(sys.stdin)[\'model\'][\'id\'])" | tr a-z A-Z' });
     assert.strictEqual(mine.stdout, 'MINE CLAUDE-OPUS-5-5\n');
-    for (let i = 0; i < 100 && got.length < 2; i++) await new Promise((r) => setTimeout(r, 20));
+    // Same plan usage again: not reported (the status line runs on every update).
+    await settle(2);
+    assert.strictEqual(got.length, 1);
+    // Changed usage is reported, also from sh; no plan usage (API key, before the first answer) is not.
+    const next = { ...STATUS, rate_limits: { five_hour: { used_percentage: 25, resets_at: 1793893800 } } };
+    run({}, next, 'sh');
+    await settle(2);
     assert.strictEqual(got.length, 2);
-    assert.deepStrictEqual(got[0], ['3', STATUS]);
+    assert.strictEqual(got[1][1].rate_limits.five_hour.used_percentage, 25);
+    run({}, { model: { id: 'x' } });
+    await settle(3);
+    assert.strictEqual(got.length, 2);
+    // A new app run (new port in OMNI_CWD_URL) gets the value again.
+    const srv2 = await startHookServer({ onEvent() {}, onStatusLine: (id, d) => got.push([id, d]), token: 'tok' });
+    try {
+      run({ OMNI_CWD_URL: srv2.cwdUrl }, next);
+      await settle(3);
+      assert.strictEqual(got.length, 3);
+    } finally { srv2.close(); }
+    // Without grep the usage cannot be compared: reported every time.
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-nogrep-'));
+    for (const tool of ['cat', 'head', 'curl']) {
+      const where = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
+      fs.symlinkSync(where, path.join(bin, tool));
+    }
+    const shPath = spawnSync('sh', ['-c', 'command -v sh'], { encoding: 'utf8' }).stdout.trim();
+    run({ PATH: bin }, next, shPath);
+    run({ PATH: bin }, next, shPath);
+    await settle(5);
+    assert.strictEqual(got.length, 5);
+    got.length = 3;
     // A wrong token is refused.
-    run({ OMNI_HOOK_TOKEN: 'bad' });
-    await new Promise((r) => setTimeout(r, 300));
-    assert.strictEqual(got.length, 2);
+    run({ OMNI_HOOK_TOKEN: 'bad' }, { ...STATUS, rate_limits: { five_hour: { used_percentage: 40 } } });
+    await settle(4);
+    assert.strictEqual(got.length, 3);
   } finally { srv.close(); }
 });
 

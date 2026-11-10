@@ -1919,7 +1919,7 @@ function renderPlan() {
   planEls.reset.textContent = !p ? '앱 터미널의 Claude가 응답하면 표시됩니다 (claude.ai 구독 요금제).'
     : reset ? '초기화됨 · 다음 응답부터 다시 집계됩니다.'
     : p.resetsAt ? `${clockText(p.resetsAt)} 초기화 (${untilText(p.resetsAt - now)} 뒤)` : '';
-  const tip = p ? `claude.ai 현재 세션(5시간) 한도 ${pct}% 사용 · ${clockText(p.at)}에 받은 값` : '현재 세션 사용량: 아직 값 없음';
+  const tip = p ? `claude.ai 현재 세션(5시간) 한도 ${pct}% 사용 · ${clockText(p.at)}에 받은 값 (바뀔 때만 보고됨)` : '현재 세션 사용량: 아직 값 없음';
   planEls.dock.title = tip;
   if (pct === null) planEls.badge.setAttribute('data-empty', '');
   else planEls.badge.removeAttribute('data-empty');

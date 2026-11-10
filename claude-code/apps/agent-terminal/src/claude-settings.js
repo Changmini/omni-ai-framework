@@ -29,11 +29,21 @@ const HOOK_EVENTS = [
 // Claude Code 2.1.318: a statusLine from --settings runs, and rate_limits
 // arrives after the first answer on a claude.ai subscription.
 // https://code.claude.com/docs/en/statusline
+// The status line runs on every conversation update: it reports only when
+// there is plan usage and it changed since the last report to this app run
+// (OMNI_CWD_URL carries the app's port, new on each start). The last one is
+// kept per terminal in the user's runtime folder (else $TMPDIR or ~/.cache,
+// never a shared /tmp); without grep it reports every time. POSIX sh.
 const STATUS_LINE_COMMAND = [
   'input=$(cat)',
-  '( printf \'%s\' "$input" | curl -s -m 2 -o /dev/null -X POST -H \'Content-Type: application/json\''
+  'case "$input" in *\'"five_hour"\'*)'
+    + ' seg=$(printf \'%s\' "$input" | grep -o \'"five_hour"[^}]*}\' | head -1)'
+    + '; f="${XDG_RUNTIME_DIR:-${TMPDIR:-$HOME/.cache}}/omni-plan-$OMNI_TERMINAL_ID"'
+    + '; if [ -z "$seg" ] || [ "$(cat "$f" 2>/dev/null)" != "$OMNI_CWD_URL $seg" ]; then'
+    + ' printf \'%s\' "$OMNI_CWD_URL $seg" > "$f" 2>/dev/null'
+    + '; ( printf \'%s\' "$input" | curl -s -m 2 -o /dev/null -X POST -H \'Content-Type: application/json\''
     + ' -H "X-Omni-Token: $OMNI_HOOK_TOKEN" -H "X-Omni-Terminal: $OMNI_TERMINAL_ID"'
-    + ' --data-binary @- "${OMNI_CWD_URL%/cwd}/status" >/dev/null 2>&1 & )',
+    + ' --data-binary @- "${OMNI_CWD_URL%/cwd}/status" >/dev/null 2>&1 & ); fi ;; esac',
   'if [ -n "$OMNI_USER_STATUSLINE" ]; then printf \'%s\' "$input" | eval "$OMNI_USER_STATUSLINE"; fi',
 ].join('; ');
 

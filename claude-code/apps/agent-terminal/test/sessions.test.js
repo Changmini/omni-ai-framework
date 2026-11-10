@@ -239,3 +239,100 @@ test('shell exit clears the team and tasks', () => {
   const view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
   assert.deepStrictEqual([view.team, view.tasks, view.agents.length], [null, null, 0]);
 });
+
+test('team and task files are read after team or task tools, else every 10 s while claude runs', () => {
+  let t = 0;
+  let reads = 0;
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, readTeam: () => null, readTasks: () => { reads++; return null; },
+  });
+  const { id } = m.create({});
+  const poll = (n) => { for (let i = 0; i < n; i++) { m.pollStatus(); t += 500; } };
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead' });
+  poll(4); // first check: never read yet
+  const base = reads;
+  // Ordinary tool calls every half second for 8 s: no reads.
+  for (let i = 0; i < 16; i++) { m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'lead', tool_name: 'Bash', tool_use_id: `b${i}` }); poll(1); }
+  assert.strictEqual(reads, base);
+  // A task tool ran: read at the next check (every 2 s).
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'lead', tool_name: 'TaskUpdate', tool_use_id: 'u1' });
+  poll(4);
+  assert.strictEqual(reads, base + 1);
+  // Quiet: again only after 10 s.
+  poll(16);
+  assert.strictEqual(reads, base + 1);
+  poll(8);
+  assert.strictEqual(reads, base + 2);
+});
+
+test('tmux panes are checked every 5 s while active, every 30 s when quiet, once per server per round', async () => {
+  let t = 100000;
+  const calls = [];
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, listPanes: async (socket) => { calls.push(socket); return new Set(['%0', '%1']); },
+  });
+  const a = m.create({}).id;
+  const b = m.create({}).id;
+  const meta = (pane) => ({ pane, socket: '/tmp/tmux-1000/default', title: '' });
+  m.onHookEvent(a, { hook_event_name: 'UserPromptSubmit', session_id: 'lead-a' }, meta('%0'));
+  m.onHookEvent(b, { hook_event_name: 'UserPromptSubmit', session_id: 'lead-b' }, meta('%1'));
+  const poll = async (ms) => { for (let end = t + ms; t < end; t += 500) { m.pollStatus(); await new Promise((r) => setImmediate(r)); } };
+  await poll(500);
+  assert.strictEqual(calls.length, 1, 'two terminals on one tmux server: one call');
+  await poll(10000);
+  assert.strictEqual(calls.length, 3, 'every 5 s while active');
+  await poll(60000); // goes quiet a minute after the last event
+  const quiet = calls.length;
+  await poll(60000);
+  assert.ok(calls.length - quiet <= 2, `every 30 s when quiet (${calls.length - quiet} in a minute)`);
+});
+
+test('a pane listing shared by terminals keeps sessions heard from after it was taken', async () => {
+  let t = 100000;
+  const lists = {};
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, listPanes: (socket) => new Promise((r) => { lists[socket.endsWith('other') ? 'other' : 'default'] = r; }),
+  });
+  const a = m.create({}).id;
+  const b = m.create({}).id;
+  const meta = (pane, socket = '/tmp/tmux-1000/default') => ({ pane, socket, title: '' });
+  // Terminal a shows two tmux servers; terminal b shows one of them.
+  m.onHookEvent(a, { hook_event_name: 'UserPromptSubmit', session_id: 'lead-a' }, meta('%0', '/tmp/tmux-1000/other'));
+  m.onHookEvent(a, { hook_event_name: 'TeammateIdle', session_id: 'mate0', teammate_name: 'docs' }, meta('%3', '/tmp/tmux-1000/other'));
+  m.onHookEvent(a, { hook_event_name: 'TeammateIdle', session_id: 'mate', teammate_name: 'critic' }, meta('%7'));
+  m.onHookEvent(b, { hook_event_name: 'UserPromptSubmit', session_id: 'lead-b' }, meta('%1'));
+  const round = new Map();
+  const pa = m.checkPanes(m.sessions.get(a), round); // asks "other" first
+  const pb = m.checkPanes(m.sessions.get(b), round); // starts the "default" listing (no %7 in it yet)
+  await new Promise((r) => setImmediate(r));
+  t += 1000;
+  m.onHookEvent(a, { hook_event_name: 'PreToolUse', session_id: 'mate', tool_name: 'Read' }, meta('%7')); // %7 is new
+  t += 1000;
+  lists.default(new Set(['%1']));
+  await new Promise((r) => setImmediate(r));
+  lists.other(new Set(['%0', '%3'])); // terminal a reaches the shared listing only now
+  await Promise.all([pa, pb]);
+  assert.deepStrictEqual(m.list()[0].claude.agents.map((x) => x.name), ['docs', 'critic'], 'heard from after the listing: kept');
+});
+
+test('reading tools do not trigger a team file read', () => {
+  let t = 0;
+  let reads = 0;
+  const m = new SessionManager({
+    spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    now: () => t, readTasks: () => { reads++; return null; },
+  });
+  const { id } = m.create({});
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'lead' });
+  m.pollStatus(); t += 500;
+  const base = reads;
+  for (const tool of ['TaskList', 'TaskGet', 'TaskOutput']) m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'lead', tool_name: tool, tool_use_id: tool });
+  for (let i = 0; i < 8; i++) { m.pollStatus(); t += 500; }
+  assert.strictEqual(reads, base);
+  m.onHookEvent(id, { hook_event_name: 'PostToolUse', session_id: 'lead', tool_name: 'Agent', tool_use_id: 'ag' });
+  for (let i = 0; i < 4; i++) { m.pollStatus(); t += 500; }
+  assert.strictEqual(reads, base + 1);
+});

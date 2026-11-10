@@ -10,9 +10,16 @@ const gitView = require('./git-view');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
+// Tool calls that write team or task files: read again at the next check.
+// Agent (Task before) spawns teammates. Other tools are caught by the 10 s
+// re-read.
+const TEAM_TOOL = /^(TaskCreate|TaskUpdate|TeamCreate|TeamDelete|Agent|Task)$/;
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
 const EARLY_MS = 10000; // how long a result that came before its call waits for it
 const PANE_CHECK_EVERY = 10; // status polls between checks that tmux panes still exist
+const PANE_CHECK_ACTIVE_MS = 5000; // ...while a listed session was heard from in the last minute
+const PANE_CHECK_IDLE_MS = 30000; // ...otherwise
+const PANE_ACTIVE_WINDOW_MS = 60000;
 
 const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
 
@@ -99,6 +106,8 @@ class SessionManager {
       primarySocket: null, // tmux server of primaryPane
       paneCheck: false, // a pane check is running
       teamReadAt: 0,
+      teamDirty: false, // a team or task tool ran since the files were read
+      paneCheckedAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
       tasks: null,
@@ -256,6 +265,7 @@ class SessionManager {
       s.teammateSids.add(sid);
       if (sid === s.primarySid) this.demotePrimary(s, meta);
     }
+    if (ev.hook_event_name === 'PostToolUse' && TEAM_TOOL.test(ev.tool_name || '')) s.teamDirty = true;
     if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
       this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
       const o = s.others.get(sid);
@@ -497,17 +507,23 @@ class SessionManager {
   // SessionEnd never arrived (the pane was closed or killed: its hook could
   // not reach the app, or claude was killed with it). Only entries not heard
   // from since the panes were listed are dropped.
-  async checkPanes(s) {
+  // `round`: one tmux call per server when several terminals show it.
+  async checkPanes(s, round = new Map()) {
     const sockets = new Set([...s.others.values()].filter((o) => o.pane && o.socket).map((o) => o.socket));
     if (s.primaryPane && s.primarySocket) sockets.add(s.primarySocket);
     if (!sockets.size || s.paneCheck) return;
     s.paneCheck = true;
+    s.paneCheckedAt = this.now();
     const distro = s.wsl ? s.wsl.distro : null;
     try {
       for (const socket of sockets) {
         if (!/^\/[\w./@:+-]+$/.test(socket)) continue;
-        const asked = this.now();
-        const panes = await Promise.resolve(this.listPanes(socket, distro)).catch(() => null);
+        // When the panes were listed (maybe for another terminal earlier in
+        // this round): only entries quiet since then can be dropped.
+        const key = `${distro || ''}\n${socket}`;
+        if (!round.has(key)) round.set(key, { at: this.now(), panes: Promise.resolve(this.listPanes(socket, distro)).catch(() => null) });
+        const { at: asked, panes: pending } = round.get(key);
+        const panes = await pending;
         if (!panes || !this.sessions.has(s.id)) continue;
         let changed = false;
         for (const [sid, o] of s.others) {
@@ -559,6 +575,7 @@ class SessionManager {
 
   refreshTeam(s) {
     s.teamReadAt = this.now();
+    s.teamDirty = false;
     const sid = s.claude.sessionId;
     // Claude inside WSL keeps its files under the Linux home.
     const base = s.wsl && s.wsl.home ? wslToWindows(`${s.wsl.home.replace(/\/$/, '')}/.claude`, s.wsl.distro) : undefined;
@@ -647,9 +664,21 @@ class SessionManager {
     };
   }
 
+  // Whether the tmux panes of `s` are due for a check: often while its
+  // sessions are active, rarely when all have been quiet for a minute (on
+  // Windows each check starts wsl.exe).
+  panesDue(s) {
+    let heard = s.claude.updatedAt || 0;
+    for (const o of s.others.values()) heard = Math.max(heard, o.state.updatedAt || 0);
+    const now = this.now();
+    const every = now - heard < PANE_ACTIVE_WINDOW_MS ? PANE_CHECK_ACTIVE_MS : PANE_CHECK_IDLE_MS;
+    return now - s.paneCheckedAt >= every;
+  }
+
   pollStatus() {
     const readFiles = this.tick % TEAM_POLL_EVERY === 0;
     const checkPanes = this.tick % PANE_CHECK_EVERY === 0;
+    const round = new Map();
     this.tick++;
     for (const s of this.sessions.values()) {
       const status = s.tracker.status;
@@ -658,14 +687,15 @@ class SessionManager {
         s.lastStatus = key;
         this.emit('session:status', { id: s.id, status, error: s.tracker.error });
       }
-      // Team and task files change with Claude's activity: re-read them only
-      // after new events, or now and then while it runs.
-      const stale = s.claude.updatedAt > s.teamReadAt || this.now() - s.teamReadAt > TEAM_IDLE_REREAD_MS;
+      // Team and task files change through Claude's team and task tools:
+      // re-read them after one ran, or now and then while it runs (reads are
+      // synchronous, and inside WSL go over the network share).
+      const stale = s.teamDirty || this.now() - s.teamReadAt > TEAM_IDLE_REREAD_MS;
       if (readFiles && s.claude.status && stale) {
         this.refreshTeam(s);
         this.emitAgent(s);
       }
-      if (checkPanes) this.checkPanes(s);
+      if (checkPanes && this.panesDue(s)) this.checkPanes(s, round);
     }
   }
 }
