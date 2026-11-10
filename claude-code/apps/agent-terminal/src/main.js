@@ -12,7 +12,7 @@ const { withWslEnv } = require('./wsl');
 const { gitBranch } = require('./git');
 const { readTeam, readTasks, claudeDir } = require('./teams');
 const { scanClaudeConfig } = require('./claude-config');
-const { runTmux } = require('./tmux');
+const { runTmux, listPanes } = require('./tmux');
 const { readContextUsage } = require('./usage');
 const { PlanUsage } = require('./plan-usage');
 const { readTextFile } = require('./files');
@@ -180,6 +180,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     gitBranch,
     scanConfig: scanClaudeConfig,
     runTmux,
+    listPanes,
     readUsage: readContextUsage,
     claudePaths: {
       dir: claudeDir(),

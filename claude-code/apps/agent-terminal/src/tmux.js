@@ -15,4 +15,21 @@ function runTmux(args, distro, platform = process.platform, exec = execFile) {
   });
 }
 
-module.exports = { runTmux };
+// The pane ids (%N) of the tmux server at `socket`: a Set, empty when that
+// server is gone, null when tmux could not be asked (not installed, wsl.exe
+// failed, timeout), so a failed check never drops anything.
+function listPanes(socket, distro, platform = process.platform, exec = execFile) {
+  const [file, argv] = wslCommand('tmux', ['-S', socket, 'list-panes', '-a', '-F', '#{pane_id}'], distro, platform);
+  return new Promise((resolve) => {
+    exec(file, argv, { timeout: 5000, windowsHide: true }, (err, stdout, stderr) => {
+      if (!err) {
+        resolve(new Set(String(stdout || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => /^%\d+$/.test(l))));
+      } else {
+        // tmux 3.x: "no server running on <socket>" / "error connecting to <socket> (...)"
+        resolve(/no server running on|error connecting to/.test(String(stderr || '')) ? new Set() : null);
+      }
+    });
+  });
+}
+
+module.exports = { runTmux, listPanes };

@@ -16,12 +16,17 @@
 command -v curl >/dev/null 2>&1 || exit 0
 command -v tmux >/dev/null 2>&1 || exit 0
 
-session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{session_id}' 2>/dev/null)" || exit 0
-[ -n "$session" ] || exit 0
+# Its tmux session. $TMUX ("socket,pid,session number") still names it when
+# the pane is already gone: a teammate whose pane was closed sends its
+# SessionEnd after that.
+session="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{session_id}' 2>/dev/null)"
+[ -n "$session" ] || session="\$${TMUX##*,}"
+[ "$session" != '$' ] || exit 0
 clients="$(tmux list-clients -t "$session" -F '#{client_pid}' 2>/dev/null)" || exit 0
 [ -n "$clients" ] || exit 0
 
 input="$(cat)"
+case "$input" in *'"hook_event_name":"SessionEnd"'*|*'"hook_event_name": "SessionEnd"'*) last=1 ;; *) last=0 ;; esac
 # Which pane sent it: split-pane agent teams run each teammate as its own
 # claude in its own pane. Sent in the body (JSON) so non-ASCII titles survive.
 pane="${TMUX_PANE:-}"
@@ -36,10 +41,15 @@ for pid in $clients; do
   url="$(printf '%s\n' "$envs" | sed -n 's/^OMNI_CWD_URL=//p' | head -1)"
   token="$(printf '%s\n' "$envs" | sed -n 's/^OMNI_HOOK_TOKEN=//p' | head -1)"
   [ -n "$tid" ] && [ -n "$url" ] && [ -n "$token" ] || continue
-  # Fire and forget: Claude does not wait on the app.
-  ( printf '%s' "$body" | curl -s -m 2 -o /dev/null -X POST \
+  send() {
+    printf '%s' "$body" | curl -s -m 2 -o /dev/null -X POST \
       -H 'Content-Type: application/json' \
       -H "X-Omni-Token: $token" -H "X-Omni-Terminal: $tid" \
-      --data-binary @- "${url%/cwd}/hook" >/dev/null 2>&1 & )
+      --data-binary @- "${url%/cwd}/hook" >/dev/null 2>&1
+  }
+  # Fire and forget: Claude does not wait on the app. SessionEnd is sent
+  # before returning: the pane may close right after, and a send left in the
+  # background is killed with it.
+  if [ "$last" = 1 ]; then send; else ( send & ); fi
 done
 exit 0

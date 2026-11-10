@@ -12,6 +12,7 @@ const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
 const EARLY_MS = 10000; // how long a result that came before its call waits for it
+const PANE_CHECK_EVERY = 10; // status polls between checks that tmux panes still exist
 
 const uriPath = (p) => encodeURI(p).replace(/[?#]/g, encodeURIComponent);
 
@@ -35,6 +36,7 @@ class SessionManager {
     scanConfig = () => null,
     claudePaths = { dir: null, json: null },
     runTmux = () => Promise.resolve(false),
+    listPanes = () => Promise.resolve(null),
     readUsage = () => Promise.resolve(null),
     platform = process.platform,
     gitRunner = gitView.runGit,
@@ -49,6 +51,7 @@ class SessionManager {
     this.gitBranch = gitBranch;
     this.scanConfig = scanConfig;
     this.runTmux = runTmux;
+    this.listPanes = listPanes;
     this.readUsage = readUsage;
     this.platform = platform;
     this.gitRunner = gitRunner;
@@ -93,6 +96,8 @@ class SessionManager {
       tmuxSocket: null, // from claude-hook.sh, to select a pane on click
       usage: new Map(), // session_id -> { tokens, window, pct, model, readAt, pending }
       primaryPane: null,
+      primarySocket: null, // tmux server of primaryPane
+      paneCheck: false, // a pane check is running
       teamReadAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
       team: null,
@@ -264,14 +269,9 @@ class SessionManager {
     }
     if (meta.pane) s.primaryPane = meta.pane;
     this.recordActivity(s, ev, ev.agent_id ? ev.agent_type || 'subagent' : null);
+    if (meta.pane) s.primarySocket = meta.socket || s.tmuxSocket;
     s.claude = reduce(s.claude, ev, this.now());
-    if (ev.hook_event_name === 'SessionEnd') {
-      s.usage.delete(sid);
-      s.team = null;
-      s.tasks = null;
-      s.primarySid = null;
-      s.primaryPane = null;
-    }
+    if (ev.hook_event_name === 'SessionEnd') this.endPrimary(s);
     // The main agent's turn ended with nothing left running: teammates are gone.
     if (ev.hook_event_name === 'Stop' && !ev.agent_id && Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) {
       for (const [k, o] of s.others) if (o.teammate) s.others.delete(k);
@@ -482,26 +482,75 @@ class SessionManager {
     return u && u.tokens ? { tokens: u.tokens, window: u.window, pct: u.pct, model: u.model || null } : null;
   }
 
+  // The main claude session is gone (SessionEnd, or its tmux pane closed).
+  endPrimary(s) {
+    if (s.claude.status || s.claude.sessionId) s.claude = { ...emptyState(), cwd: s.claude.cwd, updatedAt: this.now() };
+    if (s.primarySid) s.usage.delete(s.primarySid);
+    s.team = null;
+    s.tasks = null;
+    s.primarySid = null;
+    s.primaryPane = null;
+    s.primarySocket = null;
+  }
+
+  // Sessions whose tmux pane no longer exists are gone, even when their
+  // SessionEnd never arrived (the pane was closed or killed: its hook could
+  // not reach the app, or claude was killed with it). Only entries not heard
+  // from since the panes were listed are dropped.
+  async checkPanes(s) {
+    const sockets = new Set([...s.others.values()].filter((o) => o.pane && o.socket).map((o) => o.socket));
+    if (s.primaryPane && s.primarySocket) sockets.add(s.primarySocket);
+    if (!sockets.size || s.paneCheck) return;
+    s.paneCheck = true;
+    const distro = s.wsl ? s.wsl.distro : null;
+    try {
+      for (const socket of sockets) {
+        if (!/^\/[\w./@:+-]+$/.test(socket)) continue;
+        const asked = this.now();
+        const panes = await Promise.resolve(this.listPanes(socket, distro)).catch(() => null);
+        if (!panes || !this.sessions.has(s.id)) continue;
+        let changed = false;
+        for (const [sid, o] of s.others) {
+          if (o.socket === socket && o.pane && !panes.has(o.pane) && (o.state.updatedAt || 0) < asked) {
+            s.others.delete(sid);
+            s.usage.delete(sid);
+            s.teammateSids.delete(sid);
+            changed = true;
+          }
+        }
+        if (s.primarySocket === socket && s.primaryPane && !panes.has(s.primaryPane) && (s.claude.updatedAt || 0) < asked) {
+          this.endPrimary(s);
+          changed = true;
+        }
+        if (changed) this.emitAgent(s);
+      }
+    } finally {
+      s.paneCheck = false;
+    }
+  }
+
   // The main session turned out to be a teammate (e.g. the app was opened
   // while a split-pane team was already running): list it beside instead.
   demotePrimary(s, meta) {
     s.others.set(s.primarySid, {
-      state: s.claude, pane: meta.pane || null, teammate: true, name: null, type: s.claude.agentType || null,
+      state: s.claude, pane: meta.pane || null, socket: meta.socket || s.tmuxSocket || null, teammate: true, name: null, type: s.claude.agentType || null,
     });
     s.claude = emptyState();
     s.primarySid = null;
     s.primaryPane = null;
+    s.primarySocket = null;
     s.team = null;
     s.tasks = null;
   }
 
   onOtherSession(s, sid, ev, meta, teammateSession) {
     if (ev.hook_event_name === 'SessionEnd') { s.others.delete(sid); s.usage.delete(sid); return; }
-    const prev = s.others.get(sid) || { state: emptyState(), name: null, teammate: false, pane: null };
+    const prev = s.others.get(sid) || { state: emptyState(), name: null, teammate: false, pane: null, socket: null };
     const title = /^@\S/.test(meta.title || '') ? meta.title.slice(1) : null; // "@planner"
     s.others.set(sid, {
       state: reduce(prev.state, ev, this.now()),
       pane: meta.pane || prev.pane,
+      socket: (meta.pane && meta.socket) || prev.socket,
       teammate: prev.teammate || teammateSession || ev.hook_event_name === 'TeammateIdle',
       name: (ev.hook_event_name === 'TeammateIdle' && ev.teammate_name) || prev.name || title || null,
       type: prev.type || ev.agent_type || null,
@@ -599,7 +648,9 @@ class SessionManager {
   }
 
   pollStatus() {
-    const readFiles = this.tick++ % TEAM_POLL_EVERY === 0;
+    const readFiles = this.tick % TEAM_POLL_EVERY === 0;
+    const checkPanes = this.tick % PANE_CHECK_EVERY === 0;
+    this.tick++;
     for (const s of this.sessions.values()) {
       const status = s.tracker.status;
       const key = `${status}|${s.tracker.error || ''}`;
@@ -614,6 +665,7 @@ class SessionManager {
         this.refreshTeam(s);
         this.emitAgent(s);
       }
+      if (checkPanes) this.checkPanes(s);
     }
   }
 }
