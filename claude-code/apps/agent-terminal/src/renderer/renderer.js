@@ -1816,6 +1816,7 @@ function clearTree() {
   treeToken = null;
   tree = null;
   search.list = null;
+  if (search.query) search.results.replaceChildren(h('li', 'hint', '읽는 중…')); // not the previous terminal's results
   treeEls.head.replaceChildren();
   treeEls.body.replaceChildren(h('li', 'hint', '읽는 중…'));
 }
@@ -1922,7 +1923,8 @@ function treeRow(t, e, rel, depth, isOpen) {
   if (e.link) li.classList.add('link');
   const abs = treeAbs(t.root, rel);
   li.dataset.abs = abs;
-  const mark = e.dir ? t.marks.dir(rel) : t.marks.file(rel);
+  let mark = e.dir ? t.marks.dir(rel) : t.marks.file(rel);
+  if (mark === 'U' && e.ignored) mark = null; // in a new folder, but git ignores it
   if (mark) li.dataset.st = mark;
   li.title = `${abs}${mark ? `\n${e.dir ? '안에 ' : ''}${MARK_LABEL[mark]}` : ''}${e.ignored ? '\ngit에서 무시하는 항목' : ''}${e.link ? '\n링크' : ''}`;
   if (e.dir) {
@@ -2008,6 +2010,7 @@ async function runSearch() {
   if (!found.length) rows.push(h('li', 'hint', '일치하는 파일 없음'));
   else if (found.length === 200) rows.push(h('li', 'hint', '처음 200개만 표시 · 낱말을 더 넣어 좁혀 보세요'));
   if (list.truncated) rows.push(h('li', 'hint', `처음 ${list.files.length.toLocaleString()}개 파일에서만 찾았습니다`));
+  if (list.note) rows.push(h('li', 'hint', list.note));
   search.results.replaceChildren(...rows);
 }
 
@@ -2037,6 +2040,7 @@ function searchRow(t, f, k) {
 // Opens a result, and opens its folders in the tree for when the search
 // is cleared.
 function openSearchResult(t, rel, k) {
+  if (tree !== t) return; // results of a terminal no longer shown
   search.active = k;
   for (const row of search.results.querySelectorAll('.tree-result')) row.setAttribute('aria-selected', String(row.dataset.abs === treeAbs(t.root, rel)));
   const open = treeOpen.get(t.root);
@@ -2044,18 +2048,33 @@ function openSearchResult(t, rel, k) {
   openTreeFile(t, treeAbs(t.root, rel));
 }
 
+// Runs the search for what is typed now (no-op when it already has).
+function applySearch() {
+  clearTimeout(search.timer);
+  search.timer = null;
+  const q = search.input.value.trim();
+  if (q === search.query) return null;
+  search.query = q;
+  search.active = 0;
+  if (!q && tree) loadTree(0); // back to the tree, with the folders the results opened
+  return runSearch();
+}
+
 search.input.addEventListener('input', () => {
   clearTimeout(search.timer);
-  search.timer = setTimeout(() => {
-    const q = search.input.value.trim();
-    if (q === search.query) return;
-    search.query = q;
-    search.active = 0;
-    runSearch();
-    if (!q && tree) loadTree(0); // back to the tree, with the folders the results opened
-  }, 80);
+  search.timer = setTimeout(applySearch, 80);
 });
-search.input.addEventListener('keydown', (e) => {
+search.input.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    // Typed and pressed Enter at once: search what is typed, then open its
+    // first result (not one of the previous query's).
+    e.preventDefault();
+    const pending = applySearch();
+    if (pending) await pending;
+    const first = search.results.querySelectorAll('.tree-result')[search.active];
+    if (first) first.click();
+    return;
+  }
   const rows = [...search.results.querySelectorAll('.tree-result')];
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
@@ -2063,9 +2082,6 @@ search.input.addEventListener('keydown', (e) => {
     search.active = (search.active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
     rows.forEach((r, k) => r.setAttribute('aria-selected', String(k === search.active)));
     rows[search.active].scrollIntoView({ block: 'nearest' });
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    if (rows[search.active]) rows[search.active].click();
   } else if (e.key === 'Escape' && search.input.value) {
     e.preventDefault();
     e.stopPropagation(); // clears the box; the next Esc closes the viewer

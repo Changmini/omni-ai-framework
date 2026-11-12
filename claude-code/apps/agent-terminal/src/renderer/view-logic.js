@@ -294,11 +294,11 @@
     const rank = { C: 4, M: 3, R: 2, A: 2, U: 1 };
     const files = new Map();
     const dirs = new Map();
-    const newDirs = [];
+    const newDirs = new Set();
     for (const [p, m] of entries) {
       if (!m) continue;
       const path = p.replace(/\/$/, '');
-      if (p.endsWith('/')) { newDirs.push(path); dirs.set(path, m); } else files.set(path, m);
+      if (p.endsWith('/')) { newDirs.add(path); dirs.set(path, m); } else files.set(path, m);
       let cut = path.lastIndexOf('/');
       while (cut > 0) {
         const up = path.slice(0, cut);
@@ -306,14 +306,24 @@
         cut = up.lastIndexOf('/');
       }
     }
+    // Inside a new folder: one of the folders above `path` is one.
+    const inNew = (path) => {
+      if (!newDirs.size) return false;
+      for (let cut = path.lastIndexOf('/'); cut > 0; cut = path.lastIndexOf('/', cut - 1)) {
+        if (newDirs.has(path.slice(0, cut))) return true;
+      }
+      return false;
+    };
     return {
       file(path) {
         if (files.has(path)) return files.get(path);
-        return newDirs.some((d) => path.startsWith(`${d}/`)) ? 'U' : null;
+        return inNew(path) ? 'U' : null;
       },
+      // A submodule is a folder git reports like a file ("vendor/lib").
       dir(path) {
         if (dirs.has(path)) return dirs.get(path);
-        return newDirs.some((d) => path.startsWith(`${d}/`)) ? 'U' : null;
+        if (files.has(path)) return files.get(path);
+        return inNew(path) ? 'U' : null;
       },
     };
   }
