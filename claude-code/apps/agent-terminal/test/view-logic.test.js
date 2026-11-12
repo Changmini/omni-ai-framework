@@ -119,3 +119,22 @@ test('relativeInside keeps a relative link in the folder of the file shown', () 
   assert.strictEqual(relativeInside('%E0%A4%A'), null, 'bad escapes');
   assert.strictEqual(relativeInside('#top'), null);
 });
+
+test('searchFiles: every term in the path, names first, marks in the name', () => {
+  const { searchFiles } = require('../src/renderer/view-logic');
+  const files = ['src/app/main.js', 'docs/main-notes.md', 'README.md', 'src/maintain/x.txt', 'test/test_main.py'];
+  assert.deepStrictEqual(searchFiles(files, 'MAIN', 10).map((r) => r.path), ['src/app/main.js', 'docs/main-notes.md', 'test/test_main.py', 'src/maintain/x.txt']);
+  const [first] = searchFiles(files, 'test main', 10);
+  assert.deepStrictEqual(first, { path: 'test/test_main.py', dir: 'test/', name: 'test_main.py', marks: [[0, 4], [5, 9]] });
+  assert.deepStrictEqual(searchFiles(files, '  ', 10), []);
+  assert.strictEqual(searchFiles(files, 'm', 2).length, 2);
+});
+
+test('statusMark and treeMarks color changes like other editors', () => {
+  const { statusMark, treeMarks } = require('../src/renderer/view-logic');
+  const marks = ['M ', ' M', 'A ', 'AM', 'R ', '??', 'UU', 'AA', 'D ', ' D', 'MD', '  '].map((xy) => statusMark(xy[0], xy[1]));
+  assert.deepStrictEqual(marks, ['M', 'M', 'A', 'A', 'R', 'U', 'C', 'C', null, null, null, null]);
+  const t = treeMarks([['src/a.py', 'M'], ['src/deep/b.py', 'A'], ['reports/', 'U'], ['x.md', 'C'], ['gone.txt', null]]);
+  assert.deepStrictEqual(['src/a.py', 'src/deep/b.py', 'reports/r1.md', 'x.md', 'src/z.py', 'gone.txt'].map((p) => t.file(p)), ['M', 'A', 'U', 'C', null, null]);
+  assert.deepStrictEqual(['src', 'src/deep', 'reports', 'reports/sub', 'docs'].map((p) => t.dir(p)), ['M', 'A', 'U', 'U', null]);
+});

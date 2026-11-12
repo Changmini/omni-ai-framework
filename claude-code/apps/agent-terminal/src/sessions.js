@@ -8,6 +8,10 @@ const { wslToWindows, windowsToWsl } = require('./wsl');
 const { activityEntry, oneLine, ACTIVITY_MAX } = require('./activity');
 const gitView = require('./git-view');
 const fileTree = require('./file-tree');
+const { statusMark } = require('./renderer/view-logic');
+
+const SEARCH_MAX = 20000; // files the file tab's search box knows of
+const STATUS_MAX = 5000; // changed paths the file tab colors
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
@@ -448,7 +452,8 @@ class SessionManager {
       if (cwd !== s.cwd) return { stale: true };
       const root = s.wsl ? windowsToWsl(found.dir) || cwd : found.dir;
       const keep = s.tree && s.tree.host === found.dir ? s.tree.ignored : new Map();
-      s.tree = { cwd, root, host: found.dir, git: found.git, ignored: keep };
+      const sameRoot = s.tree && s.tree.host === found.dir;
+      s.tree = { cwd, root, host: found.dir, git: found.git, ignored: keep, status: sameRoot ? s.tree.status : null };
     }
     const t = s.tree;
     const dir = segs.length ? path.join(t.host, ...segs) : t.host;
@@ -463,7 +468,43 @@ class SessionManager {
         for (const e of r.entries) if (known.has(e.name)) e.ignored = true;
       }
     }
-    return { root: t.root, rel, ...r };
+    // The changes in the repository (colors in the tree), with the root's
+    // own listing; asked on the same terms as the ignored entries.
+    if (!segs.length && t.git && (fresh || !t.status)) t.status = await this.treeStatus(s, t);
+    return { root: t.root, rel, ...r, ...(!segs.length && t.status ? { status: t.status } : {}) };
+  }
+
+  // [[path, mark], ...] from `git status` (paths from the repository root,
+  // a new folder as "dir/"), at most STATUS_MAX; [] when git fails.
+  async treeStatus(s, t) {
+    const r = await this.gitRunner(['status', '--porcelain=v1', '-z', '--untracked-files=normal'], this.gitTarget(s, t.root));
+    if (!r.ok) return [];
+    const out = [];
+    for (const f of gitView.parseStatus(r.stdout).files) {
+      const mark = statusMark(f.index, f.work);
+      if (mark) out.push([f.path, mark]);
+      if (out.length >= STATUS_MAX) break;
+    }
+    return out;
+  }
+
+  // Every file of the project for the search box: in a git repository the
+  // tracked and untracked ones git does not ignore (one git call), else a
+  // walk of the folder. Asked when the search box is first used and again
+  // after a fresh read of the tree.
+  async fileList(id) {
+    const s = this.sessions.get(id);
+    if (!s || !s.tree) return { error: '파일 목록을 읽을 수 없습니다' };
+    const t = s.tree;
+    if (t.git) {
+      const r = await this.gitRunner(['ls-files', '-z', '--cached', '--others', '--exclude-standard'], this.gitTarget(s, t.root));
+      if (r.ok) {
+        const all = [...new Set(r.stdout.split('\0').filter(Boolean))]; // a conflicted file is listed per stage
+        return { root: t.root, files: all.slice(0, SEARCH_MAX), truncated: all.length > SEARCH_MAX };
+      }
+    }
+    const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
+    return { root: t.root, ...w };
   }
 
   // Marks entries git ignores (shown dimmed, like other editors). Asked in

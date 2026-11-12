@@ -1792,7 +1792,7 @@ let treeDue = 0;
 let treeFresh = false; // the scheduled read asks git again which entries it ignores
 let lastTreeAt = 0;
 let treeToken = null;
-let tree = null; // { id, root, lists: Map(rel -> listing) }
+let tree = null; // { id, root, lists: Map(rel -> listing), marks (git changes) }
 let treeSelected = null; // the file open in the viewer, as a full path
 const treeOpen = new Map(); // root -> Set of open folders ("src/app")
 
@@ -1815,6 +1815,7 @@ function loadTree(delay = 150, fresh = false) {
 function clearTree() {
   treeToken = null;
   tree = null;
+  search.list = null;
   treeEls.head.replaceChildren();
   treeEls.body.replaceChildren(h('li', 'hint', '읽는 중…'));
 }
@@ -1872,10 +1873,14 @@ const readTree = ViewLogic.serial(async () => {
     return;
   }
   if (!treeOpen.has(top.root)) treeOpen.set(top.root, new Set());
-  const t = { id, root: top.root, lists: new Map([['', top]]) };
+  const t = { id, root: top.root, lists: new Map([['', top]]), marks: ViewLogic.treeMarks(top.status || []) };
   if (!(await fillTree(id, t, () => treeToken === token, fresh)) || id !== activeId) return;
   tree = t;
+  // The search box's file list is read again after a fresh read (files
+  // Claude added), or when the project changed.
+  if (fresh || (search.list && search.list.root !== t.root)) search.list = null;
   renderTree();
+  if (search.query) runSearch();
 });
 
 function renderTree() {
@@ -1917,14 +1922,17 @@ function treeRow(t, e, rel, depth, isOpen) {
   if (e.link) li.classList.add('link');
   const abs = treeAbs(t.root, rel);
   li.dataset.abs = abs;
-  li.title = `${abs}${e.ignored ? '\ngit에서 무시하는 항목' : ''}${e.link ? '\n링크' : ''}`;
+  const mark = e.dir ? t.marks.dir(rel) : t.marks.file(rel);
+  if (mark) li.dataset.st = mark;
+  li.title = `${abs}${mark ? `\n${e.dir ? '안에 ' : ''}${MARK_LABEL[mark]}` : ''}${e.ignored ? '\ngit에서 무시하는 항목' : ''}${e.link ? '\n링크' : ''}`;
   if (e.dir) {
     li.dataset.dir = '1';
     li.setAttribute('aria-expanded', String(isOpen));
   } else {
     li.setAttribute('aria-selected', String(abs === treeSelected));
   }
-  li.append(h('span', 'tree-caret', e.dir ? (isOpen ? '▾' : '▸') : ''), h('span', 'tree-name', e.name));
+  li.append(h('span', 'tree-caret', e.dir ? (isOpen ? '▾' : '▸') : ''), h('span', 'tree-name', e.name),
+    h('span', 'tree-st', mark ? (e.dir ? '•' : mark) : ''));
   const activate = () => (e.dir ? toggleTreeFolder(t, rel) : openTreeFile(t, abs));
   li.addEventListener('click', activate);
   li.addEventListener('keydown', (ev) => {
@@ -1956,6 +1964,115 @@ function openTreeFile(t, abs) {
   }
   openConfigFile(t.id, abs);
 }
+
+const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추가됨 (스테이징)', R: '이름 바뀜', C: '충돌' };
+
+// ---------- file tab: search by file name ----------
+// The project's file list is read once (git ls-files: tracked and untracked
+// files git does not ignore; else a walk of the folder) and filtered here
+// as you type (view-logic.js searchFiles).
+
+const search = { input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, active: 0, timer: null };
+
+// The file list for tree `t`: the one read already, or one read now (shared
+// by the searches typed while it loads).
+async function searchList(t) {
+  if (search.list && search.list.root === t.root) return search.list;
+  if (!search.loading || search.loading.t !== t) {
+    const p = api.allFiles(t.id).catch(() => null).then((r) => {
+      if (search.loading === p) search.loading = null;
+      if (r && r.files && tree === t && r.root === t.root) search.list = r;
+      return search.list && search.list.root === t.root ? search.list : null;
+    });
+    p.t = t;
+    search.loading = p;
+  }
+  return search.loading;
+}
+
+async function runSearch() {
+  const t = tree;
+  const q = search.query;
+  const on = Boolean(q);
+  search.results.hidden = !on;
+  treeEls.body.hidden = on;
+  treeEls.head.hidden = on;
+  if (!on || !t) return;
+  if (!search.list) search.results.replaceChildren(h('li', 'hint', '파일 목록을 읽는 중…'));
+  const list = await searchList(t);
+  if (q !== search.query || tree !== t) return; // typed on, or another project
+  if (!list) { search.results.replaceChildren(h('li', 'hint', '파일 목록을 읽을 수 없습니다')); return; }
+  const found = ViewLogic.searchFiles(list.files, q, 200);
+  search.active = Math.min(search.active, Math.max(0, found.length - 1));
+  const rows = found.map((f, k) => searchRow(t, f, k));
+  if (!found.length) rows.push(h('li', 'hint', '일치하는 파일 없음'));
+  else if (found.length === 200) rows.push(h('li', 'hint', '처음 200개만 표시 · 낱말을 더 넣어 좁혀 보세요'));
+  if (list.truncated) rows.push(h('li', 'hint', `처음 ${list.files.length.toLocaleString()}개 파일에서만 찾았습니다`));
+  search.results.replaceChildren(...rows);
+}
+
+function searchRow(t, f, k) {
+  const li = h('li', 'tree-row tree-result');
+  li.setAttribute('role', 'option');
+  li.setAttribute('aria-selected', String(k === search.active));
+  const abs = treeAbs(t.root, f.path);
+  li.dataset.abs = abs;
+  const mark = t.marks.file(f.path);
+  if (mark) li.dataset.st = mark;
+  li.title = `${abs}${mark ? `\n${MARK_LABEL[mark]}` : ''}`;
+  const name = h('span', 'tree-name');
+  let at = 0;
+  for (const [a, b] of f.marks) {
+    if (a > at) name.append(document.createTextNode(f.name.slice(at, a)));
+    name.append(h('mark', null, f.name.slice(a, b)));
+    at = b;
+  }
+  if (at < f.name.length) name.append(document.createTextNode(f.name.slice(at)));
+  if (f.dir) name.append(h('span', 'tree-dir', f.dir.replace(/\/$/, '')));
+  li.append(h('span', 'tree-caret', ''), name, h('span', 'tree-st', mark || ''));
+  li.addEventListener('click', () => openSearchResult(t, f.path, k));
+  return li;
+}
+
+// Opens a result, and opens its folders in the tree for when the search
+// is cleared.
+function openSearchResult(t, rel, k) {
+  search.active = k;
+  for (const row of search.results.querySelectorAll('.tree-result')) row.setAttribute('aria-selected', String(row.dataset.abs === treeAbs(t.root, rel)));
+  const open = treeOpen.get(t.root);
+  for (let cut = rel.indexOf('/'); cut !== -1; cut = rel.indexOf('/', cut + 1)) open.add(rel.slice(0, cut));
+  openTreeFile(t, treeAbs(t.root, rel));
+}
+
+search.input.addEventListener('input', () => {
+  clearTimeout(search.timer);
+  search.timer = setTimeout(() => {
+    const q = search.input.value.trim();
+    if (q === search.query) return;
+    search.query = q;
+    search.active = 0;
+    runSearch();
+    if (!q && tree) loadTree(0); // back to the tree, with the folders the results opened
+  }, 80);
+});
+search.input.addEventListener('keydown', (e) => {
+  const rows = [...search.results.querySelectorAll('.tree-result')];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!rows.length) return;
+    search.active = (search.active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+    rows.forEach((r, k) => r.setAttribute('aria-selected', String(k === search.active)));
+    rows[search.active].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (rows[search.active]) rows[search.active].click();
+  } else if (e.key === 'Escape' && search.input.value) {
+    e.preventDefault();
+    e.stopPropagation(); // clears the box; the next Esc closes the viewer
+    search.input.value = '';
+    search.input.dispatchEvent(new Event('input'));
+  }
+});
 
 setInspectorTab(inspectorTab);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');

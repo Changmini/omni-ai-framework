@@ -428,8 +428,14 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tree-head { color: var(--muted); font-size: 11px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .tree-head > span { direction: ltr; unicode-bidi: isolate; }
 .tree { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.tree-search {
+  width: 100%; margin: 0 0 6px; padding: 5px 8px; font: 12px var(--mono);
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; outline: none;
+}
+.tree-search:focus { border-color: var(--accent); }
+.tree[hidden], .tree-head[hidden] { display: none; }
 .tree-row {
-  display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 4px; align-items: baseline;
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 4px; align-items: baseline;
   padding: 2px 4px; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;
 }
 .tree-row:hover { background: var(--panel); }
@@ -441,6 +447,17 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tree-row.ignored { opacity: .5; }
 .tree-row.link .tree-name::after { content: " ↪"; color: var(--muted); }
 .tree > li.hint { padding: 2px 4px; font-size: 11.5px; }
+/* changes from git status, as other editors color them */
+.tree-st { font-family: var(--mono); font-size: 10.5px; font-weight: 700; min-width: 10px; text-align: center; }
+.tree-row[data-st="M"] .tree-name, .tree-row[data-st="M"] .tree-st { color: var(--busy); }
+.tree-row[data-st="U"] .tree-name, .tree-row[data-st="U"] .tree-st,
+.tree-row[data-st="A"] .tree-name, .tree-row[data-st="A"] .tree-st { color: var(--ok); }
+.tree-row[data-st="R"] .tree-name, .tree-row[data-st="R"] .tree-st { color: #8fbcff; }
+.tree-row[data-st="C"] .tree-name, .tree-row[data-st="C"] .tree-st { color: var(--err); }
+/* search results: name, then its folder */
+.tree-result .tree-name mark { background: none; color: var(--accent); font-weight: 700; }
+.tree-result .tree-dir { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.tree-result[aria-selected="true"] { background: var(--panel); box-shadow: inset 2px 0 var(--accent); }
 
 /* git tab */
 .git-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }

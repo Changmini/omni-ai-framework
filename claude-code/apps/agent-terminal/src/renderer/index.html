@@ -133,8 +133,11 @@
         <p id="activity-empty" class="hint">Claude가 이 터미널에서 일하면 프롬프트, 도구 실행, 수정한 파일이 여기에 쌓입니다.</p>
       </section>
       <section class="tab-body" data-tab="files">
+        <input id="tree-search" class="tree-search" type="search" placeholder="파일 이름 검색" aria-label="파일 이름 검색"
+               spellcheck="false" autocomplete="off" title="공백으로 나눈 낱말이 모두 들어간 파일 · ↑↓ 고르기 · Enter 열기 · Esc 지우기">
         <div id="tree-head" class="tree-head"></div>
         <ul id="tree-body" class="tree" role="tree" aria-label="프로젝트 파일"></ul>
+        <ul id="tree-results" class="tree" role="listbox" aria-label="검색 결과" hidden></ul>
       </section>
       <section class="tab-body" data-tab="git">
         <div id="git-head" class="git-head"></div>

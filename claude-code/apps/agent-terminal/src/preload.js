@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   gitStatus: (id, fresh) => ipcRenderer.invoke('git:status', id, fresh),
   gitUntracked: (id, dir) => ipcRenderer.invoke('git:untracked', id, dir),
   listFiles: (id, rel, fresh) => ipcRenderer.invoke('files:list', id, rel, fresh === true),
+  allFiles: (id) => ipcRenderer.invoke('files:all', id),
   gitDiff: (id, path) => ipcRenderer.invoke('git:diff', id, path),
   gitShow: (id, rev) => ipcRenderer.invoke('git:show', id, rev),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),

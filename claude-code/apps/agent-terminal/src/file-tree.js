@@ -80,4 +80,30 @@ async function listFolder(dir) {
   return { entries: out.slice(0, MAX_ENTRIES), total: out.length };
 }
 
-module.exports = { findRoot, relSegments, insideReal, windowsKey, listFolder, MAX_ENTRIES };
+// Every file under `dir` (relative, "/"-separated) for the search box, for
+// a project that is not a git repository: breadth first, links not
+// followed, .git and node_modules skipped, at most `limit` files.
+async function walkFiles(dir, limit = 20000) {
+  const files = [];
+  const queue = [''];
+  let truncated = false;
+  while (queue.length) {
+    const rel = queue.shift();
+    let ents;
+    try { ents = await fs.promises.readdir(rel ? path.join(dir, ...rel.split('/')) : dir, { withFileTypes: true }); } catch { continue; }
+    ents.sort((a, b) => collator.compare(a.name, b.name));
+    for (const e of ents) {
+      if (HIDDEN.has(e.name) || e.name === 'node_modules') continue;
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) queue.push(child);
+      else if (e.isFile() || e.isSymbolicLink()) {
+        if (files.length >= limit) { truncated = true; break; }
+        files.push(child);
+      }
+    }
+    if (truncated) break;
+  }
+  return { files, truncated };
+}
+
+module.exports = { findRoot, relSegments, insideReal, windowsKey, listFolder, walkFiles, MAX_ENTRIES };
