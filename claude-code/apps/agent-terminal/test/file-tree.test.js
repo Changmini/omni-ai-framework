@@ -96,7 +96,7 @@ test('the viewer may read project files, but not through ".." or a link leading 
 test('ignored entries are asked from git on fresh reads and for new folders; other reads reuse the answer', async () => {
   const { root } = project();
   const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
-    gitRunner: async (args) => { calls.push(args); return { ok: true, code: 0, stdout: 'debug.log\n' }; } });
+    gitRunner: async (args) => { if (args[0] === 'check-ignore') calls.push(args); return { ok: true, code: 0, stdout: args[0] === 'check-ignore' ? 'debug.log\n' : '' }; } });
   const calls = [];
   const { id } = m.create({ cwd: root });
   const ignored = (r) => r.entries.filter((e) => e.ignored).map((e) => e.name);
@@ -150,4 +150,33 @@ test('the root is found again only on a fresh read or after a cd', async () => {
   assert.strictEqual(m.sessions.get(id).tree, first, 'quick refresh: same root, not searched again');
   await m.fileTree(id, '', true);
   assert.notStrictEqual(m.sessions.get(id).tree, first, 'fresh read: searched again');
+});
+
+test('the root listing carries git changes; the search list honors .gitignore', { skip: !hasGit && 'needs git' }, async () => {
+  const { root } = project();
+  spawnSync('git', ['-C', root, 'add', 'README.md', 'src']);
+  spawnSync('git', ['-C', root, '-c', 'user.name=user', '-c', 'user.email=user@example.com', 'commit', '-qm', 'init']);
+  fs.writeFileSync(path.join(root, 'README.md'), '# changed');
+  fs.mkdirSync(path.join(root, 'reports'));
+  fs.writeFileSync(path.join(root, 'reports', 'r1.md'), 'new');
+  const { m, id } = manager(root);
+  const top = await m.fileTree(id, '');
+  const st = new Map(top.status);
+  assert.strictEqual(st.get('README.md'), 'M');
+  assert.strictEqual(st.get('reports/'), 'U');
+  assert.ok(!st.has('debug.log'), 'ignored files are not changes');
+  const list = await m.fileList(id);
+  assert.strictEqual(list.root, root);
+  assert.ok(list.files.includes('src/app/main.js') && list.files.includes('reports/r1.md'));
+  assert.ok(!list.files.some((f) => f.startsWith('node_modules/') || f === 'debug.log'), 'ignored files are not searched');
+});
+
+test('outside git the search list walks the folder, skipping node_modules', async () => {
+  const { base } = project();
+  const { m, id } = manager(base);
+  const top = await m.fileTree(id, '');
+  assert.strictEqual(top.status, undefined);
+  const list = await m.fileList(id);
+  assert.ok(list.files.includes('secret.txt') && list.files.includes('sample-app/README.md'));
+  assert.ok(!list.files.some((f) => f.includes('node_modules/') || f.includes('.git/')));
 });

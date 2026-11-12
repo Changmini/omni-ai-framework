@@ -236,5 +236,87 @@
     return out.length ? out.join('/') : null;
   }
 
-  return { diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside };
+  // The file tab's search: the paths (relative, "/"-separated) that contain
+  // every space-separated term, ignoring case. Paths whose file name holds
+  // all terms come first, then by length. `marks`: [start, end) ranges of
+  // the terms in the file name, for highlighting.
+  function searchFiles(files, query, limit) {
+    const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    const out = [];
+    for (const path of files) {
+      const lower = path.toLowerCase();
+      if (!terms.every((t) => lower.includes(t))) continue;
+      const cut = path.lastIndexOf('/') + 1;
+      const name = lower.slice(cut);
+      const inName = terms.every((t) => name.includes(t));
+      out.push({ path, cut, inName, starts: name.startsWith(terms[0]) });
+    }
+    out.sort((a, b) => (a.inName !== b.inName ? (a.inName ? -1 : 1)
+      : a.starts !== b.starts ? (a.starts ? -1 : 1)
+        : a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)));
+    return out.slice(0, limit || 200).map(({ path, cut }) => {
+      const name = path.slice(cut).toLowerCase();
+      const marks = [];
+      for (const t of terms) {
+        const at = name.indexOf(t);
+        if (at !== -1) marks.push([at, at + t.length]);
+      }
+      marks.sort((x, y) => x[0] - y[0]);
+      const merged = [];
+      for (const m of marks) {
+        const last = merged[merged.length - 1];
+        if (last && m[0] <= last[1]) last[1] = Math.max(last[1], m[1]);
+        else merged.push(m.slice());
+      }
+      return { path, dir: path.slice(0, cut), name: path.slice(cut), marks: merged };
+    });
+  }
+
+  // How the file tab marks a changed path, from `git status` (the X and Y
+  // letters of --porcelain=v1): 'C' conflict, 'U' untracked, 'A' added,
+  // 'R' renamed, 'M' modified, or null (deleted: not on disk, not shown).
+  function statusMark(index, work) {
+    const xy = `${index}${work}`;
+    if (/U/.test(xy) || xy === 'AA' || xy === 'DD') return 'C';
+    if (xy === '??') return 'U';
+    if (work === 'D' || (index === 'D' && work === ' ')) return null;
+    if (index === 'A') return 'A';
+    if (index === 'R' || index === 'C') return 'R';
+    if (/[MT]/.test(xy)) return 'M';
+    return null;
+  }
+
+  // Marks for the tree: each changed path's mark, and for every folder above
+  // a change the strongest mark below it. A new folder listed as "dir/" by
+  // git marks itself and everything in it ('U').
+  function treeMarks(entries) {
+    const rank = { C: 4, M: 3, R: 2, A: 2, U: 1 };
+    const files = new Map();
+    const dirs = new Map();
+    const newDirs = [];
+    for (const [p, m] of entries) {
+      if (!m) continue;
+      const path = p.replace(/\/$/, '');
+      if (p.endsWith('/')) { newDirs.push(path); dirs.set(path, m); } else files.set(path, m);
+      let cut = path.lastIndexOf('/');
+      while (cut > 0) {
+        const up = path.slice(0, cut);
+        if (!dirs.has(up) || rank[m] > rank[dirs.get(up)]) dirs.set(up, m);
+        cut = up.lastIndexOf('/');
+      }
+    }
+    return {
+      file(path) {
+        if (files.has(path)) return files.get(path);
+        return newDirs.some((d) => path.startsWith(`${d}/`)) ? 'U' : null;
+      },
+      dir(path) {
+        if (dirs.has(path)) return dirs.get(path);
+        return newDirs.some((d) => path.startsWith(`${d}/`)) ? 'U' : null;
+      },
+    };
+  }
+
+  return { diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, statusMark, treeMarks };
 }));
