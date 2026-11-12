@@ -7,6 +7,7 @@ const { emptyState, reduce, withTeam } = require('./agent-state');
 const { wslToWindows, windowsToWsl } = require('./wsl');
 const { activityEntry, oneLine, ACTIVITY_MAX } = require('./activity');
 const gitView = require('./git-view');
+const fileTree = require('./file-tree');
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
@@ -120,6 +121,7 @@ class SessionManager {
       git: null, // last git status: { root, files, orig, paths }
       gitSeq: 0,
       gitFolders: new Map(), // "root\ndir/" -> files listed in that new folder
+      tree: null, // file tab: { cwd, root (as shown), host (as read), git }
     };
     this.sessions.set(id, session);
 
@@ -370,9 +372,31 @@ class SessionManager {
       }
     }
     const fromGit = s.git && s.git.paths.has(file);
-    if (!fromGit && !s.activity.some((a) => a.file === file)) return null;
-    const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
-    return { path: abs, host: this.hostPath(s, abs) };
+    if (fromGit || s.activity.some((a) => a.file === file)) {
+      const abs = /^([a-zA-Z]:[\\/]|\/|\\\\)/.test(file) ? file : `${s.cwd.replace(/[\\/]$/, '')}/${file}`;
+      return { path: abs, host: this.hostPath(s, abs) };
+    }
+    // A file of the project shown in the file tab (no "..": checked by
+    // segment). Links are checked in resolveFile.
+    const segs = s.tree ? this.treeSegments(s.tree, file) : null;
+    if (segs && segs.length) return { path: file, host: path.join(s.tree.host, ...segs), tree: true };
+    return null;
+  }
+
+  // The segments of `file` below the file tab's root, or null.
+  treeSegments(tree, file) {
+    const root = tree.root.replace(/[\\/]+$/, '');
+    if (!file.startsWith(root) || !/[\\/]/.test(file[root.length] || '')) return null;
+    return fileTree.relSegments(file.slice(root.length + 1));
+  }
+
+  // fileTarget, and for a project file also that it does not lead outside
+  // the project through a link. For reading, revealing and opening.
+  async resolveFile(id, file) {
+    const t = this.fileTarget(id, file);
+    if (!t || !t.tree) return t;
+    const s = this.sessions.get(id);
+    return s && s.tree && (await fileTree.insideReal(s.tree.host, t.host)) ? t : null;
   }
 
   // A vscode:// link for a file fileTarget allows (the page cannot make the
@@ -392,6 +416,49 @@ class SessionManager {
     }
     const p = t.host.replace(/\\/g, '/');
     return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
+  }
+
+  // ---------- file tab (read-only) ----------
+
+  // One folder of the project: the root's own entries for '' (also finding
+  // the root again: the git repository of the terminal's folder, else that
+  // folder), else those of `rel` ("src/app") below it. Ignored files (git)
+  // are marked. `root` is how the page joins paths to open a file.
+  async fileTree(id, rel = '') {
+    const s = this.sessions.get(id);
+    if (!s || !s.cwd) return { error: '터미널이 없습니다' };
+    const segs = fileTree.relSegments(rel);
+    if (!segs) return { error: '잘못된 경로입니다' };
+    if (!segs.length || !s.tree || s.tree.cwd !== s.cwd) {
+      const cwd = s.cwd;
+      const found = await fileTree.findRoot(this.hostPath(s, cwd));
+      if (cwd !== s.cwd) return { stale: true };
+      const root = s.wsl ? windowsToWsl(found.dir) || cwd : found.dir;
+      s.tree = { cwd, root, host: found.dir, git: found.git };
+    }
+    const t = s.tree;
+    const dir = segs.length ? path.join(t.host, ...segs) : t.host;
+    if (segs.length && !(await fileTree.insideReal(t.host, dir))) return { root: t.root, rel, error: '프로젝트 밖을 가리키는 링크입니다' };
+    const r = await fileTree.listFolder(dir);
+    if (r.entries && t.git && r.entries.length) await this.markIgnored(s, t, segs, r.entries);
+    return { root: t.root, rel, ...r };
+  }
+
+  // Marks entries git ignores (shown dimmed, like other editors). Asked in
+  // batches; a folder gets a trailing "/" so "dir/"
+  // patterns match (not a linked one: git refuses a path beyond a link). A
+  // failed batch marks nothing.
+  async markIgnored(s, t, segs, entries) {
+    const prefix = segs.length ? `${segs.join('/')}/` : '';
+    const target = this.gitTarget(s, t.root);
+    for (let i = 0; i < entries.length; i += 200) {
+      const batch = entries.slice(i, i + 200);
+      const args = batch.map((e) => `${prefix}${e.name}${e.dir && !e.link ? '/' : ''}`);
+      const r = await this.gitRunner(['check-ignore', '--', ...args], target);
+      if (!r.ok && r.code !== 1) continue; // 1: none ignored
+      const ignored = new Set(r.stdout.split(/\r?\n/).filter(Boolean).map((x) => x.replace(/\/$/, '')));
+      for (const e of batch) if (ignored.has(`${prefix}${e.name}`)) e.ignored = true;
+    }
   }
 
   // ---------- git tab (read-only) ----------

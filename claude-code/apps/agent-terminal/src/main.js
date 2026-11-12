@@ -63,6 +63,7 @@ function registerIpc() {
   // Without a vscode:// handler Windows would show its own "get an app"
   // dialog and still report success, so check for one first.
   ipcMain.handle('open-file', async (_e, id, file) => {
+    if (!(await manager.resolveFile(str(id, 20), str(file, 4000)))) return false;
     const url = manager.editorUrl(str(id, 20), str(file, 4000));
     if (!url || !app.getApplicationNameForProtocol('vscode://')) return false;
     try { await shell.openExternal(url); return true; } catch { return false; }
@@ -70,17 +71,18 @@ function registerIpc() {
   // The in-app viewer: read a file, show it in the system file manager, and
   // whether a vscode:// handler exists. Only files the session allows.
   ipcMain.handle('file:read', async (_e, id, file) => {
-    const t = manager.fileTarget(str(id, 20), str(file, 4000));
+    const t = await manager.resolveFile(str(id, 20), str(file, 4000));
     if (!t) return { error: '이 파일은 열 수 없습니다' };
     return { path: t.path, ...(await readTextFile(t.host)) };
   });
   ipcMain.handle('file:reveal', async (_e, id, file) => {
-    const t = manager.fileTarget(str(id, 20), str(file, 4000));
+    const t = await manager.resolveFile(str(id, 20), str(file, 4000));
     // Asynchronous: over \\wsl.localhost this can wait for WSL to start.
     if (!t || !(await fs.promises.access(t.host).then(() => true, () => false))) return false;
     shell.showItemInFolder(t.host);
     return true;
   });
+  ipcMain.handle('files:list', (_e, id, rel) => manager.fileTree(str(id, 20), str(rel, 4000) ?? ''));
   ipcMain.handle('git:status', (_e, id, fresh) => manager.gitStatus(str(id, 20), fresh !== false));
   ipcMain.handle('git:untracked', (_e, id, dir) => manager.gitUntracked(str(id, 20), str(dir, 4000)));
   ipcMain.handle('git:diff', (_e, id, path) => manager.gitDiff(str(id, 20), str(path, 4000)));
