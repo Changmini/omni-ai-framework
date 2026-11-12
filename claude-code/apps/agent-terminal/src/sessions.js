@@ -121,7 +121,8 @@ class SessionManager {
       git: null, // last git status: { root, files, orig, paths }
       gitSeq: 0,
       gitFolders: new Map(), // "root\ndir/" -> files listed in that new folder
-      tree: null, // file tab: { cwd, root (as shown), host (as read), git }
+      tree: null, // file tab: { cwd, root (as shown), host (as read), git, ignored: Map(folder -> Set of names) }
+      treeOpened: new Map(), // project files read from the file tab -> { host, rootHost }, kept after a cd
     };
     this.sessions.set(id, session);
 
@@ -377,9 +378,12 @@ class SessionManager {
       return { path: abs, host: this.hostPath(s, abs) };
     }
     // A file of the project shown in the file tab (no "..": checked by
-    // segment). Links are checked in resolveFile.
+    // segment), or one read from it before the terminal moved to another
+    // project (the viewer still shows it). Links are checked in resolveFile.
     const segs = s.tree ? this.treeSegments(s.tree, file) : null;
-    if (segs && segs.length) return { path: file, host: path.join(s.tree.host, ...segs), tree: true };
+    if (segs && segs.length) return { path: file, host: path.join(s.tree.host, ...segs), tree: true, rootHost: s.tree.host };
+    const opened = s.treeOpened.get(file);
+    if (opened) return { path: file, host: opened.host, tree: true, rootHost: opened.rootHost };
     return null;
   }
 
@@ -387,7 +391,7 @@ class SessionManager {
   treeSegments(tree, file) {
     const root = tree.root.replace(/[\\/]+$/, '');
     if (!file.startsWith(root) || !/[\\/]/.test(file[root.length] || '')) return null;
-    return fileTree.relSegments(file.slice(root.length + 1));
+    return fileTree.relSegments(file.slice(root.length + 1), this.platform === 'win32');
   }
 
   // fileTarget, and for a project file also that it does not lead outside
@@ -396,7 +400,11 @@ class SessionManager {
     const t = this.fileTarget(id, file);
     if (!t || !t.tree) return t;
     const s = this.sessions.get(id);
-    return s && s.tree && (await fileTree.insideReal(s.tree.host, t.host)) ? t : null;
+    if (!s || !(await fileTree.insideReal(t.rootHost, t.host))) return null;
+    s.treeOpened.delete(file);
+    s.treeOpened.set(file, { host: t.host, rootHost: t.rootHost });
+    if (s.treeOpened.size > 50) s.treeOpened.delete(s.treeOpened.keys().next().value);
+    return t;
   }
 
   // A vscode:// link for a file fileTarget allows (the page cannot make the
@@ -424,31 +432,48 @@ class SessionManager {
   // the root again: the git repository of the terminal's folder, else that
   // folder), else those of `rel` ("src/app") below it. Ignored files (git)
   // are marked. `root` is how the page joins paths to open a file.
-  async fileTree(id, rel = '') {
+  // `fresh`: find the root again and ask git which entries it ignores;
+  // otherwise reuse the root found for this folder and what git said last
+  // time for this folder (asked only for a folder not asked yet). The page
+  // asks fresh on ⟳ and at the end of Claude's turn, not on the refreshes
+  // while Claude works: inside WSL each ask starts wsl.exe.
+  async fileTree(id, rel = '', fresh = false) {
     const s = this.sessions.get(id);
     if (!s || !s.cwd) return { error: '터미널이 없습니다' };
-    const segs = fileTree.relSegments(rel);
+    const segs = fileTree.relSegments(rel, this.platform === 'win32');
     if (!segs) return { error: '잘못된 경로입니다' };
-    if (!segs.length || !s.tree || s.tree.cwd !== s.cwd) {
+    if (!s.tree || s.tree.cwd !== s.cwd || (fresh && !segs.length)) {
       const cwd = s.cwd;
       const found = await fileTree.findRoot(this.hostPath(s, cwd));
       if (cwd !== s.cwd) return { stale: true };
       const root = s.wsl ? windowsToWsl(found.dir) || cwd : found.dir;
-      s.tree = { cwd, root, host: found.dir, git: found.git };
+      const keep = s.tree && s.tree.host === found.dir ? s.tree.ignored : new Map();
+      s.tree = { cwd, root, host: found.dir, git: found.git, ignored: keep };
     }
     const t = s.tree;
     const dir = segs.length ? path.join(t.host, ...segs) : t.host;
     if (segs.length && !(await fileTree.insideReal(t.host, dir))) return { root: t.root, rel, error: '프로젝트 밖을 가리키는 링크입니다' };
     const r = await fileTree.listFolder(dir);
-    if (r.entries && t.git && r.entries.length) await this.markIgnored(s, t, segs, r.entries);
+    if (r.entries && t.git && r.entries.length) {
+      const key = segs.join('/');
+      if (fresh || !t.ignored.has(key)) {
+        t.ignored.set(key, await this.markIgnored(s, t, segs, r.entries));
+      } else {
+        const known = t.ignored.get(key);
+        for (const e of r.entries) if (known.has(e.name)) e.ignored = true;
+      }
+    }
     return { root: t.root, rel, ...r };
   }
 
   // Marks entries git ignores (shown dimmed, like other editors). Asked in
   // batches; a folder gets a trailing "/" so "dir/"
   // patterns match (not a linked one: git refuses a path beyond a link). A
-  // failed batch marks nothing.
+  // failed batch marks nothing: git refuses paths in a submodule or below a
+  // linked folder. Returns the ignored names, remembered also after such a
+  // refusal, so the folder is not asked again until a fresh read.
   async markIgnored(s, t, segs, entries) {
+    const names = new Set();
     const prefix = segs.length ? `${segs.join('/')}/` : '';
     const target = this.gitTarget(s, t.root);
     for (let i = 0; i < entries.length; i += 200) {
@@ -457,8 +482,11 @@ class SessionManager {
       const r = await this.gitRunner(['check-ignore', '--', ...args], target);
       if (!r.ok && r.code !== 1) continue; // 1: none ignored
       const ignored = new Set(r.stdout.split(/\r?\n/).filter(Boolean).map((x) => x.replace(/\/$/, '')));
-      for (const e of batch) if (ignored.has(`${prefix}${e.name}`)) e.ignored = true;
+      for (const e of batch) {
+        if (ignored.has(`${prefix}${e.name}`)) { e.ignored = true; names.add(e.name); }
+      }
     }
+    return names;
   }
 
   // ---------- git tab (read-only) ----------
