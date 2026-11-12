@@ -121,7 +121,7 @@ class SessionManager {
       git: null, // last git status: { root, files, orig, paths }
       gitSeq: 0,
       gitFolders: new Map(), // "root\ndir/" -> files listed in that new folder
-      tree: null, // file tab: { cwd, root (as shown), host (as read), git }
+      tree: null, // file tab: { cwd, root (as shown), host (as read), git, ignored: Map(folder -> Set of names) }
     };
     this.sessions.set(id, session);
 
@@ -424,7 +424,11 @@ class SessionManager {
   // the root again: the git repository of the terminal's folder, else that
   // folder), else those of `rel` ("src/app") below it. Ignored files (git)
   // are marked. `root` is how the page joins paths to open a file.
-  async fileTree(id, rel = '') {
+  // `fresh`: ask git which entries it ignores; otherwise reuse what it said
+  // last time for this folder (asked only for a folder not asked yet). The
+  // page asks fresh on ⟳ and at the end of Claude's turn, not on the
+  // refreshes while Claude works: inside WSL each ask starts wsl.exe.
+  async fileTree(id, rel = '', fresh = false) {
     const s = this.sessions.get(id);
     if (!s || !s.cwd) return { error: '터미널이 없습니다' };
     const segs = fileTree.relSegments(rel);
@@ -434,31 +438,47 @@ class SessionManager {
       const found = await fileTree.findRoot(this.hostPath(s, cwd));
       if (cwd !== s.cwd) return { stale: true };
       const root = s.wsl ? windowsToWsl(found.dir) || cwd : found.dir;
-      s.tree = { cwd, root, host: found.dir, git: found.git };
+      const keep = s.tree && s.tree.host === found.dir ? s.tree.ignored : new Map();
+      s.tree = { cwd, root, host: found.dir, git: found.git, ignored: keep };
     }
     const t = s.tree;
     const dir = segs.length ? path.join(t.host, ...segs) : t.host;
     if (segs.length && !(await fileTree.insideReal(t.host, dir))) return { root: t.root, rel, error: '프로젝트 밖을 가리키는 링크입니다' };
     const r = await fileTree.listFolder(dir);
-    if (r.entries && t.git && r.entries.length) await this.markIgnored(s, t, segs, r.entries);
+    if (r.entries && t.git && r.entries.length) {
+      const key = segs.join('/');
+      if (fresh || !t.ignored.has(key)) {
+        const marked = await this.markIgnored(s, t, segs, r.entries);
+        if (marked) t.ignored.set(key, marked);
+      } else {
+        const known = t.ignored.get(key);
+        for (const e of r.entries) if (known.has(e.name)) e.ignored = true;
+      }
+    }
     return { root: t.root, rel, ...r };
   }
 
   // Marks entries git ignores (shown dimmed, like other editors). Asked in
   // batches; a folder gets a trailing "/" so "dir/"
   // patterns match (not a linked one: git refuses a path beyond a link). A
-  // failed batch marks nothing.
+  // failed batch marks nothing. Returns the ignored names, or null when a
+  // batch failed (nothing to remember).
   async markIgnored(s, t, segs, entries) {
+    const names = new Set();
+    let ok = true;
     const prefix = segs.length ? `${segs.join('/')}/` : '';
     const target = this.gitTarget(s, t.root);
     for (let i = 0; i < entries.length; i += 200) {
       const batch = entries.slice(i, i + 200);
       const args = batch.map((e) => `${prefix}${e.name}${e.dir && !e.link ? '/' : ''}`);
       const r = await this.gitRunner(['check-ignore', '--', ...args], target);
-      if (!r.ok && r.code !== 1) continue; // 1: none ignored
+      if (!r.ok && r.code !== 1) { ok = false; continue; } // 1: none ignored
       const ignored = new Set(r.stdout.split(/\r?\n/).filter(Boolean).map((x) => x.replace(/\/$/, '')));
-      for (const e of batch) if (ignored.has(`${prefix}${e.name}`)) e.ignored = true;
+      for (const e of batch) {
+        if (ignored.has(`${prefix}${e.name}`)) { e.ignored = true; names.add(e.name); }
+      }
     }
+    return ok ? names : null;
   }
 
   // ---------- git tab (read-only) ----------

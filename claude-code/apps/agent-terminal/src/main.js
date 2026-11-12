@@ -82,7 +82,7 @@ function registerIpc() {
     shell.showItemInFolder(t.host);
     return true;
   });
-  ipcMain.handle('files:list', (_e, id, rel) => manager.fileTree(str(id, 20), str(rel, 4000) ?? ''));
+  ipcMain.handle('files:list', (_e, id, rel, fresh) => manager.fileTree(str(id, 20), str(rel, 4000) ?? '', fresh === true));
   ipcMain.handle('git:status', (_e, id, fresh) => manager.gitStatus(str(id, 20), fresh !== false));
   ipcMain.handle('git:untracked', (_e, id, dir) => manager.gitUntracked(str(id, 20), str(dir, 4000)));
   ipcMain.handle('git:diff', (_e, id, path) => manager.gitDiff(str(id, 20), str(path, 4000)));

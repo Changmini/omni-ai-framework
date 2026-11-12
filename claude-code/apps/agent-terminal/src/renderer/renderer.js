@@ -965,7 +965,7 @@ function renderConfig(data, id = activeId) {
 
 cfgEls.refresh.addEventListener('click', () => {
   if (inspectorTab === 'git') loadGit(0);
-  else if (inspectorTab === 'files') loadTree(0);
+  else if (inspectorTab === 'files') loadTree(0, true);
   else loadConfig(0);
 });
 // Coming back to the window: re-read, but not more than every 5s (the scan
@@ -1529,7 +1529,7 @@ function onActivity(id, entry) {
   if (!a) return;
   // A change Claude just made, or the end of its turn: the git tab follows.
   // (at most every 3 s while Claude works; see loadGit)
-  if (id === activeId && entry.kind === 'done') { loadGit(150); loadTree(150); }
+  if (id === activeId && entry.kind === 'done') { loadGit(150); loadTree(150, true); }
   else if (id === activeId && entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')) { loadGit(3000, false); loadTree(3000); }
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
@@ -1789,6 +1789,7 @@ const treeEls = { head: $('#tree-head'), body: $('#tree-body') };
 let treeStale = true;
 let treeTimer = null;
 let treeDue = 0;
+let treeFresh = false; // the scheduled read asks git again which entries it ignores
 let lastTreeAt = 0;
 let treeToken = null;
 let tree = null; // { id, root, lists: Map(rel -> listing) }
@@ -1799,8 +1800,11 @@ function treeVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'files';
 }
 
-// A read in `delay` ms; an earlier one already scheduled is kept.
-function loadTree(delay = 150) {
+// A read in `delay` ms; an earlier one already scheduled is kept. `fresh`
+// (⟳, end of Claude's turn) also asks git again which entries it ignores;
+// other reads reuse its last answer (inside WSL each ask starts wsl.exe).
+function loadTree(delay = 150, fresh = false) {
+  if (fresh) treeFresh = true;
   const due = Date.now() + delay;
   if (treeTimer && treeDue <= due) return;
   clearTimeout(treeTimer);
@@ -1826,12 +1830,12 @@ const parentOf = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')
 
 // Lists the open folders not listed yet, parents first; a folder that is
 // gone (or no longer a folder) is closed.
-async function fillTree(id, t, token) {
+async function fillTree(id, t, token, fresh = false) {
   const open = treeOpen.get(t.root);
   for (;;) {
     const want = [...open].filter((rel) => !t.lists.has(rel) && t.lists.has(parentOf(rel)));
     if (!want.length) return true;
-    const got = await Promise.all(want.map((rel) => api.listFiles(id, rel).catch(() => null)));
+    const got = await Promise.all(want.map((rel) => api.listFiles(id, rel, fresh).catch(() => null)));
     if (treeToken !== token) return false;
     want.forEach((rel, k) => {
       const parent = t.lists.get(parentOf(rel));
@@ -1848,13 +1852,15 @@ const readTree = ViewLogic.serial(async () => {
   const id = activeId;
   if (!id || !api.listFiles || !treeVisible()) { treeStale = true; return; }
   treeStale = false;
+  const fresh = treeFresh;
+  treeFresh = false;
   const token = {};
   treeToken = token;
   if (!treeEls.body.childElementCount) treeEls.body.replaceChildren(h('li', 'hint', '읽는 중…'));
-  const top = await api.listFiles(id, '').catch(() => null) || { error: '읽을 수 없습니다' };
+  const top = await api.listFiles(id, '', fresh).catch(() => null) || { error: '읽을 수 없습니다' };
   lastTreeAt = Date.now();
   if (treeToken !== token || id !== activeId) return;
-  if (top.stale) { loadTree(); return; } // the folder changed meanwhile
+  if (top.stale) { loadTree(0, fresh); return; } // the folder changed meanwhile
   if (!top.root) {
     treeEls.head.replaceChildren();
     treeEls.body.replaceChildren(h('li', 'hint', top.error || '읽을 수 없습니다'));
@@ -1862,7 +1868,7 @@ const readTree = ViewLogic.serial(async () => {
   }
   if (!treeOpen.has(top.root)) treeOpen.set(top.root, new Set());
   const t = { id, root: top.root, lists: new Map([['', top]]) };
-  if (!(await fillTree(id, t, token)) || id !== activeId) return;
+  if (!(await fillTree(id, t, token, fresh)) || id !== activeId) return;
   tree = t;
   renderTree();
 });

@@ -85,3 +85,22 @@ test('the viewer may read project files, but not through ".." or a link leading 
   assert.strictEqual(await m.resolveFile(id, path.join(root, 'outside-link.txt')), null);
   assert.strictEqual(await m.resolveFile(id, `${root}-other/x`), null, 'a sibling folder with the same prefix');
 });
+
+test('ignored entries are asked from git on fresh reads and for new folders; other reads reuse the answer', async () => {
+  const { root } = project();
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    gitRunner: async (args) => { calls.push(args); return { ok: true, code: 0, stdout: 'debug.log\n' }; } });
+  const calls = [];
+  const { id } = m.create({ cwd: root });
+  const ignored = (r) => r.entries.filter((e) => e.ignored).map((e) => e.name);
+  assert.deepStrictEqual(ignored(await m.fileTree(id, '')), ['debug.log'], 'first read of a folder asks');
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(ignored(await m.fileTree(id, '')), ['debug.log'], 'a quick refresh reuses it');
+  assert.deepStrictEqual(ignored(await m.fileTree(id, 'src')), []);
+  assert.strictEqual(calls.length, 2, 'a folder not asked yet is asked');
+  await m.fileTree(id, 'src');
+  assert.strictEqual(calls.length, 2);
+  await m.fileTree(id, '', true);
+  await m.fileTree(id, 'src', true);
+  assert.strictEqual(calls.length, 4, 'fresh reads (⟳, end of a turn) ask again');
+});
