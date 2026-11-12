@@ -138,3 +138,13 @@ test('statusMark and treeMarks color changes like other editors', () => {
   assert.deepStrictEqual(['src/a.py', 'src/deep/b.py', 'reports/r1.md', 'x.md', 'src/z.py', 'gone.txt'].map((p) => t.file(p)), ['M', 'A', 'U', 'C', null, null]);
   assert.deepStrictEqual(['src', 'src/deep', 'reports', 'reports/sub', 'docs'].map((p) => t.dir(p)), ['M', 'A', 'U', 'U', null]);
 });
+
+test('treeMarks: a changed submodule marks its folder; files deep in a new folder are new', () => {
+  const { treeMarks } = require('../src/renderer/view-logic');
+  const t = treeMarks([['vendor/lib', 'M'], ['out/', 'U']]);
+  assert.strictEqual(t.dir('vendor/lib'), 'M', 'submodule folder');
+  assert.strictEqual(t.dir('vendor'), 'M');
+  assert.strictEqual(t.file('out/a/b/c.txt'), 'U');
+  assert.strictEqual(t.dir('out/a'), 'U');
+  assert.strictEqual(t.file('outside.txt'), null, 'a sibling with the same prefix is not inside');
+});

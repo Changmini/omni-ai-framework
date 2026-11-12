@@ -180,3 +180,32 @@ test('outside git the search list walks the folder, skipping node_modules', asyn
   assert.ok(list.files.includes('secret.txt') && list.files.includes('sample-app/README.md'));
   assert.ok(!list.files.some((f) => f.includes('node_modules/') || f.includes('.git/')));
 });
+
+test('the search walk skips hidden and cache folders, does not list linked folders, and stops on its time budget', async () => {
+  const { walkFiles } = require('../src/file-tree');
+  const { base } = project();
+  fs.mkdirSync(path.join(base, '.cache', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(base, '.cache', 'x', 'big.bin'), 'x');
+  fs.mkdirSync(path.join(base, '__pycache__'));
+  fs.writeFileSync(path.join(base, '__pycache__', 'm.pyc'), 'x');
+  fs.writeFileSync(path.join(base, '.env'), 'x');
+  const w = await walkFiles(base);
+  assert.ok(w.files.includes('.env'), 'hidden files are listed');
+  assert.ok(!w.files.some((f) => f.startsWith('.cache/') || f.startsWith('__pycache__/')));
+  assert.ok(w.files.includes('sample-app/outside-link.txt'), 'a link to a file is listed');
+  assert.ok(!w.files.includes('sample-app/outside-dir') && !w.files.includes('sample-app/src-link'), 'links to folders are not');
+  let t = 0;
+  const slow = await walkFiles(base, 20000, 100, () => (t += 60));
+  assert.strictEqual(slow.truncated, true);
+});
+
+test('when git cannot list the files the search walks the folder and says so', async () => {
+  const { root } = project();
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    gitRunner: async () => ({ ok: false, code: -1, stdout: '', stderr: '출력이 너무 큽니다' }) });
+  const { id } = m.create({ cwd: root });
+  await m.fileTree(id, '');
+  const list = await m.fileList(id);
+  assert.ok(list.files.includes('README.md'));
+  assert.match(list.note, /git 목록을 읽지 못해/);
+});

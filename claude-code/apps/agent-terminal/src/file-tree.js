@@ -80,28 +80,40 @@ async function listFolder(dir) {
   return { entries: out.slice(0, MAX_ENTRIES), total: out.length };
 }
 
+// Folders the search walk does not enter: hidden ones (.cache, .venv,
+// .npm: in a home folder most files are there) and dependency or build
+// caches.
+const SKIP_WALK = new Set(['node_modules', '__pycache__', 'target', 'dist', 'build']);
+
 // Every file under `dir` (relative, "/"-separated) for the search box, for
-// a project that is not a git repository: breadth first, links not
-// followed, .git and node_modules skipped, at most `limit` files.
-async function walkFiles(dir, limit = 20000) {
+// a project that is not a git repository (often the home folder): breadth
+// first, links to folders not followed, at most `limit` files and
+// `budgetMs` of reading (inside WSL each folder is a trip over the network
+// share). `truncated` when it stopped early.
+async function walkFiles(dir, limit = 20000, budgetMs = 3000, now = Date.now) {
   const files = [];
   const queue = [''];
+  const end = now() + budgetMs;
   let truncated = false;
-  while (queue.length) {
+  while (queue.length && !truncated) {
+    if (now() > end) { truncated = true; break; }
     const rel = queue.shift();
+    const here = rel ? path.join(dir, ...rel.split('/')) : dir;
     let ents;
-    try { ents = await fs.promises.readdir(rel ? path.join(dir, ...rel.split('/')) : dir, { withFileTypes: true }); } catch { continue; }
+    try { ents = await fs.promises.readdir(here, { withFileTypes: true }); } catch { continue; }
     ents.sort((a, b) => collator.compare(a.name, b.name));
     for (const e of ents) {
-      if (HIDDEN.has(e.name) || e.name === 'node_modules') continue;
       const child = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) queue.push(child);
-      else if (e.isFile() || e.isSymbolicLink()) {
-        if (files.length >= limit) { truncated = true; break; }
-        files.push(child);
+      if (e.isDirectory()) {
+        if (!HIDDEN.has(e.name) && !SKIP_WALK.has(e.name) && !e.name.startsWith('.')) queue.push(child);
+        continue;
       }
+      let isFile = e.isFile();
+      if (e.isSymbolicLink()) isFile = await fs.promises.stat(path.join(here, e.name)).then((st) => st.isFile(), () => false);
+      if (!isFile) continue;
+      if (files.length >= limit) { truncated = true; break; }
+      files.push(child);
     }
-    if (truncated) break;
   }
   return { files, truncated };
 }

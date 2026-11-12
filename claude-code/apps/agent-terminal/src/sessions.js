@@ -502,6 +502,10 @@ class SessionManager {
         const all = [...new Set(r.stdout.split('\0').filter(Boolean))]; // a conflicted file is listed per stage
         return { root: t.root, files: all.slice(0, SEARCH_MAX), truncated: all.length > SEARCH_MAX };
       }
+      // git could not list them (not installed here, output too large): the
+      // folder is walked instead, without knowing what git ignores.
+      const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
+      return { root: t.root, ...w, note: 'git 목록을 읽지 못해 폴더를 직접 훑었습니다 (git이 무시하는 파일도 섞일 수 있음)' };
     }
     const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
     return { root: t.root, ...w };
