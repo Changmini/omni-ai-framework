@@ -228,8 +228,9 @@ function select(id) {
   if (switching) { closeSearch(false); closeViewer(false); }
   activeId = id;
   loadConfig();
-  if (switching) clearGit(); // not the previous terminal's repository meanwhile
+  if (switching) { clearGit(); clearTree(); } // not the previous terminal's project meanwhile
   loadGit();
+  loadTree();
   renderInspector();
   for (const [aid, a] of agents) {
     const on = aid === id;
@@ -530,7 +531,7 @@ els.banner.addEventListener('click', () => {
 function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
-  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); } // new project
+  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); loadTree(); } // new project
   Object.assign(a.info, patch);
   renderItem(id);
   if (id === activeId && 'claude' in patch) renderCtxDetail();
@@ -962,7 +963,11 @@ function renderConfig(data, id = activeId) {
   }));
 }
 
-cfgEls.refresh.addEventListener('click', () => (inspectorTab === 'git' ? loadGit(0) : loadConfig(0)));
+cfgEls.refresh.addEventListener('click', () => {
+  if (inspectorTab === 'git') loadGit(0);
+  else if (inspectorTab === 'files') loadTree(0);
+  else loadConfig(0);
+});
 // Coming back to the window: re-read, but not more than every 5s (the scan
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
@@ -980,7 +985,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = ['config', 'git'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
+let inspectorTab = ['config', 'git', 'files'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -993,6 +998,7 @@ function setInspectorOpen(on) {
   writePref('inspectorOpen', on);
   if (on && inspectorTab === 'config' && cfgStale) loadConfig(0);
   if (on && inspectorTab === 'git' && gitStale) loadGit(0);
+  if (on && inspectorTab === 'files' && treeStale) loadTree(0);
   applyPanelWidths();
 }
 
@@ -1002,9 +1008,10 @@ function setInspectorTab(tab) {
   writePref('inspectorTab', tab);
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab !== 'config' && tab !== 'git';
+  cfgEls.refresh.hidden = tab === 'activity';
   if (tab === 'config' && cfgStale) loadConfig(0);
   if (tab === 'git' && gitStale) loadGit(0);
+  if (tab === 'files' && treeStale) loadTree(0);
 }
 
 function setInspectorWidth(w, save = true) {
@@ -1522,8 +1529,8 @@ function onActivity(id, entry) {
   if (!a) return;
   // A change Claude just made, or the end of its turn: the git tab follows.
   // (at most every 3 s while Claude works; see loadGit)
-  if (id === activeId && entry.kind === 'done') loadGit(150);
-  else if (id === activeId && entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')) loadGit(3000, false);
+  if (id === activeId && entry.kind === 'done') { loadGit(150); loadTree(150); }
+  else if (id === activeId && entry.result !== undefined && /^(Edit|MultiEdit|Write|NotebookEdit|Bash)$/.test(entry.tool || '')) { loadGit(3000, false); loadTree(3000); }
   const i = a.activity.findIndex((e) => e.n === entry.n);
   if (i !== -1) a.activity[i] = entry;
   else {
@@ -1771,6 +1778,175 @@ function openGitFile(id, root, f) {
 }
 
 window.addEventListener('focus', () => { if (Date.now() - lastGitAt > 5000) loadGit(); });
+window.addEventListener('focus', () => { if (Date.now() - lastTreeAt > 5000) loadTree(); });
+
+// ---------- file tab: the project as a folder tree (read-only) ----------
+// The root is the git repository of the terminal's folder, else that
+// folder. Folders are listed when opened; open ones stay open (per root)
+// and are listed again on a refresh. A file opens in the viewer.
+
+const treeEls = { head: $('#tree-head'), body: $('#tree-body') };
+let treeStale = true;
+let treeTimer = null;
+let treeDue = 0;
+let lastTreeAt = 0;
+let treeToken = null;
+let tree = null; // { id, root, lists: Map(rel -> listing) }
+let treeSelected = null; // the file open in the viewer, as a full path
+const treeOpen = new Map(); // root -> Set of open folders ("src/app")
+
+function treeVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'files';
+}
+
+// A read in `delay` ms; an earlier one already scheduled is kept.
+function loadTree(delay = 150) {
+  const due = Date.now() + delay;
+  if (treeTimer && treeDue <= due) return;
+  clearTimeout(treeTimer);
+  treeDue = due;
+  treeTimer = setTimeout(() => { treeTimer = null; readTree(); }, delay);
+}
+
+function clearTree() {
+  treeToken = null;
+  tree = null;
+  treeEls.head.replaceChildren();
+  treeEls.body.replaceChildren(h('li', 'hint', '읽는 중…'));
+}
+
+// The full path of `rel` under `root`, in the root's own separators.
+function treeAbs(root, rel) {
+  const win = /^[a-zA-Z]:|^\\\\/.test(root);
+  const base = root.replace(/[\\/]+$/, '');
+  return `${base}${win ? '\\' : '/'}${win ? rel.replace(/\//g, '\\') : rel}`;
+}
+
+const parentOf = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
+
+// Lists the open folders not listed yet, parents first; a folder that is
+// gone (or no longer a folder) is closed.
+async function fillTree(id, t, token) {
+  const open = treeOpen.get(t.root);
+  for (;;) {
+    const want = [...open].filter((rel) => !t.lists.has(rel) && t.lists.has(parentOf(rel)));
+    if (!want.length) return true;
+    const got = await Promise.all(want.map((rel) => api.listFiles(id, rel).catch(() => null)));
+    if (treeToken !== token) return false;
+    want.forEach((rel, k) => {
+      const parent = t.lists.get(parentOf(rel));
+      const name = rel.slice(rel.lastIndexOf('/') + 1);
+      const r = got[k];
+      if (!parent.entries || !parent.entries.some((e) => e.dir && e.name === name) || !r || r.root !== t.root) open.delete(rel);
+      else t.lists.set(rel, r);
+    });
+  }
+}
+
+// One read at a time; a request during a read runs once more after it.
+const readTree = ViewLogic.serial(async () => {
+  const id = activeId;
+  if (!id || !api.listFiles || !treeVisible()) { treeStale = true; return; }
+  treeStale = false;
+  const token = {};
+  treeToken = token;
+  if (!treeEls.body.childElementCount) treeEls.body.replaceChildren(h('li', 'hint', '읽는 중…'));
+  const top = await api.listFiles(id, '').catch(() => null) || { error: '읽을 수 없습니다' };
+  lastTreeAt = Date.now();
+  if (treeToken !== token || id !== activeId) return;
+  if (top.stale) { loadTree(); return; } // the folder changed meanwhile
+  if (!top.root) {
+    treeEls.head.replaceChildren();
+    treeEls.body.replaceChildren(h('li', 'hint', top.error || '읽을 수 없습니다'));
+    return;
+  }
+  if (!treeOpen.has(top.root)) treeOpen.set(top.root, new Set());
+  const t = { id, root: top.root, lists: new Map([['', top]]) };
+  if (!(await fillTree(id, t, token)) || id !== activeId) return;
+  tree = t;
+  renderTree();
+});
+
+function renderTree() {
+  const t = tree;
+  if (!t) return;
+  const open = treeOpen.get(t.root);
+  const head = h('span', null, t.root);
+  treeEls.head.replaceChildren(head);
+  treeEls.head.title = t.root;
+  const rows = [];
+  const walk = (rel, depth) => {
+    const r = t.lists.get(rel);
+    if (r.error) { rows.push(treeHint(r.error, depth)); return; }
+    if (!r.entries.length && depth === 0) rows.push(treeHint('빈 폴더', depth));
+    for (const e of r.entries) {
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      const isOpen = e.dir && open.has(child) && t.lists.has(child);
+      rows.push(treeRow(t, e, child, depth, isOpen));
+      if (isOpen) walk(child, depth + 1);
+    }
+    if (r.total > r.entries.length) rows.push(treeHint(`처음 ${r.entries.length}개만 표시 (전체 ${r.total}개)`, depth));
+  };
+  walk('', 0);
+  treeEls.body.replaceChildren(...rows);
+}
+
+function treeHint(text, depth) {
+  const li = h('li', 'hint', text);
+  li.style.paddingLeft = `${4 + depth * 12 + 16}px`;
+  return li;
+}
+
+function treeRow(t, e, rel, depth, isOpen) {
+  const li = h('li', 'tree-row');
+  li.setAttribute('role', 'treeitem');
+  li.tabIndex = 0;
+  li.style.paddingLeft = `${4 + depth * 12}px`;
+  if (e.ignored) li.classList.add('ignored');
+  if (e.link) li.classList.add('link');
+  const abs = treeAbs(t.root, rel);
+  li.dataset.abs = abs;
+  li.title = `${abs}${e.ignored ? '\ngit에서 무시하는 항목' : ''}${e.link ? '\n링크' : ''}`;
+  if (e.dir) {
+    li.dataset.dir = '1';
+    li.setAttribute('aria-expanded', String(isOpen));
+  } else {
+    li.setAttribute('aria-selected', String(abs === treeSelected));
+  }
+  li.append(h('span', 'tree-caret', e.dir ? (isOpen ? '▾' : '▸') : ''), h('span', 'tree-name', e.name));
+  const activate = () => (e.dir ? toggleTreeFolder(t, rel) : openTreeFile(t, abs));
+  li.addEventListener('click', activate);
+  li.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); }
+  });
+  return li;
+}
+
+async function toggleTreeFolder(t, rel) {
+  const open = treeOpen.get(t.root);
+  if (open.has(rel)) {
+    open.delete(rel); // folders open inside it stay open for next time
+    renderTree();
+    return;
+  }
+  open.add(rel);
+  if (!t.lists.has(rel)) {
+    const token = treeToken;
+    await fillTree(t.id, t, token);
+    if (tree !== t) return;
+  }
+  renderTree();
+  const row = [...treeEls.body.querySelectorAll('.tree-row')].find((x) => x.dataset.abs === treeAbs(t.root, rel));
+  if (row) row.focus({ preventScroll: true });
+}
+
+function openTreeFile(t, abs) {
+  treeSelected = abs;
+  for (const row of treeEls.body.querySelectorAll('.tree-row:not([data-dir])')) {
+    row.setAttribute('aria-selected', String(row.dataset.abs === abs));
+  }
+  openConfigFile(t.id, abs);
+}
 
 setInspectorTab(inspectorTab);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');

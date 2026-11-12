@@ -121,6 +121,7 @@
     <aside class="inspector" id="inspector" aria-label="상세 패널">
       <div class="inspector-head" role="tablist">
         <button class="tab" role="tab" data-tab="activity">활동</button>
+        <button class="tab" role="tab" data-tab="files">파일</button>
         <button class="tab" role="tab" data-tab="git">git</button>
         <button class="tab" role="tab" data-tab="config">Claude 구성</button>
         <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
@@ -130,6 +131,10 @@
         <h2 class="inspector-h">최근 활동</h2>
         <ol id="activity-list" class="activity-list" aria-label="최근 활동"></ol>
         <p id="activity-empty" class="hint">Claude가 이 터미널에서 일하면 프롬프트, 도구 실행, 수정한 파일이 여기에 쌓입니다.</p>
+      </section>
+      <section class="tab-body" data-tab="files">
+        <div id="tree-head" class="tree-head"></div>
+        <ul id="tree-body" class="tree" role="tree" aria-label="프로젝트 파일"></ul>
       </section>
       <section class="tab-body" data-tab="git">
         <div id="git-head" class="git-head"></div>
