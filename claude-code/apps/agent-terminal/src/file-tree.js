@@ -27,24 +27,34 @@ async function findRoot(dir, p = path) {
 
 // A path inside the root, as the page sends it ("src/app"): its segments, or
 // null when it could leave the root ("..", ".", empty segments, a drive or
-// an absolute path).
-function relSegments(rel) {
+// an absolute path). `win`: this host reads Windows paths, where "\\" also
+// separates (and so is split on, never kept in a name); elsewhere a
+// backslash is an ordinary character of a file name.
+function relSegments(rel, win = process.platform === 'win32') {
   if (typeof rel !== 'string') return null;
   if (rel === '') return [];
-  if (/^[\\/]|^[a-zA-Z]:/.test(rel)) return null;
-  const parts = rel.split(/[\\/]/);
+  if (/^\//.test(rel) || (win && /^\\|^[a-zA-Z]:/.test(rel))) return null;
+  const parts = rel.split(win ? /[\\/]/ : '/');
   return parts.every((x) => x && x !== '.' && x !== '..' && !x.includes('\0')) ? parts : null;
 }
 
+// One spelling of a Windows path for comparing: case, the \\?\ and
+// \\?\UNC\ forms, and \\wsl$ for \\wsl.localhost.
+function windowsKey(p) {
+  return p.replace(/^\\\\\?\\UNC\\/i, '\\\\').replace(/^\\\\\?\\/, '').replace(/^\\\\wsl\$\\/i, '\\\\wsl.localhost\\').toLowerCase();
+}
+
 // Whether `child` is `root` or inside it, after following links: a link in
-// the project that points outside it is not followed.
+// the project that points outside it is not followed. When a path cannot be
+// resolved (missing file, a share that does not support it), the lexical
+// check the caller already made stands: the read itself then fails or works
+// as for any other path.
 async function insideReal(root, child, p = path) {
-  try {
-    const [r, c] = await Promise.all([fs.promises.realpath(root), fs.promises.realpath(child)]);
-    return c === r || c.startsWith(r.endsWith(p.sep) ? r : r + p.sep);
-  } catch {
-    return false;
-  }
+  const real = (x) => fs.promises.realpath(x).catch(() => null);
+  const [r, c] = await Promise.all([real(root), real(child)]);
+  if (!r || !c) return true;
+  const [rk, ck] = p.sep === '\\' ? [windowsKey(r), windowsKey(c)] : [r, c];
+  return ck === rk || ck.startsWith(rk.endsWith(p.sep) ? rk : rk + p.sep);
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -70,4 +80,4 @@ async function listFolder(dir) {
   return { entries: out.slice(0, MAX_ENTRIES), total: out.length };
 }
 
-module.exports = { findRoot, relSegments, insideReal, listFolder, MAX_ENTRIES };
+module.exports = { findRoot, relSegments, insideReal, windowsKey, listFolder, MAX_ENTRIES };

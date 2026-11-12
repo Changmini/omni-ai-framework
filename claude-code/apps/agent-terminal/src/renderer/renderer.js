@@ -1828,20 +1828,25 @@ function treeAbs(root, rel) {
 
 const parentOf = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
 
-// Lists the open folders not listed yet, parents first; a folder that is
-// gone (or no longer a folder) is closed.
-async function fillTree(id, t, token, fresh = false) {
+// Lists the open folders not listed yet, parents first. A folder whose
+// parent no longer lists it (deleted, now a file) is closed; one that could
+// not be listed this time (a failed read, the terminal moved to another
+// project meanwhile, its parent unreadable) stays open for the next read.
+// `alive`: whether the result is still wanted.
+async function fillTree(id, t, alive, fresh = false) {
   const open = treeOpen.get(t.root);
+  const skip = new Set();
   for (;;) {
-    const want = [...open].filter((rel) => !t.lists.has(rel) && t.lists.has(parentOf(rel)));
+    const want = [...open].filter((rel) => !skip.has(rel) && !t.lists.has(rel) && t.lists.has(parentOf(rel)) && t.lists.get(parentOf(rel)).entries);
     if (!want.length) return true;
     const got = await Promise.all(want.map((rel) => api.listFiles(id, rel, fresh).catch(() => null)));
-    if (treeToken !== token) return false;
+    if (!alive()) return false;
     want.forEach((rel, k) => {
       const parent = t.lists.get(parentOf(rel));
       const name = rel.slice(rel.lastIndexOf('/') + 1);
       const r = got[k];
-      if (!parent.entries || !parent.entries.some((e) => e.dir && e.name === name) || !r || r.root !== t.root) open.delete(rel);
+      if (!parent.entries.some((e) => e.dir && e.name === name)) open.delete(rel);
+      else if (!r || r.stale || r.root !== t.root) skip.add(rel);
       else t.lists.set(rel, r);
     });
   }
@@ -1868,7 +1873,7 @@ const readTree = ViewLogic.serial(async () => {
   }
   if (!treeOpen.has(top.root)) treeOpen.set(top.root, new Set());
   const t = { id, root: top.root, lists: new Map([['', top]]) };
-  if (!(await fillTree(id, t, token, fresh)) || id !== activeId) return;
+  if (!(await fillTree(id, t, () => treeToken === token, fresh)) || id !== activeId) return;
   tree = t;
   renderTree();
 });
@@ -1936,11 +1941,9 @@ async function toggleTreeFolder(t, rel) {
     return;
   }
   open.add(rel);
-  if (!t.lists.has(rel)) {
-    const token = treeToken;
-    await fillTree(t.id, t, token);
-    if (tree !== t) return;
-  }
+  // Listed now even while a refresh runs (that refresh lists it too, as it
+  // is open now): the click shows at once.
+  if (!t.lists.has(rel) && !(await fillTree(t.id, t, () => tree === t))) return;
   renderTree();
   const row = [...treeEls.body.querySelectorAll('.tree-row')].find((x) => x.dataset.abs === treeAbs(t.root, rel));
   if (row) row.focus({ preventScroll: true });
