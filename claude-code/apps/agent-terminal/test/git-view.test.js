@@ -188,3 +188,37 @@ test('runGit says why a run failed: too large or timed out', async () => {
   await runGit(['ls-files'], { cwd: '/x', maxBuffer: 123, exec: (f, a, o, cb) => { seen = o.maxBuffer; cb(null, Buffer.alloc(0), Buffer.alloc(0)); } });
   assert.strictEqual(seen, 123);
 });
+
+test('streamGit hands over NUL-ended records across chunks and stops git when asked', async () => {
+  const { streamGit } = require('../src/git-view');
+  const { EventEmitter } = require('node:events');
+  const fakeSpawn = (chunks) => (file, argv) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.kill = () => { child.killed = true; setImmediate(() => child.emit('close', null)); };
+    child.argv = argv;
+    setImmediate(() => {
+      for (const c of chunks) { if (child.killed) break; child.stdout.emit('data', Buffer.from(c)); }
+      if (!child.killed) child.emit('close', 0);
+    });
+    return child;
+  };
+  const name = Buffer.from('한글.md');
+  const got = [];
+  // a record and a multibyte character split over chunks
+  const r = await streamGit(['ls-files', '-z'], { cwd: '/x', spawnFn: fakeSpawn([Buffer.from('a.txt\0b/'), Buffer.concat([Buffer.from('c.md\0'), name.subarray(0, 2)]), Buffer.concat([name.subarray(2), Buffer.from('\0')])]) }, (p) => { got.push(p); });
+  assert.deepStrictEqual(got, ['a.txt', 'b/c.md', '한글.md']);
+  assert.strictEqual(r.ok, true);
+  const few = [];
+  const stop = await streamGit(['ls-files', '-z'], { cwd: '/x', spawnFn: fakeSpawn(['1\0', '2\0', '3\0', '4\0']) }, (p) => { few.push(p); return few.length < 2; });
+  assert.deepStrictEqual(few, ['1', '2']);
+  assert.deepStrictEqual([stop.ok, stop.stopped], [true, true]);
+  const missing = await streamGit(['ls-files'], { cwd: '/x', spawnFn: () => { const e = new Error('spawn git ENOENT'); e.code = 'ENOENT'; throw e; } }, () => {});
+  assert.deepStrictEqual([missing.ok, missing.missing], [false, true]);
+  // git that never answers: killed after the timeout
+  const silent = () => { const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => setImmediate(() => c.emit('close', null)); return c; };
+  const slow = await streamGit(['ls-files'], { cwd: '/x', timeoutMs: 20, spawnFn: silent }, () => {});
+  assert.deepStrictEqual([slow.ok, slow.timedOut], [false, true]);
+});
