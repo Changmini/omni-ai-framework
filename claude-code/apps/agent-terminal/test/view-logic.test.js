@@ -148,3 +148,11 @@ test('treeMarks: a changed submodule marks its folder; files deep in a new folde
   assert.strictEqual(t.dir('out/a'), 'U');
   assert.strictEqual(t.file('outside.txt'), null, 'a sibling with the same prefix is not inside');
 });
+
+test('treeMarks.own gives only the mark git gave the path itself', () => {
+  const { treeMarks } = require('../src/renderer/view-logic');
+  const t = treeMarks([['reports/', 'U'], ['src/a.py', 'M']]);
+  assert.strictEqual(t.file('reports/run.log'), 'U');
+  assert.strictEqual(t.own('reports/run.log'), null);
+  assert.strictEqual(t.own('src/a.py'), 'M');
+});

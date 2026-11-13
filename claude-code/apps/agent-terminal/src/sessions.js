@@ -497,15 +497,38 @@ class SessionManager {
     if (!s || !s.tree) return { error: '파일 목록을 읽을 수 없습니다' };
     const t = s.tree;
     if (t.git) {
-      const r = await this.gitRunner(['ls-files', '-z', '--cached', '--others', '--exclude-standard'], this.gitTarget(s, t.root));
-      if (r.ok) {
-        const all = [...new Set(r.stdout.split('\0').filter(Boolean))]; // a conflicted file is listed per stage
-        return { root: t.root, files: all.slice(0, SEARCH_MAX), truncated: all.length > SEARCH_MAX };
+      // Tracked files with their mode (a link is 120000: checked below), and
+      // the untracked ones git does not ignore.
+      const target = this.gitTarget(s, t.root);
+      const [tracked, others] = await Promise.all([
+        this.gitRunner(['ls-files', '-z', '-s'], target),
+        this.gitRunner(['ls-files', '-z', '--others', '--exclude-standard'], target),
+      ]);
+      if (tracked.ok && others.ok) {
+        const links = [];
+        const all = new Set();
+        for (const row of tracked.stdout.split('\0')) {
+          const m = /^(\d+) [0-9a-f]+ \d\t(.+)$/.exec(row);
+          if (!m) continue;
+          all.add(m[2]); // a conflicted file is listed per stage
+          if (m[1] === '120000') links.push(m[2]);
+        }
+        for (const f of others.stdout.split('\0')) if (f) all.add(f);
+        // A link pointing outside the project would not open: not offered.
+        for (const f of links.slice(0, 500)) {
+          if (!(await fileTree.insideReal(t.host, path.join(t.host, ...f.split('/'))))) all.delete(f);
+        }
+        const files = [...all];
+        return { root: t.root, files: files.slice(0, SEARCH_MAX), truncated: files.length > SEARCH_MAX };
       }
-      // git could not list them (not installed here, output too large): the
-      // folder is walked instead, without knowing what git ignores.
+      // git could not list them: the folder is walked instead. Said so only
+      // when git is there but could not answer in time or in size (then
+      // ignored files may be mixed in); a .git that is no repository just
+      // gets the walk.
+      const failed = tracked.ok ? others : tracked;
       const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
-      return { root: t.root, ...w, note: 'git 목록을 읽지 못해 폴더를 직접 훑었습니다 (git이 무시하는 파일도 섞일 수 있음)' };
+      const unanswered = failed.missing || /출력이 너무 큽니다|시간 초과/.test(failed.stderr || '');
+      return { root: t.root, ...w, ...(unanswered ? { note: 'git 목록을 읽지 못해 폴더를 직접 훑었습니다 (git이 무시하는 파일도 섞일 수 있음)' } : {}) };
     }
     const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
     return { root: t.root, ...w };
