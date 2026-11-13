@@ -59,7 +59,9 @@ async function insideReal(root, child, p = path) {
 
 // insideReal for many children of one root: the root resolved once, the
 // children `batch` at a time. -> array of booleans in the same order.
-async function insideRealAll(root, children, p = path, batch = 32) {
+// `unresolved`: the answer for a child whose real path cannot be found
+// (a link to nothing: false keeps it out of a list of files to open).
+async function insideRealAll(root, children, p = path, batch = 32, unresolved = true) {
   const r = await fs.promises.realpath(root).catch(() => null);
   if (!r) return children.map(() => true);
   const rk = p.sep === '\\' ? windowsKey(r) : r;
@@ -69,7 +71,7 @@ async function insideRealAll(root, children, p = path, batch = 32) {
     const got = await Promise.all(children.slice(i, i + batch).map((c) => fs.promises.realpath(c).then((x) => {
       const ck = p.sep === '\\' ? windowsKey(x) : x;
       return ck === rk || ck.startsWith(base);
-    }, () => true)));
+    }, () => unresolved)));
     out.push(...got);
   }
   return out;

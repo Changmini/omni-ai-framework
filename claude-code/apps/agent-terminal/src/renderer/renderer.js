@@ -1976,7 +1976,7 @@ const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추�
 
 const search = {
   input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, running: null, active: 0, timer: null,
-  enterAt: 0, enterAfterCompose: false,
+  enterAt: 0, entering: false, enterAfterCompose: false,
 };
 
 // The file list for tree `t`: the one read already, or one read now (shared
@@ -2079,13 +2079,19 @@ search.input.addEventListener('input', () => {
 // Enter: search what is typed (or wait for the search still reading the
 // file list), then open the chosen result. Once per press: an IME may send
 // the Enter that ends a composition and then the Enter itself.
+// Also once while one still waits for a slow file list.
 async function searchEnter() {
-  if (Date.now() - search.enterAt < 150) return;
-  search.enterAt = Date.now();
-  const pending = applySearch() || search.running;
-  if (pending) await pending;
-  const row = search.results.querySelectorAll('.tree-result')[search.active];
-  if (row) row.click();
+  if (search.entering || Date.now() - search.enterAt < 150) return;
+  search.entering = true;
+  try {
+    const pending = applySearch() || search.running;
+    if (pending) await pending.catch(() => {});
+    const row = search.results.querySelectorAll('.tree-result')[search.active];
+    if (row) row.click();
+  } finally {
+    search.entering = false;
+    search.enterAt = Date.now();
+  }
 }
 
 // An Enter that ends a Hangul composition: the syllable is in the box only

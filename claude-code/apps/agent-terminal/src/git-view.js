@@ -7,7 +7,7 @@
 // --no-optional-locks keeps status from taking index.lock while Claude may be
 // running git itself. Nothing here changes the repository.
 
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { wslCommand, decodeOutput } = require('./wsl');
 
 const MAX_OUT = 16 * 1024 * 1024;
@@ -176,4 +176,41 @@ async function gitShow(target, rev, run = runGit) {
   return { lines: first === -1 ? head : [...head, '', ...lines.slice(first)] };
 }
 
-module.exports = { runGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, gitUntrackedIn, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };
+// Runs git with -z output and hands each NUL-ended record to `onRecord` as
+// it arrives, so a long list (every file of a large repository) is never
+// held or parsed in one piece on the main process. `onRecord` returning
+// false stops git early. -> { ok, missing, timedOut, stopped, stderr }.
+function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000 } = {}, onRecord) {
+  const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', cwd, ...args];
+  const [file, argv] = distro ? wslCommand('git', base, distro, platform) : ['git', base];
+  return new Promise((resolve) => {
+    let child;
+    try { child = spawnFn(file, argv, { windowsHide: true }); } catch (e) { resolve({ ok: false, missing: e && e.code === 'ENOENT', stderr: '' }); return; }
+    let rest = Buffer.alloc(0);
+    let stopped = false;
+    let timedOut = false;
+    let done = false;
+    const errParts = [];
+    const finish = (r) => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    child.stdout.on('data', (chunk) => {
+      if (stopped) return;
+      let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
+      let at = buf.indexOf(0);
+      while (at !== -1) {
+        if (onRecord(buf.subarray(0, at).toString('utf8')) === false) { stopped = true; child.kill(); return; }
+        buf = buf.subarray(at + 1);
+        at = buf.indexOf(0);
+      }
+      rest = Buffer.from(buf);
+    });
+    child.stderr.on('data', (d) => { if (errParts.length < 20) errParts.push(d); });
+    child.on('error', (e) => finish({ ok: false, missing: e && e.code === 'ENOENT', stderr: '' }));
+    child.on('close', (code) => {
+      const stderr = decodeOutput(Buffer.concat(errParts));
+      finish({ ok: stopped || (code === 0 && !timedOut), missing: false, timedOut, stopped, stderr });
+    });
+  });
+}
+
+module.exports = { runGit, streamGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, gitUntrackedIn, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };

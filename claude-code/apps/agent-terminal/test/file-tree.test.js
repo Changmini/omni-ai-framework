@@ -202,7 +202,7 @@ test('the search walk skips hidden and cache folders, does not list linked folde
 test('when git cannot list the files the search walks the folder and says so', async () => {
   const { root } = project();
   const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
-    gitRunner: async () => ({ ok: false, code: -1, stdout: '', stderr: '출력이 너무 큽니다', tooLarge: true }) });
+    gitRunner: async () => ({ ok: false, code: -1, stdout: '', stderr: '' }), gitLister: async () => ({ ok: false, timedOut: true, stderr: '' }) });
   const { id } = m.create({ cwd: root });
   await m.fileTree(id, '');
   const list = await m.fileList(id);
@@ -277,4 +277,34 @@ test('the walk does not enter .config (in a home folder it holds app and browser
   fs.mkdirSync(path.join(base, '.config', 'browser'), { recursive: true });
   fs.writeFileSync(path.join(base, '.config', 'browser', 'Cookies'), 'x');
   assert.ok(!(await walkFiles(base)).files.some((f) => f.startsWith('.config/')));
+});
+
+test('git search list leaves out sparse-checkout files and links to nothing, and stops reading at the limit', { skip: !hasGit && 'needs git' }, async () => {
+  const { root } = project();
+  fs.symlinkSync('build/latest.md', path.join(root, 'latest.md')); // a link to nothing
+  spawnSync('git', ['-C', root, 'add', 'README.md', 'src', 'latest.md']);
+  // As sparse checkout leaves it: in the index, marked skip-worktree, not on disk.
+  spawnSync('git', ['-C', root, 'update-index', '--skip-worktree', 'src/file2.txt']);
+  fs.rmSync(path.join(root, 'src', 'file2.txt'));
+  const { m, id } = manager(root);
+  await m.fileTree(id, '');
+  const list = await m.fileList(id);
+  assert.ok(list.files.includes('src/file10.txt'));
+  assert.ok(!list.files.includes('src/file2.txt'), 'sparse checkout');
+  assert.ok(!list.files.includes('latest.md'), 'link to nothing');
+
+  // A huge repository: reading stops once there are enough files.
+  let fed = 0;
+  const big = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    gitLister: async (args, target, onRecord) => {
+      if (!args.includes('-s')) return { ok: true };
+      for (let i = 0; i < 100000; i++) { fed++; if (onRecord(`H 100644 ${'a'.repeat(40)} 0\tf${i}.txt`) === false) return { ok: true, stopped: true }; }
+      return { ok: true };
+    } });
+  const b = big.create({ cwd: root });
+  await big.fileTree(b.id, '');
+  const bl = await big.fileList(b.id);
+  assert.strictEqual(bl.files.length, 20000);
+  assert.strictEqual(bl.truncated, true);
+  assert.ok(fed <= 20001, `stopped after ${fed} rows`);
 });
