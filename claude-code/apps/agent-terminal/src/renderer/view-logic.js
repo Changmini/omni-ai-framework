@@ -319,6 +319,11 @@
         if (files.has(path)) return files.get(path);
         return inNew(path) ? 'U' : null;
       },
+      // Only a mark git gave this path itself (not one from a new folder
+      // above it, which may hold files git ignores).
+      own(path) {
+        return files.get(path) || null;
+      },
       // A submodule is a folder git reports like a file ("vendor/lib").
       dir(path) {
         if (dirs.has(path)) return dirs.get(path);

@@ -209,3 +209,41 @@ test('when git cannot list the files the search walks the folder and says so', a
   assert.ok(list.files.includes('README.md'));
   assert.match(list.note, /git 목록을 읽지 못해/);
 });
+
+test('the walk enters project dot folders and build folders, and leaves out links that point outside', async () => {
+  const { walkFiles } = require('../src/file-tree');
+  const { root } = project();
+  fs.rmSync(path.join(root, '.git'), { recursive: true, force: true });
+  fs.mkdirSync(path.join(root, '.claude', 'skills'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude', 'skills', 'SKILL.md'), 'x');
+  fs.mkdirSync(path.join(root, 'build'));
+  fs.writeFileSync(path.join(root, 'build', 'rules.py'), 'x');
+  fs.mkdirSync(path.join(root, '.cache'));
+  fs.writeFileSync(path.join(root, '.cache', 'c.bin'), 'x');
+  const w = await walkFiles(root);
+  assert.ok(w.files.includes('.claude/skills/SKILL.md') && w.files.includes('build/rules.py'));
+  assert.ok(!w.files.includes('.cache/c.bin'));
+  assert.ok(!w.files.includes('outside-link.txt'), 'a link to a file outside the folder is not offered');
+});
+
+test('git search list: tracked links that point outside are left out; a .git that is no repository walks without a warning', { skip: !hasGit && 'needs git' }, async () => {
+  const { root } = project();
+  fs.symlinkSync('README.md', path.join(root, 'inside-link.md'));
+  spawnSync('git', ['-C', root, 'add', '-A']);
+  const { m, id } = manager(root);
+  await m.fileTree(id, '');
+  const list = await m.fileList(id);
+  assert.ok(list.files.includes('inside-link.md') && list.files.includes('README.md'));
+  assert.ok(!list.files.includes('outside-link.txt'));
+  assert.strictEqual(list.note, undefined);
+
+  const { base } = project();
+  const broken = path.join(base, 'broken');
+  fs.mkdirSync(path.join(broken, '.git'), { recursive: true }); // not a repository
+  fs.writeFileSync(path.join(broken, 'a.txt'), 'x');
+  const b = manager(broken);
+  await b.m.fileTree(b.id, '');
+  const bl = await b.m.fileList(b.id);
+  assert.deepStrictEqual(bl.files, ['a.txt']);
+  assert.strictEqual(bl.note, undefined);
+});

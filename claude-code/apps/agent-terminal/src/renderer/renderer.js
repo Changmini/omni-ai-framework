@@ -1974,7 +1974,7 @@ const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추�
 // files git does not ignore; else a walk of the folder) and filtered here
 // as you type (view-logic.js searchFiles).
 
-const search = { input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, active: 0, timer: null };
+const search = { input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, running: null, active: 0, timer: null };
 
 // The file list for tree `t`: the one read already, or one read now (shared
 // by the searches typed while it loads).
@@ -1992,7 +1992,15 @@ async function searchList(t) {
   return search.loading;
 }
 
-async function runSearch() {
+// The search for the current query; Enter waits for the one running.
+function runSearch() {
+  const p = searchNow();
+  search.running = p;
+  p.finally(() => { if (search.running === p) search.running = null; });
+  return p;
+}
+
+async function searchNow() {
   const t = tree;
   const q = search.query;
   const on = Boolean(q);
@@ -2006,7 +2014,7 @@ async function runSearch() {
   if (!list) { search.results.replaceChildren(h('li', 'hint', '파일 목록을 읽을 수 없습니다')); return; }
   const found = ViewLogic.searchFiles(list.files, q, 200);
   search.active = Math.min(search.active, Math.max(0, found.length - 1));
-  const rows = found.map((f, k) => searchRow(t, f, k));
+  const rows = found.map((f, k) => searchRow(t, f, k, list));
   if (!found.length) rows.push(h('li', 'hint', '일치하는 파일 없음'));
   else if (found.length === 200) rows.push(h('li', 'hint', '처음 200개만 표시 · 낱말을 더 넣어 좁혀 보세요'));
   if (list.truncated) rows.push(h('li', 'hint', `처음 ${list.files.length.toLocaleString()}개 파일에서만 찾았습니다`));
@@ -2014,13 +2022,14 @@ async function runSearch() {
   search.results.replaceChildren(...rows);
 }
 
-function searchRow(t, f, k) {
+function searchRow(t, f, k, list) {
   const li = h('li', 'tree-row tree-result');
   li.setAttribute('role', 'option');
   li.setAttribute('aria-selected', String(k === search.active));
   const abs = treeAbs(t.root, f.path);
   li.dataset.abs = abs;
-  const mark = t.marks.file(f.path);
+  // A list walked without git may hold ignored files: no "new" from a folder.
+  const mark = list.note ? t.marks.own(f.path) : t.marks.file(f.path);
   if (mark) li.dataset.st = mark;
   li.title = `${abs}${mark ? `\n${MARK_LABEL[mark]}` : ''}`;
   const name = h('span', 'tree-name');
@@ -2065,11 +2074,13 @@ search.input.addEventListener('input', () => {
   search.timer = setTimeout(applySearch, 80);
 });
 search.input.addEventListener('keydown', async (e) => {
+  // Keys that finish an IME composition (Hangul) belong to the composition.
+  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === 'Enter') {
-    // Typed and pressed Enter at once: search what is typed, then open its
-    // first result (not one of the previous query's).
+    // Typed and pressed Enter at once: search what is typed (or wait for the
+    // search still reading the file list), then open the chosen result.
     e.preventDefault();
-    const pending = applySearch();
+    const pending = applySearch() || search.running;
     if (pending) await pending;
     const first = search.results.querySelectorAll('.tree-result')[search.active];
     if (first) first.click();
