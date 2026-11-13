@@ -308,3 +308,40 @@ test('git search list leaves out sparse-checkout files and links to nothing, and
   assert.strictEqual(bl.truncated, true);
   assert.ok(fed <= 20001, `stopped after ${fed} rows`);
 });
+
+test('tracked files come first: many untracked files only fill what is left', async () => {
+  const { root } = project();
+  const calls = [];
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
+    gitLister: async (args, target, onRecord) => {
+      calls.push(args.slice(1).join(' '));
+      if (args.includes('-s')) { for (let i = 0; i < 100; i++) onRecord(`H 100644 ${'a'.repeat(40)} 0\tsrc/f${i}.py`); return { ok: true }; }
+      if (args.includes('--others')) { for (let i = 0; i < 50000; i++) if (onRecord(`venv/lib/m${i}.py`) === false) return { ok: true, stopped: true }; }
+      return { ok: true };
+    } });
+  const { id } = m.create({ cwd: root });
+  await m.fileTree(id, '');
+  const list = await m.fileList(id);
+  assert.ok(['src/f0.py', 'src/f99.py'].every((f) => list.files.includes(f)), 'every tracked file is there');
+  assert.strictEqual(list.files.length, 20000);
+  assert.strictEqual(list.truncated, true);
+  assert.deepStrictEqual(calls, ['-z --deleted', '-z -t -s', '-z --others --exclude-standard']);
+});
+
+test('insideRealAll: a root that cannot be resolved still leaves out links to nothing', async () => {
+  const { insideRealAll } = require('../src/file-tree');
+  const { root } = project();
+  const got = await insideRealAll(path.join(root, 'no-such-root'), [path.join(root, 'README.md'), path.join(root, 'missing.md')], path, 32, false);
+  assert.deepStrictEqual(got, [true, false]);
+});
+
+test('streamGit stops a real git early and returns once it has exited', { skip: !hasGit && 'needs git' }, async () => {
+  const { streamGit } = require('../src/git-view');
+  const { root } = project();
+  for (let i = 0; i < 300; i++) fs.writeFileSync(path.join(root, `n${i}.txt`), 'x');
+  spawnSync('git', ['-C', root, 'add', '-A']);
+  const seen = [];
+  const r = await streamGit(['ls-files', '-z'], { cwd: root }, (p) => { seen.push(p); return seen.length < 5; });
+  assert.strictEqual(seen.length, 5);
+  assert.deepStrictEqual([r.ok, r.stopped], [true, true]);
+});

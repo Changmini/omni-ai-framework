@@ -13,15 +13,18 @@ const { wslCommand, decodeOutput } = require('./wsl');
 const MAX_OUT = 16 * 1024 * 1024;
 const MAX_FILES = 500; // changed files listed; the rest are counted
 
-// `maxBuffer`: for a caller expecting large output (the file tab's list).
-// Besides the text, `timedOut` and `tooLarge` say why a run failed.
-function runGit(args, { cwd, distro = null, platform = process.platform, exec = execFile, maxBuffer = MAX_OUT } = {}) {
+// The program and arguments that run git read-only in `cwd`: a WSL
+// folder's own git through wsl.exe, otherwise (also a Windows folder in the
+// Windows app) the host's git. Shared by runGit and streamGit.
+function gitCommand(args, { cwd, distro = null, platform = process.platform }) {
   const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', cwd, ...args];
-  // A WSL folder: the distro's git; otherwise (also a Windows folder in the
-  // Windows app) the host's git.
-  const [file, argv] = distro ? wslCommand('git', base, distro, platform) : ['git', base];
+  return distro ? wslCommand('git', base, distro, platform) : ['git', base];
+}
+
+function runGit(args, { cwd, distro = null, platform = process.platform, exec = execFile } = {}) {
+  const [file, argv] = gitCommand(args, { cwd, distro, platform });
   return new Promise((resolve) => {
-    exec(file, argv, { timeout: 15000, maxBuffer, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
+    exec(file, argv, { timeout: 15000, maxBuffer: MAX_OUT, windowsHide: true, encoding: 'buffer' }, (err, stdout, stderr) => {
       const out = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout || '');
       // On failure the reason may be wsl.exe's own (UTF-16) message, on stdout.
       let errText = decodeOutput(stderr);
@@ -29,9 +32,7 @@ function runGit(args, { cwd, distro = null, platform = process.platform, exec = 
       if (err && !errText.trim() && err.killed) errText = 'git이 응답하지 않습니다 (시간 초과)';
       if (err && !errText.trim() && /maxBuffer/i.test(String(err.message))) errText = '출력이 너무 큽니다';
       const missing = Boolean(err && err.code === 'ENOENT');
-      const tooLarge = Boolean(err && /maxBuffer/i.test(String(err.message)));
-      const timedOut = Boolean(err && err.killed && !tooLarge);
-      resolve({ ok: !err, code: err && typeof err.code === 'number' ? err.code : err ? -1 : 0, stdout: out, stderr: errText, missing, tooLarge, timedOut });
+      resolve({ ok: !err, code: err && typeof err.code === 'number' ? err.code : err ? -1 : 0, stdout: out, stderr: errText, missing });
     });
   });
 }
@@ -181,8 +182,7 @@ async function gitShow(target, rev, run = runGit) {
 // held or parsed in one piece on the main process. `onRecord` returning
 // false stops git early. -> { ok, missing, timedOut, stopped, stderr }.
 function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000 } = {}, onRecord) {
-  const base = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false', '-C', cwd, ...args];
-  const [file, argv] = distro ? wslCommand('git', base, distro, platform) : ['git', base];
+  const [file, argv] = gitCommand(args, { cwd, distro, platform });
   return new Promise((resolve) => {
     let child;
     try { child = spawnFn(file, argv, { windowsHide: true }); } catch (e) { resolve({ ok: false, missing: e && e.code === 'ENOENT', stderr: '' }); return; }
@@ -192,13 +192,17 @@ function streamGit(args, { cwd, distro = null, platform = process.platform, spaw
     let done = false;
     const errParts = [];
     const finish = (r) => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    // Our end of the pipe is closed as well as the process killed: inside
+    // WSL the process is wsl.exe, and the git it runs then ends at its next
+    // write (broken pipe) however the kill reaches it.
+    const halt = () => { child.stdout.destroy(); child.kill(); };
+    const timer = setTimeout(() => { timedOut = true; halt(); }, timeoutMs);
     child.stdout.on('data', (chunk) => {
       if (stopped) return;
       let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
       let at = buf.indexOf(0);
       while (at !== -1) {
-        if (onRecord(buf.subarray(0, at).toString('utf8')) === false) { stopped = true; child.kill(); return; }
+        if (onRecord(buf.subarray(0, at).toString('utf8')) === false) { stopped = true; halt(); return; }
         buf = buf.subarray(at + 1);
         at = buf.indexOf(0);
       }
@@ -213,4 +217,4 @@ function streamGit(args, { cwd, distro = null, platform = process.platform, spaw
   });
 }
 
-module.exports = { runGit, streamGit, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, gitUntrackedIn, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };
+module.exports = { runGit, streamGit, gitCommand, parseStatus, parseNumstat, parseLog, gitStatus, gitFileDiff, gitShow, gitUntrackedIn, rootDir, SAFE_PATH, SAFE_REV, MAX_FILES };

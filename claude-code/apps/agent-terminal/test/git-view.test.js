@@ -177,24 +177,13 @@ test('rootDir: filesystem and drive roots', () => {
   assert.deepStrictEqual([gv.rootDir(''), gv.rootDir('C:'), gv.rootDir('/home/user/sample-app')], ['/', 'C:/', '/home/user/sample-app']);
 });
 
-test('runGit says why a run failed: too large or timed out', async () => {
-  const { runGit } = require('../src/git-view');
-  const fail = (message, killed) => (f, a, o, cb) => { const e = new Error(message); e.killed = killed; cb(e, Buffer.alloc(0), Buffer.alloc(0)); };
-  const big = await runGit(['ls-files'], { cwd: '/x', exec: fail('stdout maxBuffer length exceeded', true) });
-  assert.deepStrictEqual([big.tooLarge, big.timedOut], [true, false]);
-  const slow = await runGit(['ls-files'], { cwd: '/x', exec: fail('Command failed', true) });
-  assert.deepStrictEqual([slow.tooLarge, slow.timedOut], [false, true]);
-  let seen;
-  await runGit(['ls-files'], { cwd: '/x', maxBuffer: 123, exec: (f, a, o, cb) => { seen = o.maxBuffer; cb(null, Buffer.alloc(0), Buffer.alloc(0)); } });
-  assert.strictEqual(seen, 123);
-});
-
 test('streamGit hands over NUL-ended records across chunks and stops git when asked', async () => {
   const { streamGit } = require('../src/git-view');
   const { EventEmitter } = require('node:events');
   const fakeSpawn = (chunks) => (file, argv) => {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
+    child.stdout.destroy = () => { child.stdoutClosed = true; };
     child.stderr = new EventEmitter();
     child.killed = false;
     child.kill = () => { child.killed = true; setImmediate(() => child.emit('close', null)); };
@@ -218,7 +207,7 @@ test('streamGit hands over NUL-ended records across chunks and stops git when as
   const missing = await streamGit(['ls-files'], { cwd: '/x', spawnFn: () => { const e = new Error('spawn git ENOENT'); e.code = 'ENOENT'; throw e; } }, () => {});
   assert.deepStrictEqual([missing.ok, missing.missing], [false, true]);
   // git that never answers: killed after the timeout
-  const silent = () => { const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => setImmediate(() => c.emit('close', null)); return c; };
+  const silent = () => { const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stdout.destroy = () => {}; c.stderr = new EventEmitter(); c.kill = () => setImmediate(() => c.emit('close', null)); return c; };
   const slow = await streamGit(['ls-files'], { cwd: '/x', timeoutMs: 20, spawnFn: silent }, () => {});
   assert.deepStrictEqual([slow.ok, slow.timedOut], [false, true]);
 });
