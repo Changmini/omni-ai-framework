@@ -1974,7 +1974,10 @@ const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추�
 // files git does not ignore; else a walk of the folder) and filtered here
 // as you type (view-logic.js searchFiles).
 
-const search = { input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, running: null, active: 0, timer: null };
+const search = {
+  input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, running: null, active: 0, timer: null,
+  enterAt: 0, enterAfterCompose: false,
+};
 
 // The file list for tree `t`: the one read already, or one read now (shared
 // by the searches typed while it loads).
@@ -1996,7 +1999,7 @@ async function searchList(t) {
 function runSearch() {
   const p = searchNow();
   search.running = p;
-  p.finally(() => { if (search.running === p) search.running = null; });
+  p.finally(() => { if (search.running === p) search.running = null; }).catch(() => {}); // the caller sees the error
   return p;
 }
 
@@ -2073,17 +2076,34 @@ search.input.addEventListener('input', () => {
   clearTimeout(search.timer);
   search.timer = setTimeout(applySearch, 80);
 });
+// Enter: search what is typed (or wait for the search still reading the
+// file list), then open the chosen result. Once per press: an IME may send
+// the Enter that ends a composition and then the Enter itself.
+async function searchEnter() {
+  if (Date.now() - search.enterAt < 150) return;
+  search.enterAt = Date.now();
+  const pending = applySearch() || search.running;
+  if (pending) await pending;
+  const row = search.results.querySelectorAll('.tree-result')[search.active];
+  if (row) row.click();
+}
+
+// An Enter that ends a Hangul composition: the syllable is in the box only
+// after compositionend, so the search runs then.
+search.input.addEventListener('compositionend', () => {
+  if (!search.enterAfterCompose) return;
+  search.enterAfterCompose = false;
+  setTimeout(searchEnter, 0);
+});
+
 search.input.addEventListener('keydown', async (e) => {
-  // Keys that finish an IME composition (Hangul) belong to the composition.
-  if (e.isComposing || e.keyCode === 229) return;
+  if (e.isComposing || e.keyCode === 229) {
+    if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') search.enterAfterCompose = true;
+    return; // other keys belong to the composition
+  }
   if (e.key === 'Enter') {
-    // Typed and pressed Enter at once: search what is typed (or wait for the
-    // search still reading the file list), then open the chosen result.
     e.preventDefault();
-    const pending = applySearch() || search.running;
-    if (pending) await pending;
-    const first = search.results.querySelectorAll('.tree-result')[search.active];
-    if (first) first.click();
+    await searchEnter();
     return;
   }
   const rows = [...search.results.querySelectorAll('.tree-result')];

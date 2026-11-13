@@ -57,6 +57,24 @@ async function insideReal(root, child, p = path) {
   return ck === rk || ck.startsWith(rk.endsWith(p.sep) ? rk : rk + p.sep);
 }
 
+// insideReal for many children of one root: the root resolved once, the
+// children `batch` at a time. -> array of booleans in the same order.
+async function insideRealAll(root, children, p = path, batch = 32) {
+  const r = await fs.promises.realpath(root).catch(() => null);
+  if (!r) return children.map(() => true);
+  const rk = p.sep === '\\' ? windowsKey(r) : r;
+  const base = rk.endsWith(p.sep) ? rk : rk + p.sep;
+  const out = [];
+  for (let i = 0; i < children.length; i += batch) {
+    const got = await Promise.all(children.slice(i, i + batch).map((c) => fs.promises.realpath(c).then((x) => {
+      const ck = p.sep === '\\' ? windowsKey(x) : x;
+      return ck === rk || ck.startsWith(base);
+    }, () => true)));
+    out.push(...got);
+  }
+  return out;
+}
+
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 // The entries of one folder: folders first, then files, by name (numbers in
@@ -84,7 +102,7 @@ async function listFolder(dir) {
 // folders (.cache, .venv, .npm: in a home folder most files are there)
 // except the ones projects keep their own files in.
 const SKIP_WALK = new Set(['node_modules', '__pycache__']);
-const PROJECT_DOT_DIRS = new Set(['.claude', '.github', '.gitlab', '.vscode', '.devcontainer', '.circleci', '.husky', '.storybook', '.config']);
+const PROJECT_DOT_DIRS = new Set(['.claude', '.github', '.gitlab', '.vscode', '.devcontainer', '.circleci', '.husky', '.storybook']);
 const walkInto = (name) => !HIDDEN.has(name) && !SKIP_WALK.has(name) && (!name.startsWith('.') || PROJECT_DOT_DIRS.has(name));
 
 // Every file under `dir` (relative, "/"-separated) for the search box, for
@@ -124,4 +142,4 @@ async function walkFiles(dir, limit = 20000, budgetMs = 3000, now = Date.now) {
   return { files, truncated };
 }
 
-module.exports = { findRoot, relSegments, insideReal, windowsKey, listFolder, walkFiles, MAX_ENTRIES };
+module.exports = { findRoot, relSegments, insideReal, insideRealAll, windowsKey, listFolder, walkFiles, MAX_ENTRIES };
