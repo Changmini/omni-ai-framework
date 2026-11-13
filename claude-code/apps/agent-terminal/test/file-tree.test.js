@@ -202,7 +202,7 @@ test('the search walk skips hidden and cache folders, does not list linked folde
 test('when git cannot list the files the search walks the folder and says so', async () => {
   const { root } = project();
   const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0,
-    gitRunner: async () => ({ ok: false, code: -1, stdout: '', stderr: '출력이 너무 큽니다' }) });
+    gitRunner: async () => ({ ok: false, code: -1, stdout: '', stderr: '출력이 너무 큽니다', tooLarge: true }) });
   const { id } = m.create({ cwd: root });
   await m.fileTree(id, '');
   const list = await m.fileList(id);
@@ -246,4 +246,35 @@ test('git search list: tracked links that point outside are left out; a .git tha
   const bl = await b.m.fileList(b.id);
   assert.deepStrictEqual(bl.files, ['a.txt']);
   assert.strictEqual(bl.note, undefined);
+});
+
+test('git search list: no submodules, no files deleted from the disk', { skip: !hasGit && 'needs git' }, async () => {
+  const { root } = project();
+  spawnSync('git', ['-C', root, 'add', 'README.md', 'src']);
+  spawnSync('git', ['-C', root, '-c', 'user.name=user', '-c', 'user.email=user@example.com', 'commit', '-qm', 'init']);
+  fs.rmSync(path.join(root, 'src', 'file2.txt'));
+  // A submodule entry (mode 160000) without fetching anything.
+  const sha = spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  spawnSync('git', ['-C', root, 'update-index', '--add', '--cacheinfo', `160000,${sha},vendor/lib`]);
+  const { m, id } = manager(root);
+  await m.fileTree(id, '');
+  const list = await m.fileList(id);
+  assert.ok(list.files.includes('src/file10.txt'));
+  assert.ok(!list.files.includes('src/file2.txt'), 'deleted from the disk');
+  assert.ok(!list.files.includes('vendor/lib'), 'a submodule is a folder');
+});
+
+test('insideRealAll resolves the root once and keeps the order', async () => {
+  const { insideRealAll } = require('../src/file-tree');
+  const { base, root } = project();
+  const got = await insideRealAll(root, [path.join(root, 'README.md'), path.join(root, 'outside-link.txt'), path.join(root, 'missing.txt'), path.join(base, 'secret.txt')], path, 2);
+  assert.deepStrictEqual(got, [true, false, true, false]);
+});
+
+test('the walk does not enter .config (in a home folder it holds app and browser settings)', async () => {
+  const { walkFiles } = require('../src/file-tree');
+  const { base } = project();
+  fs.mkdirSync(path.join(base, '.config', 'browser'), { recursive: true });
+  fs.writeFileSync(path.join(base, '.config', 'browser', 'Cookies'), 'x');
+  assert.ok(!(await walkFiles(base)).files.some((f) => f.startsWith('.config/')));
 });

@@ -12,6 +12,7 @@ const { statusMark } = require('./renderer/view-logic');
 
 const SEARCH_MAX = 20000; // files the file tab's search box knows of
 const STATUS_MAX = 5000; // changed paths the file tab colors
+const LIST_BUFFER = 64 * 1024 * 1024; // git ls-files output read for the search list
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
@@ -497,27 +498,32 @@ class SessionManager {
     if (!s || !s.tree) return { error: '파일 목록을 읽을 수 없습니다' };
     const t = s.tree;
     if (t.git) {
-      // Tracked files with their mode (a link is 120000: checked below), and
-      // the untracked ones git does not ignore.
-      const target = this.gitTarget(s, t.root);
+      // Tracked files with their mode (a link is 120000: checked below; a
+      // submodule 160000 is a folder: left out), and in one more call the
+      // untracked ones git does not ignore ("? path") and the tracked ones
+      // deleted from the disk ("R path": left out).
+      const target = { ...this.gitTarget(s, t.root), maxBuffer: LIST_BUFFER };
       const [tracked, others] = await Promise.all([
         this.gitRunner(['ls-files', '-z', '-s'], target),
-        this.gitRunner(['ls-files', '-z', '--others', '--exclude-standard'], target),
+        this.gitRunner(['ls-files', '-z', '-t', '--others', '--deleted', '--exclude-standard'], target),
       ]);
       if (tracked.ok && others.ok) {
         const links = [];
         const all = new Set();
         for (const row of tracked.stdout.split('\0')) {
           const m = /^(\d+) [0-9a-f]+ \d\t(.+)$/.exec(row);
-          if (!m) continue;
+          if (!m || m[1] === '160000') continue;
           all.add(m[2]); // a conflicted file is listed per stage
           if (m[1] === '120000') links.push(m[2]);
         }
-        for (const f of others.stdout.split('\0')) if (f) all.add(f);
-        // A link pointing outside the project would not open: not offered.
-        for (const f of links.slice(0, 500)) {
-          if (!(await fileTree.insideReal(t.host, path.join(t.host, ...f.split('/'))))) all.delete(f);
+        for (const row of others.stdout.split('\0')) {
+          if (row.startsWith('? ')) all.add(row.slice(2));
+          else if (row.startsWith('R ')) all.delete(row.slice(2));
         }
+        // A link pointing outside the project would not open: not offered.
+        const checked = links.slice(0, 500);
+        const inside = await fileTree.insideRealAll(t.host, checked.map((f) => path.join(t.host, ...f.split('/'))));
+        checked.forEach((f, k) => { if (!inside[k]) all.delete(f); });
         const files = [...all];
         return { root: t.root, files: files.slice(0, SEARCH_MAX), truncated: files.length > SEARCH_MAX };
       }
@@ -527,7 +533,7 @@ class SessionManager {
       // gets the walk.
       const failed = tracked.ok ? others : tracked;
       const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
-      const unanswered = failed.missing || /출력이 너무 큽니다|시간 초과/.test(failed.stderr || '');
+      const unanswered = failed.missing || failed.tooLarge || failed.timedOut;
       return { root: t.root, ...w, ...(unanswered ? { note: 'git 목록을 읽지 못해 폴더를 직접 훑었습니다 (git이 무시하는 파일도 섞일 수 있음)' } : {}) };
     }
     const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
