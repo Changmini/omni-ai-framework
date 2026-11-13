@@ -63,7 +63,9 @@ async function insideReal(root, child, p = path) {
 // (a link to nothing: false keeps it out of a list of files to open).
 async function insideRealAll(root, children, p = path, batch = 32, unresolved = true) {
   const r = await fs.promises.realpath(root).catch(() => null);
-  if (!r) return children.map(() => true);
+  // The root cannot be resolved: links cannot be checked, but a child that
+  // resolves to nothing is still `unresolved`.
+  if (!r) return Promise.all(children.map((c) => fs.promises.realpath(c).then(() => true, () => unresolved)));
   const rk = p.sep === '\\' ? windowsKey(r) : r;
   const base = rk.endsWith(p.sep) ? rk : rk + p.sep;
   const out = [];
