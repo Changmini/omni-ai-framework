@@ -325,7 +325,7 @@ test('tracked files come first: many untracked files only fill what is left', as
   assert.ok(['src/f0.py', 'src/f99.py'].every((f) => list.files.includes(f)), 'every tracked file is there');
   assert.strictEqual(list.files.length, 20000);
   assert.strictEqual(list.truncated, true);
-  assert.deepStrictEqual(calls, ['-z --deleted', '-z -t -s', '-z --others --exclude-standard']);
+  assert.deepStrictEqual(calls, ['-z --deleted', '-z --others --exclude-standard', '-z -t -s'], 'deleted and untracked together, then tracked');
 });
 
 test('insideRealAll: a root that cannot be resolved still leaves out links to nothing', async () => {
@@ -344,4 +344,32 @@ test('streamGit stops a real git early and returns once it has exited', { skip: 
   const r = await streamGit(['ls-files', '-z'], { cwd: root }, (p) => { seen.push(p); return seen.length < 5; });
   assert.strictEqual(seen.length, 5);
   assert.deepStrictEqual([r.ok, r.stopped], [true, true]);
+});
+
+test('a large repository keeps room for untracked files, and says when the list was cut', async () => {
+  const { root } = project();
+  const lister = (trackedN, untrackedN) => async (args, target, onRecord) => {
+    if (args.includes('-s')) {
+      for (let i = 0; i < trackedN; i++) if (onRecord(`H 100644 ${'a'.repeat(40)} 0\tsrc/t${i}.py`) === false) return { ok: true, stopped: true };
+    } else if (args.includes('--others')) {
+      for (let i = 0; i < untrackedN; i++) if (onRecord(`new/u${i}.py`) === false) return { ok: true, stopped: true };
+    }
+    return { ok: true };
+  };
+  const listOf = async (trackedN, untrackedN) => {
+    const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, gitLister: lister(trackedN, untrackedN) });
+    const { id } = m.create({ cwd: root });
+    await m.fileTree(id, '');
+    return m.fileList(id);
+  };
+  const count = (l, pre) => l.files.filter((f) => f.startsWith(pre)).length;
+  // 60,000 tracked + 5 new files: the new ones are all there.
+  const a = await listOf(60000, 5);
+  assert.deepStrictEqual([count(a, 'new/'), count(a, 'src/'), a.truncated], [5, 19995, true]);
+  // Both large: 2,000 kept for untracked files.
+  const b = await listOf(60000, 60000);
+  assert.deepStrictEqual([count(b, 'new/'), count(b, 'src/'), b.truncated], [2000, 18000, true]);
+  // Small: everything, not truncated.
+  const c = await listOf(100, 50);
+  assert.deepStrictEqual([c.files.length, c.truncated], [150, false]);
 });

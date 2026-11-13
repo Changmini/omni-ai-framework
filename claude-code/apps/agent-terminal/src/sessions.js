@@ -12,6 +12,7 @@ const { statusMark } = require('./renderer/view-logic');
 
 const SEARCH_MAX = 20000; // files the file tab's search box knows of
 const STATUS_MAX = 5000; // changed paths the file tab colors
+const UNTRACKED_ROOM = 2000; // of SEARCH_MAX, kept for untracked files (new ones Claude made)
 
 const TEAM_POLL_EVERY = 4; // status polls between team/task file checks
 const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this often while claude runs
@@ -501,47 +502,57 @@ class SessionManager {
     if (t.git) {
       // Read as git writes them (streamGit), stopping once there are enough:
       // a large repository's list is never held or parsed in one piece.
-      // First the files deleted from the disk (left out) and the untracked
-      // ones git does not ignore. The project's own (tracked) files come
-      // first, so untracked ones (an unignored virtualenv) only fill what is
-      // left: tracked ones with their mode (-s: a link 120000 is checked
-      // below, a submodule 160000 is a folder) and tag (-t: S is a file
-      // sparse checkout left out of the disk). A row without a tag still
-      // reads: the tags only leave files out.
+      // Two rounds: the files deleted from the disk (left out) together with
+      // the untracked ones git does not ignore; then the tracked ones, with
+      // their mode (-s: a link 120000 is checked below, a submodule 160000
+      // is a folder) and tag (-t: S is a file sparse checkout left out of
+      // the disk; a row without a tag still reads).
+      // Room: the tracked files (the project's own) take the list, except
+      // up to UNTRACKED_ROOM kept for untracked ones, so new files are found
+      // in a large repository and an unignored virtualenv cannot crowd the
+      // project out. Untracked files beyond that fill what tracked ones left.
       const target = this.gitTarget(s, t.root);
       const deleted = new Set();
-      const all = new Set();
+      const untracked = [];
+      const [gone, others] = await Promise.all([
+        this.gitLister(['ls-files', '-z', '--deleted'], target, (p) => { if (p) deleted.add(p); return deleted.size <= 100000; }),
+        this.gitLister(['ls-files', '-z', '--others', '--exclude-standard'], target, (p) => { if (p) untracked.push(p); return untracked.length <= SEARCH_MAX; }),
+      ]);
+      const room = SEARCH_MAX - Math.min(untracked.length, UNTRACKED_ROOM);
+      const mine = new Set();
       const links = [];
-      const full = () => all.size > SEARCH_MAX;
-      const gone = await this.gitLister(['ls-files', '-z', '--deleted'], target, (p) => { if (p) deleted.add(p); return deleted.size <= 100000; });
-      const tracked = gone.ok
+      const tracked = gone.ok && others.ok
         ? await this.gitLister(['ls-files', '-z', '-t', '-s'], target, (row) => {
           const m = /^(?:(\S) )?(\d+) [0-9a-f]+ \d\t(.+)$/.exec(row);
           if (!m || m[1] === 'S' || m[2] === '160000' || deleted.has(m[3])) return true;
-          all.add(m[3]); // a conflicted file is listed per stage
+          mine.add(m[3]); // a conflicted file is listed per stage
           if (m[2] === '120000') links.push(m[3]);
-          return !full();
+          return mine.size <= room;
         })
-        : gone;
-      // A link pointing outside the project, or to nothing, would not open:
-      // not offered.
-      if (tracked.ok && links.length) {
+        : (gone.ok ? others : gone);
+      if (tracked.ok) {
+        // A link pointing outside the project, or to nothing, would not
+        // open: not offered.
         const checked = links.slice(0, 500);
-        const inside = await fileTree.insideRealAll(t.host, checked.map((f) => path.join(t.host, ...f.split('/'))), path, 32, false);
-        checked.forEach((f, k) => { if (!inside[k]) all.delete(f); });
-      }
-      const others = tracked.ok && !full()
-        ? await this.gitLister(['ls-files', '-z', '--others', '--exclude-standard'], target, (p) => { if (p) all.add(p); return !full(); })
-        : tracked;
-      if (gone.ok && tracked.ok && others.ok) {
-        const files = [...all];
-        return { root: t.root, files: files.slice(0, SEARCH_MAX), truncated: files.length > SEARCH_MAX };
+        if (checked.length) {
+          const inside = await fileTree.insideRealAll(t.host, checked.map((f) => path.join(t.host, ...f.split('/'))), path, 32, false);
+          checked.forEach((f, k) => { if (!inside[k]) mine.delete(f); });
+        }
+        const files = [...mine].slice(0, room);
+        for (const f of untracked) {
+          if (files.length >= SEARCH_MAX) break;
+          files.push(f);
+        }
+        // Partial when any list was cut short, or did not fit.
+        const truncated = Boolean(tracked.stopped || others.stopped) || mine.size > room
+          || files.length < mine.size + untracked.length;
+        return { root: t.root, files, truncated };
       }
       // git could not list them: the folder is walked instead. Said so only
       // when git is there but could not answer (missing here, timed out):
       // then ignored files may be mixed in. A .git that is no repository
       // just gets the walk.
-      const failed = [gone, tracked, others].find((r) => !r.ok) || {};
+      const failed = [gone, others, tracked].find((r) => !r.ok) || {};
       const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
       const unanswered = failed.missing || failed.timedOut;
       return { root: t.root, ...w, ...(unanswered ? { note: 'git 목록을 읽지 못해 폴더를 직접 훑었습니다 (git이 무시하는 파일도 섞일 수 있음)' } : {}) };
