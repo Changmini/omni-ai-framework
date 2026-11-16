@@ -450,7 +450,13 @@ class SessionManager {
     const r = s.previewRoot;
     const win = /^[a-zA-Z]:|^\\\\/.test(r.root);
     const sep = win ? '\\' : '/';
-    return { dir: path.join(r.host, 'private'), shown: `${r.root.replace(/[\\/]+$/, '')}${sep}private${sep}index.html` };
+    const dir = path.join(r.host, 'private');
+    const shown = `${r.root.replace(/[\\/]+$/, '')}${sep}private${sep}index.html`;
+    // A private/ that is a link out of the project (a cloned repository
+    // could ship one) is not used: nothing outside the project is served
+    // or written.
+    if (!(await fileTree.insideReal(r.host, dir))) return { dir: null, shown, error: 'private 폴더가 프로젝트 밖을 가리키는 링크라 쓰지 않습니다' };
+    return { dir, shown };
   }
 
   // ---------- file tab (read-only) ----------

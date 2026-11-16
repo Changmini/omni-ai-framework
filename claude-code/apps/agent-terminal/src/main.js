@@ -52,7 +52,7 @@ async function servePreview(request) {
     const m = /^t(\d{1,6})$/.exec(u.hostname);
     const target = m && manager ? await manager.previewDir(m[1]) : null;
     const segs = preview.urlSegments(u.pathname);
-    if (!target || !segs) return new Response('not found', head(404, 'text/plain'));
+    if (!target || target.error || !segs) return new Response('not found', head(404, 'text/plain'));
     const r = await preview.serveFile(target.dir, segs);
     return new Response(r.body, head(r.status, r.type));
   } catch {
@@ -65,6 +65,7 @@ async function servePreview(request) {
 async function checkPreview(id, wrote = false) {
   const target = id && manager ? await manager.previewDir(id) : null;
   if (!target) return { error: '미리보기 폴더를 찾을 수 없습니다' };
+  if (target.error) return { error: target.error, shown: target.shown };
   const st = await previewWatch.check(target.dir, { id, shown: target.shown }, wrote);
   return { ...st, shown: target.shown, url: `${PREVIEW_SCHEME}://t${id}/` };
 }
@@ -194,7 +195,7 @@ function registerIpc() {
   ipcMain.handle('preview:check', (_e, id) => checkPreview(str(id, 20)));
   ipcMain.handle('preview:open-external', async (_e, id) => {
     const target = await manager.previewDir(str(id, 20));
-    const file = target && path.join(target.dir, preview.INDEX);
+    const file = target && !target.error && path.join(target.dir, preview.INDEX);
     if (!file || !(await fs.promises.access(file).then(() => true, () => false))) return false;
     return (await shell.openPath(file)) === '';
   });
@@ -247,6 +248,12 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // The main window is the app: closing it also closes a detached preview,
+  // so the app quits (window-all-closed) instead of running on unseen.
+  win.on('closed', () => {
+    win = null;
+    if (previewWin && !previewWin.isDestroyed()) previewWin.close();
+  });
 
   // Links printed in a terminal open in the system browser, never in the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -284,7 +291,9 @@ if (primaryInstance) app.whenReady().then(async () => {
   previewWatch = new preview.PreviewWatch({ emit: ({ key, version }) => sendPreview('preview:changed', { id: key.id, shown: key.shown, version }) });
   protocol.handle(PREVIEW_SCHEME, servePreview);
   // A drawing's page asks for nothing (camera, notifications, ...): refused.
-  const fromPreview = (url) => String(url || '').startsWith(`${PREVIEW_SCHEME}:`);
+  // A sandboxed frame without allow-same-origin has the opaque origin "null";
+  // the app's own pages are file://.
+  const fromPreview = (url) => String(url || '').startsWith(`${PREVIEW_SCHEME}:`) || String(url) === 'null';
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb, details) => cb(!fromPreview(details && details.requestingUrl)));
   session.defaultSession.setPermissionCheckHandler((_wc, _perm, origin) => !fromPreview(origin));
   hooks = await startHookServer({

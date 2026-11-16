@@ -141,3 +141,61 @@ test('a drawing Claude writes is announced even on the first look', async () => 
   await w.check(dir, 't1', true);
   assert.deepStrictEqual(seen, [1]);
 });
+
+test('a private/ that links out of the project is not used', async () => {
+  const { base, root, dir } = folder();
+  fs.rmSync(dir, { recursive: true });
+  const outside = path.join(base, 'elsewhere');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, dir);
+  const m = new SessionManager({ spawn: () => ({ onData() {}, onExit() {}, write() {}, kill() {} }), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0 });
+  const { id } = m.create({ cwd: root });
+  const r = await m.previewDir(id);
+  assert.strictEqual(r.dir, null);
+  assert.match(r.error, /프로젝트 밖/);
+});
+
+test('index.html or .history that link out of private/ are not read or written', async () => {
+  const { base, dir } = folder();
+  fs.writeFileSync(path.join(base, 'secret.html'), '<p>secret</p>');
+  fs.symlinkSync(path.join(base, 'secret.html'), path.join(dir, 'index.html'));
+  const w = new PreviewWatch();
+  let r = await w.check(dir, 't1');
+  assert.strictEqual(r.exists, false, 'the link is not followed');
+  fs.unlinkSync(path.join(dir, 'index.html'));
+
+  const outside = path.join(base, 'hist-out');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(dir, '.history'));
+  const index = path.join(dir, 'index.html');
+  write(index, '<p>one</p>', 1000000);
+  await w.check(dir, 't1');
+  write(index, '<p>two</p>', 2000000);
+  r = await w.check(dir, 't1');
+  assert.strictEqual(r.version, 2);
+  assert.deepStrictEqual(fs.readdirSync(outside), [], 'nothing written outside');
+  assert.deepStrictEqual(r.history, []);
+});
+
+test('an emptied file (a write under way) is not a new version', async () => {
+  const { dir } = folder();
+  const seen = [];
+  const w = new PreviewWatch({ emit: (e) => seen.push(e.version) });
+  const index = path.join(dir, 'index.html');
+  write(index, '<p>one</p>', 1000000);
+  await w.check(dir, 't1');
+  write(index, '', 2000000);
+  let r = await w.check(dir, 't1');
+  assert.deepStrictEqual([r.version, r.history.length, seen.length], [1, 0, 0]);
+  write(index, '<p>two</p>', 3000000);
+  r = await w.check(dir, 't1');
+  assert.deepStrictEqual([r.version, r.history.length], [2, 1]);
+  assert.strictEqual(fs.readFileSync(path.join(dir, '.history', r.history[0]), 'utf8'), '<p>one</p>');
+});
+
+test('the scroll keeper goes before the last </body>', () => {
+  const page = '<body><script>const s = "</body>";</script></body>';
+  const out = withScrollKeeper(page);
+  assert.ok(out.startsWith('<body><script>const s = "</body>";</script><script>'), 'not inside the string');
+  assert.ok(out.endsWith('</script></body>'));
+});

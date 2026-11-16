@@ -52,8 +52,10 @@ const SCROLL_KEEPER = '<script>(function(){var t;function s(){parent.postMessage
   + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&d&&d.omniPreview==="restore"){scrollTo(+d.x||0,+d.y||0)}});'
   + 'parent.postMessage({omniPreview:"ready"},"*")})();</script>';
 
+// Before the last </body> (an earlier one may be inside a script string).
 function withScrollKeeper(html) {
-  const at = html.search(/<\/body\s*>/i);
+  const ends = [...html.matchAll(/<\/body\s*>/gi)];
+  const at = ends.length ? ends[ends.length - 1].index : -1;
   return at === -1 ? html + SCROLL_KEEPER : html.slice(0, at) + SCROLL_KEEPER + html.slice(at);
 }
 
@@ -75,8 +77,10 @@ const HISTORY_FILE = /^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d(-\d+)?\.html$/;
 
 // Earlier drawings, newest first (names sort by time).
 async function listHistory(dir) {
+  const hist = path.join(dir, HISTORY_DIR);
   let names;
-  try { names = await fs.promises.readdir(path.join(dir, HISTORY_DIR)); } catch { return []; }
+  try { names = await fs.promises.readdir(hist); } catch { return []; }
+  if (!(await insideReal(dir, hist))) return [];
   return names.filter((n) => HISTORY_FILE.test(n)).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
 }
 
@@ -84,6 +88,7 @@ async function listHistory(dir) {
 async function keepHistory(dir, content, at) {
   const hist = path.join(dir, HISTORY_DIR);
   await fs.promises.mkdir(hist, { recursive: true });
+  if (!(await insideReal(dir, hist))) return; // a .history link out of private/: nothing written there
   const base = historyName(at).replace(/\.html$/, '');
   let name = `${base}.html`;
   for (let k = 2; await fs.promises.access(path.join(hist, name)).then(() => true, () => false); k++) name = `${base}-${k}.html`;
@@ -109,7 +114,7 @@ class PreviewWatch {
   // first look, so a preview never looked at yet still opens for it.
   async check(dir, key, wrote = false) {
     let st = this.state.get(dir);
-    if (!st) { st = { seen: false, mtimeMs: null, size: null, content: null, version: 0, at: null, pending: null }; this.state.set(dir, st); }
+    if (!st) { st = { seen: false, mtimeMs: null, size: null, content: null, version: 0, at: null, pending: null, history: null }; this.state.set(dir, st); }
     if (st.pending) return st.pending;
     st.pending = this.checkNow(dir, st, key, wrote).finally(() => { st.pending = null; });
     return st.pending;
@@ -117,7 +122,9 @@ class PreviewWatch {
 
   async checkNow(dir, st, key, wrote) {
     const file = path.join(dir, INDEX);
-    const info = await fs.promises.stat(file).catch(() => null);
+    let info = await fs.promises.stat(file).catch(() => null);
+    // A link out of private/ is not read (nor copied into .history).
+    if (info && !(await insideReal(dir, file))) info = null;
     // The first look at a folder only records it; every later change is
     // announced (also a drawing that appears where there was none).
     const first = !st.seen;
@@ -129,9 +136,15 @@ class PreviewWatch {
       return this.answer(dir, st, false);
     }
     if (info.mtimeMs === st.mtimeMs && info.size === st.size) return this.answer(dir, st, true);
+    // Empty: a write under way (truncated, not yet written). Looked at again
+    // next time instead of being shown, or kept as a version.
+    if (info.size === 0 && st.content) return this.answer(dir, st, true);
     const content = info.size <= CONTENT_MAX ? await fs.promises.readFile(file).catch(() => null) : null;
     const same = content && st.content && content.equals(st.content);
-    if (!first && !same && st.content) await keepHistory(dir, st.content, st.at || this.now()).catch(() => {});
+    if (!first && !same && st.content) {
+      await keepHistory(dir, st.content, st.at || this.now()).catch(() => {});
+      st.history = null; // listed again
+    }
     Object.assign(st, { mtimeMs: info.mtimeMs, size: info.size, content });
     if (first || !same) {
       st.version++;
@@ -141,8 +154,11 @@ class PreviewWatch {
     return this.answer(dir, st, true);
   }
 
+  // The history list is read once and again only after a version was
+  // kept (not on every look).
   async answer(dir, st, exists) {
-    return { exists, version: st.version, at: st.at, history: await listHistory(dir) };
+    if (!st.history) st.history = await listHistory(dir);
+    return { exists, version: st.version, at: st.at, history: st.history };
   }
 }
 
