@@ -76,6 +76,7 @@ const SHORTCUTS = {
   KeyA: () => agents.get(activeId)?.term.selectAll(),
   KeyF: () => openSearch(),
   KeyI: () => setInspectorOpen(app.classList.contains('inspector-closed')),
+  KeyP: () => togglePreview(),
 };
 function isShortcut(e) {
   return (e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS) || navTarget(e) !== null;
@@ -229,6 +230,7 @@ function select(id) {
   activeId = id;
   loadConfig();
   if (switching) { clearGit(); clearTree(); } // not the previous terminal's project meanwhile
+  if (switching) { api.previewSetActive?.(id); syncPreview(); }
   loadGit();
   loadTree();
   renderInspector();
@@ -531,7 +533,7 @@ els.banner.addEventListener('click', () => {
 function update(id, patch) {
   const a = agents.get(id);
   if (!a) return;
-  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); loadTree(); } // new project
+  if (id === activeId && 'cwd' in patch && patch.cwd !== a.info.cwd) { loadConfig(); loadGit(); loadTree(); setTimeout(syncPreview, 0); } // new project
   Object.assign(a.info, patch);
   renderItem(id);
   if (id === activeId && 'claude' in patch) renderCtxDetail();
@@ -1000,18 +1002,20 @@ function setInspectorOpen(on) {
   if (on && inspectorTab === 'git' && gitStale) loadGit(0);
   if (on && inspectorTab === 'files' && treeStale) loadTree(0);
   applyPanelWidths();
+  syncPreview();
 }
 
 function setInspectorTab(tab) {
   hideCard();
   inspectorTab = tab;
-  writePref('inspectorTab', tab);
+  if (tab !== 'preview') writePref('inspectorTab', tab); // the preview tab exists only in a narrow window
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
   cfgEls.refresh.hidden = tab === 'activity';
   if (tab === 'config' && cfgStale) loadConfig(0);
   if (tab === 'git' && gitStale) loadGit(0);
   if (tab === 'files' && treeStale) loadTree(0);
+  syncPreview();
 }
 
 function setInspectorWidth(w, save = true) {
@@ -2126,6 +2130,170 @@ search.input.addEventListener('keydown', async (e) => {
     search.input.dispatchEvent(new Event('input'));
   }
 });
+
+// ---------- HTML preview (private/index.html beside the terminal) ----------
+// Claude draws diagrams and charts into the project's private/index.html;
+// it shows here as it is written. Beside the terminal (drag the border,
+// double-click: half), or as a side-panel tab when the window is narrow,
+// or in a window of its own. It opens by itself for a new drawing unless
+// the user closed it (then the button gets a dot), and it never takes the
+// keyboard from the terminal.
+
+const previewEls = {
+  center: $('#center'),
+  slot: $('#preview-slot'),
+  resizer: $('#preview-resizer'),
+  tabSlot: $('#preview-tab-slot'),
+  toggle: $('#preview-toggle'),
+  tab: document.querySelector('.inspector-head .tab[data-tab="preview"]'),
+};
+const previewState = {
+  open: readPref('previewOpen', 'false') === 'true',
+  userClosed: readPref('previewUserClosed', 'false') === 'true',
+  ratio: Number(readPref('previewRatio', '0.5')),
+  detached: false,
+  placement: 'split',
+  badge: false,
+  baseline: new Set(), // terminals whose preview folder the main process has looked at
+};
+const previewPane = api.previewCheck && window.createPreviewPane ? window.createPreviewPane({
+  api,
+  onCollapse: () => togglePreview(),
+  onDetach: () => api.previewDetach(),
+  refocus: () => agents.get(activeId)?.term.focus(),
+}) : null;
+
+// Whether the drawing is on screen in this window.
+function previewVisible() {
+  if (!previewPane || previewState.detached) return false;
+  if (previewState.placement === 'split') return previewState.open;
+  return inspectorOpen() && inspectorTab === 'preview';
+}
+
+function renderPreviewToggle() {
+  const t = previewEls.toggle;
+  if (!t) return;
+  t.hidden = !previewPane;
+  t.setAttribute('aria-pressed', String(previewVisible() || previewState.detached));
+  t.classList.toggle('has-new', previewState.badge && !previewVisible());
+  t.title = previewState.detached ? '미리보기를 메인 창으로 되돌리기 (Ctrl+Shift+P)'
+    : previewState.badge ? '새 그림이 있습니다 · 미리보기 (Ctrl+Shift+P)' : '미리보기 (Ctrl+Shift+P)';
+}
+
+// Beside the terminal or in the side panel, by the room there is.
+function layoutPreview() {
+  if (!previewPane) return;
+  const centerW = previewEls.center.getBoundingClientRect().width;
+  const placement = ViewLogic.previewPlacement(centerW);
+  if (placement !== previewState.placement || !previewPane.el.parentElement) {
+    previewState.placement = placement;
+    (placement === 'split' ? previewEls.slot : previewEls.tabSlot).append(previewPane.el);
+    if (placement === 'split' && inspectorTab === 'preview') setInspectorTab('activity');
+  }
+  const inline = placement === 'split' && previewState.open && !previewState.detached;
+  previewEls.slot.hidden = !inline;
+  previewEls.resizer.hidden = !inline;
+  if (inline) previewEls.slot.style.width = `${ViewLogic.previewWidth(previewState.ratio, centerW)}px`;
+  previewEls.tab.hidden = placement !== 'tab' || previewState.detached;
+  renderPreviewToggle();
+}
+
+// The pane shows the active terminal's drawing while it is on screen, and
+// nothing (no page running) while it is not. The first look at a terminal's
+// folder is made even when hidden, so a later drawing counts as new.
+function syncPreview() {
+  if (!previewPane) return;
+  layoutPreview();
+  const visible = previewVisible();
+  previewPane.setTarget(visible ? activeId : null);
+  if (visible) previewState.badge = false;
+  else if (activeId && !previewState.baseline.has(activeId)) {
+    previewState.baseline.add(activeId);
+    api.previewCheck(activeId).catch(() => {});
+  }
+  renderPreviewToggle();
+}
+
+// `byUser`: opened or closed by the user (then it stays closed for new drawings).
+function setPreviewOpen(on, byUser) {
+  previewState.open = on;
+  writePref('previewOpen', on);
+  if (byUser) {
+    previewState.userClosed = !on;
+    writePref('previewUserClosed', !on);
+  }
+  if (on && previewState.badge) previewPane.flash(); // the new drawing the dot was for
+  if (on) previewState.badge = false;
+  syncPreview();
+}
+
+function togglePreview() {
+  if (!previewPane) return;
+  if (previewState.detached) { api.previewAttach(); return; }
+  if (previewState.placement === 'tab') {
+    const showing = inspectorOpen() && inspectorTab === 'preview';
+    previewState.userClosed = showing;
+    writePref('previewUserClosed', showing);
+    if (showing) setInspectorTab('activity');
+    else {
+      if (previewState.badge) previewPane.flash();
+      previewState.badge = false;
+      setInspectorOpen(true);
+      setInspectorTab('preview');
+    }
+    syncPreview();
+  } else {
+    setPreviewOpen(!previewState.open, true);
+  }
+  agents.get(activeId)?.term.focus();
+}
+
+if (previewPane) {
+  previewEls.toggle.addEventListener('click', togglePreview);
+  dragResize(previewEls.resizer, 'resizing', () => {
+    const r = previewEls.center.getBoundingClientRect();
+    const at = (ev) => Math.min(0.95, Math.max(0.05, (r.right - ev.clientX) / r.width));
+    return {
+      move: (ev) => { previewState.ratio = at(ev); layoutPreview(); },
+      end: (ev) => { previewState.ratio = at(ev); writePref('previewRatio', previewState.ratio); layoutPreview(); },
+    };
+  });
+  previewEls.resizer.addEventListener('dblclick', () => {
+    previewState.ratio = 0.5;
+    writePref('previewRatio', 0.5);
+    layoutPreview();
+  });
+  // A size change can move the preview into or out of the side panel: what
+  // runs follows what shows.
+  new ResizeObserver(() => syncPreview()).observe(previewEls.center);
+
+  // A new drawing (Claude's Write/Edit, or a change seen while looking).
+  api.onPreviewChanged((p) => {
+    if (!p || (p.id !== activeId && !(p.shown && p.shown === previewPane.shown()))) return;
+    const act = ViewLogic.previewOnChange({ open: previewVisible(), userClosed: previewState.userClosed, detached: previewState.detached });
+    if (act === 'reload') previewPane.changed(p);
+    else if (act === 'open') {
+      previewPane.flash();
+      if (previewState.placement === 'tab') { setInspectorOpen(true); setInspectorTab('preview'); } else setPreviewOpen(true, false);
+    } else if (act === 'badge') {
+      previewState.badge = true;
+      renderPreviewToggle();
+    }
+  });
+  api.onPreviewBlocked(() => previewPane.restore());
+  api.onPreviewDetached((on) => {
+    previewState.detached = Boolean(on);
+    if (!on) { previewState.open = true; writePref('previewOpen', true); } // back beside the terminal
+    syncPreview();
+    if (on) api.previewSetActive(activeId);
+  });
+  // While it shows: a look every second (a change made outside Claude, or
+  // missed), only with the window visible.
+  setInterval(() => {
+    if (previewVisible() && document.visibilityState === 'visible') previewPane.poll();
+  }, 1000);
+  api.previewIsDetached().then((on) => { previewState.detached = Boolean(on); syncPreview(); }).catch(() => {});
+}
 
 setInspectorTab(inspectorTab);
 setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
