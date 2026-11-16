@@ -54,7 +54,13 @@ class SessionManager {
     platform = process.platform,
     gitRunner = gitView.runGit,
     gitLister = gitView.streamGit,
+    // Ending what a terminal started when it closes (reap.js):
+    // { terminal(run, id, distros), all(run, distros) }, and this run's marker.
+    reaper = null,
+    runId = null,
   }) {
+    this.reaper = reaper;
+    this.runId = runId;
     this.spawn = spawn;
     this.emit = emit;
     this.shell = shell;
@@ -92,6 +98,7 @@ class SessionManager {
         ...this.shell.env,
         ...this.extraEnv,
         OMNI_TERMINAL_ID: id,
+        ...(this.runId ? { OMNI_TERMINAL_RUN: this.runId } : {}),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
       },
@@ -119,6 +126,7 @@ class SessionManager {
       teamDirty: false, // a team or task tool ran since the files were read
       paneCheckedAt: 0,
       wsl: null, // { distro, home } while the shell runs inside WSL
+      wslDistros: new Set(), // every distro the shell went into (its processes may stay there)
       team: null,
       tasks: null,
       lastAgent: null,
@@ -185,6 +193,7 @@ class SessionManager {
     if (!s || typeof cwd !== 'string' || !cwd) return;
     s.wsl = wslDistro && this.platform === 'win32'
       ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
+    if (s.wsl) s.wslDistros.add(s.wsl.distro);
     this.setCwd(id, cwd, true);
   }
 
@@ -873,18 +882,30 @@ class SessionManager {
     return this.runTmux(args, s.wsl ? s.wsl.distro : null);
   }
 
-  kill(id) {
+  // Closing a terminal ends its shell and everything started from it (also
+  // what outlives the shell: nohup, setsid, detached children, a tmux
+  // server started there), also when the shell had already ended.
+  kill(id, { reap = true } = {}) {
     const s = this.sessions.get(id);
     if (!s) return false;
     if (!s.tracker.exited) s.pty.kill();
     this.sessions.delete(id);
     this.emit('session:removed', { id });
+    if (reap && this.reaper && this.runId) {
+      Promise.resolve(this.reaper.terminal(this.runId, id, [...s.wslDistros])).catch(() => {});
+    }
     return true;
   }
 
+  // The app quits: every terminal, then at once what any of them started.
   killAll() {
-    for (const id of [...this.sessions.keys()]) this.kill(id);
+    const distros = new Set();
+    for (const s of this.sessions.values()) for (const d of s.wslDistros) distros.add(d);
+    for (const id of [...this.sessions.keys()]) this.kill(id, { reap: false });
     if (this.timer) clearInterval(this.timer);
+    if (this.reaper && this.runId) {
+      try { this.reaper.all(this.runId, [...distros]); } catch { /* best effort */ }
+    }
   }
 
   list() {

@@ -17,6 +17,7 @@ const { readContextUsage } = require('./usage');
 const { PlanUsage } = require('./plan-usage');
 const { readTextFile } = require('./files');
 const preview = require('./preview');
+const reap = require('./reap');
 
 let win = null;
 let manager = null;
@@ -345,6 +346,11 @@ if (primaryInstance) app.whenReady().then(async () => {
     runTmux,
     listPanes,
     readUsage: readContextUsage,
+    runId: reap.newRunId(),
+    reaper: {
+      terminal: (run, id, distros) => reap.reapTerminal(run, id, { distros }),
+      all: (run, distros) => reap.reapAllSync(run, { distros }),
+    },
     claudePaths: {
       dir: claudeDir(),
       json: process.env.CLAUDE_CONFIG_DIR

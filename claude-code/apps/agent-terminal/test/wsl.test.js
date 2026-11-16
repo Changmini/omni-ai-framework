@@ -19,7 +19,7 @@ test('wslToWindows maps drive mounts and distro paths', () => {
 });
 
 test('withWslEnv appends the app variables once', () => {
-  assert.strictEqual(withWslEnv(''), 'OMNI_TERMINAL_ID:OMNI_HOOK_TOKEN:OMNI_CWD_URL:OMNI_CLAUDE_SETTINGS/p:OMNI_INIT_BASH/p');
+  assert.strictEqual(withWslEnv(''), 'OMNI_TERMINAL_ID:OMNI_TERMINAL_RUN:OMNI_HOOK_TOKEN:OMNI_CWD_URL:OMNI_CLAUDE_SETTINGS/p:OMNI_INIT_BASH/p');
   const once = withWslEnv('FOO/u');
   assert.ok(once.startsWith('FOO/u:OMNI_TERMINAL_ID'));
   assert.strictEqual(withWslEnv(once), once);
