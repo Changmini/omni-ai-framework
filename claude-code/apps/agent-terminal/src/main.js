@@ -86,8 +86,13 @@ function guardNavigation(wc) {
   });
   wc.on('did-fail-provisional-load', (_e, _code, _desc, url, isMainFrame, pid, rid) => {
     if (isMainFrame || preview(url) || url === 'about:blank') return;
-    const frame = webFrameMain.fromId(pid, rid);
-    if (frame && frame.parent && !frame.parent.parent) wc.send('preview:blocked');
+    // A frame already gone throws when read: then nothing is restored.
+    let previewFrame = false;
+    try {
+      const frame = webFrameMain.fromId(pid, rid);
+      previewFrame = Boolean(frame && frame.parent && !frame.parent.parent);
+    } catch { /* gone */ }
+    if (previewFrame) wc.send('preview:blocked');
   });
 }
 
