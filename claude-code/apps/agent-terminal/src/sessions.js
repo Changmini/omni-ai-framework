@@ -433,6 +433,26 @@ class SessionManager {
     return `vscode://file${p.startsWith('/') ? '' : '/'}${uriPath(p)}`;
   }
 
+  // ---------- HTML preview ----------
+
+  // The private folder of the terminal's project (the same root as the file
+  // tab: its git repository, else its folder) as this host reads it, and
+  // the page's path of its index.html. null while the folder changes.
+  async previewDir(id) {
+    const s = this.sessions.get(id);
+    if (!s || !s.cwd) return null;
+    if (!s.previewRoot || s.previewRoot.cwd !== s.cwd) {
+      const cwd = s.cwd;
+      const found = await fileTree.findRoot(this.hostPath(s, cwd));
+      if (cwd !== s.cwd || !this.sessions.has(id)) return null;
+      s.previewRoot = { cwd, host: found.dir, root: s.wsl ? windowsToWsl(found.dir) || cwd : found.dir };
+    }
+    const r = s.previewRoot;
+    const win = /^[a-zA-Z]:|^\\\\/.test(r.root);
+    const sep = win ? '\\' : '/';
+    return { dir: path.join(r.host, 'private'), shown: `${r.root.replace(/[\\/]+$/, '')}${sep}private${sep}index.html` };
+  }
+
   // ---------- file tab (read-only) ----------
 
   // One folder of the project: the root's own entries for '' (also finding

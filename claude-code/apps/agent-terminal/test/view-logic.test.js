@@ -156,3 +156,20 @@ test('treeMarks.own gives only the mark git gave the path itself', () => {
   assert.strictEqual(t.own('reports/run.log'), null);
   assert.strictEqual(t.own('src/a.py'), 'M');
 });
+
+test('preview: what a new drawing does, where the preview goes, how wide', () => {
+  const { previewOnChange, previewPlacement, previewWidth, historyLabel } = require('../src/renderer/view-logic');
+  assert.strictEqual(previewOnChange({ open: true, userClosed: false, detached: false }), 'reload');
+  assert.strictEqual(previewOnChange({ open: false, userClosed: false, detached: false }), 'open');
+  assert.strictEqual(previewOnChange({ open: false, userClosed: true, detached: false }), 'badge');
+  assert.strictEqual(previewOnChange({ open: true, userClosed: false, detached: true }), 'none');
+  assert.strictEqual(previewPlacement(1200), 'split');
+  assert.strictEqual(previewPlacement(600), 'tab');
+  assert.strictEqual(previewWidth(0.5, 1200), 600);
+  assert.strictEqual(previewWidth(0.9, 1200), 1200 - 360 - 6, 'the terminal keeps its minimum');
+  assert.strictEqual(previewWidth(0.1, 1200), 320, 'the preview keeps its minimum');
+  assert.strictEqual(previewWidth(NaN, 1000), 500);
+  assert.strictEqual(historyLabel('2026-11-16_18-02-31.html', '2026-11-16'), '18:02:31');
+  assert.strictEqual(historyLabel('2026-11-15_09-00-00-2.html', '2026-11-16'), '11-15 09:00:00');
+  assert.strictEqual(historyLabel('x.html', '2026-11-16'), '');
+});

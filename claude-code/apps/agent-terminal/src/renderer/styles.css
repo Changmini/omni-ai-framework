@@ -519,14 +519,16 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .app:not(.inspector-closed) #inspector-toggle { color: var(--accent); }
 /* same box as .topbar so the lines meet */
 .inspector-head {
-  display: flex; align-items: stretch; gap: 2px; flex: none;
+  display: flex; align-items: stretch; gap: 2px; flex: none; min-width: 0; overflow: hidden;
   height: 46px; padding: 0 10px; border-bottom: 1px solid var(--line);
 }
 .tab {
   background: none; border: 0; border-bottom: 2px solid transparent;
-  color: var(--muted); font: inherit; font-size: 12px;
+  color: var(--muted); font: inherit; font-size: 12px; white-space: nowrap; flex: 0 1 auto; min-width: 0;
   padding: 2px 10px 0; cursor: pointer; /* text centred like the top bar, underline on the border */
 }
+/* five tabs in a narrow panel (the preview tab): tighter, never wrapped */
+.inspector-head:has(.tab[data-tab="preview"]:not([hidden])) .tab { padding: 2px 6px 0; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 .inspector-head .mini-btn { align-self: center; margin-left: auto; }
@@ -600,3 +602,51 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .card-pre .d-hunk { color: var(--muted); }
 .act-file.open-failed { color: var(--err); text-decoration-color: var(--err); }
 .ctx-row .ctx-who { min-width: 0; }
+
+/* HTML preview: private/index.html beside the terminal (or in a side-panel
+   tab when narrow, or in its own window) */
+.center { position: relative; flex: 1; min-height: 0; display: flex; }
+.center > .terminals { min-width: 0; }
+.preview-resizer { flex: none; width: 6px; margin: 0 -3px; z-index: 2; cursor: col-resize; position: relative; }
+.preview-resizer::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px;
+  background: var(--line); transition: background .12s;
+}
+.preview-resizer:hover::after, body.resizing .preview-resizer::after { background: var(--accent); }
+.preview-resizer[hidden], .preview-slot[hidden] { display: none; }
+.preview-slot { flex: none; display: flex; min-width: 0; min-height: 0; }
+/* a drag over the drawing must not lose the pointer to its frame */
+body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: none; }
+.preview-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); container-type: inline-size; }
+.preview-head {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px; min-width: 0; overflow: hidden;
+  border-bottom: 1px solid var(--line); font-size: 12px;
+}
+.preview-head .icon-btn { width: 26px; height: 26px; }
+.preview-title { flex: none; font-weight: 700; }
+.preview-path {
+  flex: 1 1 auto; min-width: 30px; color: var(--muted); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.preview-path > span { direction: ltr; unicode-bidi: isolate; }
+.preview-mark { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+/* a narrow preview drops the path, then the title, before the buttons */
+@container (max-width: 560px) { .preview-path { display: none; } .preview-mark { flex: 1 1 auto; } }
+@container (max-width: 440px) { .preview-title { display: none; } }
+.preview-mark[data-kind="new"] { color: var(--ok); }
+.preview-mark[data-kind="old"] { color: var(--busy); }
+.preview-mark[data-kind="error"] { color: var(--err); }
+.preview-nav { flex: none; display: inline-flex; align-items: center; gap: 3px; }
+.preview-nav[hidden] { display: none; }
+.preview-nav .vbtn { padding: 0 6px; }
+.preview-nav .vbtn:disabled { opacity: .35; cursor: default; }
+.preview-count { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 30px; text-align: center; }
+/* white like a browser page: a drawing without a background stays readable */
+.preview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #fff; }
+.preview-toggle { position: relative; }
+.preview-toggle[aria-pressed="true"] { color: var(--accent); }
+.preview-badge { display: none; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.preview-toggle.has-new .preview-badge { display: block; }
+.tab-body.preview-tab { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.tab-body.preview-tab[hidden] { display: none; }
+.preview-tab-slot { flex: 1; display: flex; min-height: 0; }

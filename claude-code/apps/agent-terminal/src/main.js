@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard, protocol, screen, session } = require('electron');
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
@@ -16,14 +16,121 @@ const { runTmux, listPanes } = require('./tmux');
 const { readContextUsage } = require('./usage');
 const { PlanUsage } = require('./plan-usage');
 const { readTextFile } = require('./files');
+const preview = require('./preview');
 
 let win = null;
 let manager = null;
 let plan = null;
+let previewWin = null; // the preview in its own window, when detached
+let previewActive = null; // the terminal the main window shows (the detached preview follows it)
+let previewWatch = null;
 
 const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
+const sendPreview = (channel, payload) => {
+  send(channel, payload);
+  if (previewWin && !previewWin.isDestroyed()) previewWin.webContents.send(channel, payload);
+};
+
+// The HTML preview's pages come from omni-preview://t<terminal id>/<path in
+// private/>: an origin of their own (not the app's file:// pages), shown in
+// a sandboxed iframe without allow-same-origin, so a drawing's scripts
+// reach nothing of the app. Registered before the app is ready.
+const PREVIEW_SCHEME = 'omni-preview';
+protocol.registerSchemesAsPrivileged([
+  { scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
+async function servePreview(request) {
+  const head = (status, type) => ({
+    status,
+    headers: { 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Security-Policy': preview.PAGE_CSP, 'X-Content-Type-Options': 'nosniff' },
+  });
+  try {
+    const u = new URL(request.url);
+    const m = /^t(\d{1,6})$/.exec(u.hostname);
+    const target = m && manager ? await manager.previewDir(m[1]) : null;
+    const segs = preview.urlSegments(u.pathname);
+    if (!target || !segs) return new Response('not found', head(404, 'text/plain'));
+    const r = await preview.serveFile(target.dir, segs);
+    return new Response(r.body, head(r.status, r.type));
+  } catch {
+    return new Response('error', head(500, 'text/plain'));
+  }
+}
+
+// The state of terminal `id`'s preview, checking the file now (a change is
+// announced to every window by the watch).
+async function checkPreview(id, wrote = false) {
+  const target = id && manager ? await manager.previewDir(id) : null;
+  if (!target) return { error: '미리보기 폴더를 찾을 수 없습니다' };
+  const st = await previewWatch.check(target.dir, { id, shown: target.shown }, wrote);
+  return { ...st, shown: target.shown, url: `${PREVIEW_SCHEME}://t${id}/` };
+}
+
+// Pages of both windows: frames may only show preview pages, so a drawing
+// cannot take its frame to another site or to a local file. The windows'
+// own CSP (frame-src omni-preview:) refuses such a navigation however it
+// starts; will-frame-navigate also stops the ones it is told of (a page's
+// timer is not). A refused one leaves an error page in the frame: the pane
+// is told to show the drawing again. New windows are never opened by a page.
+function guardNavigation(wc) {
+  const preview = (url) => String(url).startsWith(`${PREVIEW_SCHEME}://`);
+  wc.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && !preview(e.url)) e.preventDefault();
+  });
+  wc.on('did-fail-provisional-load', (_e, _code, _desc, url, isMainFrame) => {
+    if (!isMainFrame && !preview(url) && url !== 'about:blank') wc.send('preview:blocked');
+  });
+}
+
+// The detached preview window: same app, a window of its own (another
+// monitor, say). Its place is remembered; closing it brings the preview
+// back beside the terminal.
+const previewBoundsFile = () => path.join(app.getPath('userData'), 'preview-window.json');
+function previewBounds() {
+  try {
+    const b = JSON.parse(fs.readFileSync(previewBoundsFile(), 'utf8'));
+    const ok = [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width >= 320 && b.height >= 240;
+    // Only where a display still is (a monitor may be gone).
+    const area = ok && screen.getDisplayMatching(b).workArea;
+    if (ok && area && b.x < area.x + area.width - 40 && b.x + b.width > area.x + 40 && b.y < area.y + area.height - 40 && b.y + b.height > area.y) return b;
+  } catch { /* none yet */ }
+  return { width: 900, height: 700 };
+}
+
+function openPreviewWindow() {
+  if (previewWin && !previewWin.isDestroyed()) { previewWin.focus(); return; }
+  previewWin = new BrowserWindow({
+    ...previewBounds(),
+    minWidth: 320,
+    minHeight: 240,
+    backgroundColor: '#14161c',
+    title: '미리보기 · Omni Agent Terminal',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preview-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  previewWin.loadFile(path.join(__dirname, 'renderer', 'preview.html'));
+  previewWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  previewWin.webContents.on('will-navigate', (e) => e.preventDefault());
+  guardNavigation(previewWin.webContents);
+  const save = () => {
+    if (!previewWin || previewWin.isDestroyed() || previewWin.isMinimized()) return;
+    try { fs.writeFileSync(previewBoundsFile(), JSON.stringify(previewWin.getNormalBounds())); } catch { /* not saved */ }
+  };
+  previewWin.on('close', save);
+  previewWin.on('closed', () => {
+    previewWin = null;
+    send('preview:detached', false);
+  });
+  send('preview:detached', true);
+}
 
 const str = (v, max = 100000) => (typeof v === 'string' && v.length <= max ? v : null);
 const int = (v) => (Number.isInteger(v) && v > 0 && v < 10000 ? v : null);
@@ -84,6 +191,25 @@ function registerIpc() {
   });
   ipcMain.handle('files:list', (_e, id, rel, fresh) => manager.fileTree(str(id, 20), str(rel, 4000) ?? '', fresh === true));
   ipcMain.handle('files:all', (_e, id) => manager.fileList(str(id, 20)));
+  ipcMain.handle('preview:check', (_e, id) => checkPreview(str(id, 20)));
+  ipcMain.handle('preview:open-external', async (_e, id) => {
+    const target = await manager.previewDir(str(id, 20));
+    const file = target && path.join(target.dir, preview.INDEX);
+    if (!file || !(await fs.promises.access(file).then(() => true, () => false))) return false;
+    return (await shell.openPath(file)) === '';
+  });
+  ipcMain.handle('preview:active', (_e, id) => {
+    previewActive = str(id, 20);
+    if (previewWin && !previewWin.isDestroyed()) previewWin.webContents.send('preview:target', previewActive);
+    return true;
+  });
+  ipcMain.handle('preview:target', () => previewActive);
+  ipcMain.handle('preview:detach', () => { openPreviewWindow(); return true; });
+  ipcMain.handle('preview:attach', () => {
+    if (previewWin && !previewWin.isDestroyed()) previewWin.close();
+    return true;
+  });
+  ipcMain.handle('preview:detached', () => Boolean(previewWin && !previewWin.isDestroyed()));
   ipcMain.handle('git:status', (_e, id, fresh) => manager.gitStatus(str(id, 20), fresh !== false));
   ipcMain.handle('git:untracked', (_e, id, dir) => manager.gitUntracked(str(id, 20), str(dir, 4000)));
   ipcMain.handle('git:diff', (_e, id, path) => manager.gitDiff(str(id, 20), str(path, 4000)));
@@ -128,6 +254,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  guardNavigation(win.webContents);
   // F12 keeps developer tools reachable without the default menu.
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') { win.webContents.toggleDevTools(); e.preventDefault(); }
@@ -154,8 +281,22 @@ if (primaryInstance) app.whenReady().then(async () => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   // Claude Code hooks for app terminals only: a local receiver plus a settings
   // file that the shell integration passes to claude with --settings.
+  previewWatch = new preview.PreviewWatch({ emit: ({ key, version }) => sendPreview('preview:changed', { id: key.id, shown: key.shown, version }) });
+  protocol.handle(PREVIEW_SCHEME, servePreview);
+  // A drawing's page asks for nothing (camera, notifications, ...): refused.
+  const fromPreview = (url) => String(url || '').startsWith(`${PREVIEW_SCHEME}:`);
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb, details) => cb(!fromPreview(details && details.requestingUrl)));
+  session.defaultSession.setPermissionCheckHandler((_wc, _perm, origin) => !fromPreview(origin));
   hooks = await startHookServer({
-    onEvent: (id, ev, meta) => manager && manager.onHookEvent(id, ev, meta),
+    onEvent: (id, ev, meta) => {
+      if (manager) manager.onHookEvent(id, ev, meta);
+      // Claude wrote the preview: shown at once, not at the next look.
+      const file = ev && ev.tool_input && ev.tool_input.file_path;
+      if (manager && ev && ev.hook_event_name === 'PostToolUse' && /^(Write|Edit|MultiEdit)$/.test(ev.tool_name || '')
+        && typeof file === 'string' && /(^|[\\/])private[\\/]index\.html$/.test(file)) {
+        checkPreview(String(id), true).catch(() => {});
+      }
+    },
     onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
     onStatusLine: (_id, data) => plan && plan.report(data),
   });

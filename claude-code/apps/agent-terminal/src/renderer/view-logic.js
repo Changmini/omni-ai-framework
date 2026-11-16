@@ -333,5 +333,43 @@
     };
   }
 
-  return { diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, statusMark, treeMarks };
+  // ---------- HTML preview ----------
+
+  // What a new drawing does to the preview: shown already -> reload it;
+  // closed by the app's default -> open it; closed by the user -> only a
+  // badge on its button; shown in its own window -> that window updates.
+  function previewOnChange({ open, userClosed, detached }) {
+    if (detached) return 'none';
+    if (open) return 'reload';
+    return userClosed ? 'badge' : 'open';
+  }
+
+  // Beside the terminal when both fit, else as a tab of the side panel.
+  const PREVIEW_MIN = 320;
+  const TERMINAL_MIN = 360;
+  function previewPlacement(centerWidth) {
+    return centerWidth >= TERMINAL_MIN + PREVIEW_MIN + 6 ? 'split' : 'tab';
+  }
+
+  // The preview's width for a chosen share of the centre, kept between
+  // PREVIEW_MIN and what leaves the terminal TERMINAL_MIN.
+  function previewWidth(ratio, centerWidth) {
+    const r = Number.isFinite(ratio) && ratio > 0 && ratio < 1 ? ratio : 0.5;
+    const max = Math.max(PREVIEW_MIN, centerWidth - TERMINAL_MIN - 6);
+    return Math.round(Math.min(max, Math.max(PREVIEW_MIN, centerWidth * r)));
+  }
+
+  // "2026-11-16_18-02-31.html" -> "18:02:31", with the date when not `today`
+  // ("2026-11-16").
+  function historyLabel(name, today) {
+    const m = /^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)/.exec(String(name || ''));
+    if (!m) return '';
+    const time = `${m[2]}:${m[3]}:${m[4]}`;
+    return m[1] === today ? time : `${m[1].slice(5)} ${time}`;
+  }
+
+  return {
+    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, statusMark, treeMarks,
+    previewOnChange, previewPlacement, previewWidth, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
+  };
 }));

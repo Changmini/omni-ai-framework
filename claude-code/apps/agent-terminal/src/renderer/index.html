@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; frame-src omni-preview:">
   <title>Omni Agent Terminal</title>
   <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
   <!-- Bundled Korean coding font (OFL-1.1), so Hangul renders without system fonts -->
@@ -88,11 +88,16 @@
         <span id="active-name" class="active-name"></span>
         <span id="active-cwd" class="muted ellipsis"></span>
         <span id="active-status" class="status-text"></span>
+        <button id="preview-toggle" class="icon-btn preview-toggle" title="미리보기 (Ctrl+Shift+P)" aria-label="미리보기">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><path d="M3.5 11 6.5 7.5 8.5 9.5 10 8 12.5 11Z" fill="currentColor"/><circle cx="11" cy="5.5" r="1.1" fill="currentColor"/></svg>
+          <span class="preview-badge" aria-hidden="true"></span>
+        </button>
         <button id="inspector-toggle" class="icon-btn" title="상세 패널 접기/펴기 (Ctrl+Shift+I)" aria-label="상세 패널 접기/펴기">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor"/></svg>
         </button>
       </div>
       <div id="error-banner" class="error-banner" hidden></div>
+      <div id="center" class="center">
       <div id="terminals" class="terminals">
         <div id="search-bar" class="search-bar" hidden role="search">
           <input id="search-input" placeholder="검색" spellcheck="false" aria-label="터미널 출력 검색">
@@ -115,6 +120,11 @@
           <div id="viewer-body" class="viewer-body" tabindex="-1"></div>
         </section>
       </div>
+      <!-- HTML preview beside the terminal (private/index.html) -->
+      <div id="preview-resizer" class="preview-resizer" role="separator" aria-orientation="vertical" hidden
+           title="끌어서 미리보기 너비 조절 · 더블클릭: 반반"></div>
+      <div id="preview-slot" class="preview-slot" hidden></div>
+      </div>
     </main>
     <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-orientation="vertical"
          title="끌어서 상세 패널 너비 조절 · 더블클릭: 기본 너비"></div>
@@ -124,6 +134,7 @@
         <button class="tab" role="tab" data-tab="files">파일</button>
         <button class="tab" role="tab" data-tab="git">git</button>
         <button class="tab" role="tab" data-tab="config">Claude 구성</button>
+        <button class="tab" role="tab" data-tab="preview" hidden>미리보기</button>
         <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
       </div>
       <section class="tab-body" data-tab="activity">
@@ -143,6 +154,9 @@
         <div id="git-head" class="git-head"></div>
         <div id="git-body"></div>
       </section>
+      <section class="tab-body preview-tab" data-tab="preview">
+        <div id="preview-tab-slot" class="preview-tab-slot"></div>
+      </section>
       <section class="tab-body" data-tab="config">
         <div id="config-project" class="hint ellipsis"></div>
         <div id="config-body"></div>
@@ -155,6 +169,7 @@
   <script src="../../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
   <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="view-logic.js"></script>
+  <script src="preview-pane.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

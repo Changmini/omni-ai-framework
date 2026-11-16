@@ -1,0 +1,181 @@
+'use strict';
+
+// The HTML preview: <project>/private/index.html, drawn by Claude on request
+// (diagrams, charts) and shown beside the terminal. This module has no
+// Electron in it (tested with node); main.js serves its answers over the
+// omni-preview:// protocol and sends its change notices to the windows.
+//
+// Paths here are the ones this host reads (inside WSL: \\wsl.localhost\...).
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { relSegments, insideReal } = require('./file-tree');
+
+const PREVIEW_DIR = 'private';
+const INDEX = 'index.html';
+const HISTORY_DIR = '.history';
+const HISTORY_MAX = 10; // earlier drawings kept
+const CONTENT_MAX = 2 * 1024 * 1024; // a drawing larger than this gets no earlier version kept
+const FILE_MAX = 32 * 1024 * 1024; // largest file served
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.txt': 'text/plain; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.wasm': 'application/wasm',
+};
+const mimeOf = (file) => MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+
+// What a preview page may do: scripts, styles, images and fonts from the
+// page itself and from https (chart and diagram libraries on a CDN), no
+// frames, no forms. The page also runs in a sandboxed iframe without
+// allow-same-origin, so it reaches nothing of the app.
+const PAGE_CSP = [
+  "default-src 'self' https: data: blob:",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: blob:",
+  "style-src 'self' 'unsafe-inline' https:",
+  "img-src 'self' https: data: blob:",
+  "font-src 'self' https: data:",
+  "connect-src 'self' https:",
+  "frame-src 'none'",
+  "form-action 'none'",
+  "base-uri 'self'",
+].join('; ');
+
+// Added to every HTML page shown: the page tells the app where it is
+// scrolled, and the app sends that back after a reload, so a redrawn page
+// keeps its place. Messages carry numbers only.
+const SCROLL_KEEPER = '<script>(function(){var t;function s(){parent.postMessage({omniPreview:"scroll",x:scrollX,y:scrollY},"*")}'
+  + 'addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(s,120)},{passive:true});'
+  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&d&&d.omniPreview==="restore"){scrollTo(+d.x||0,+d.y||0)}});'
+  + 'parent.postMessage({omniPreview:"ready"},"*")})();</script>';
+
+function withScrollKeeper(html) {
+  const at = html.search(/<\/body\s*>/i);
+  return at === -1 ? html + SCROLL_KEEPER : html.slice(0, at) + SCROLL_KEEPER + html.slice(at);
+}
+
+// Shown while private/index.html does not exist yet.
+const GUIDE_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>미리보기</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#14161c;color:#d7dae0;font:14px/1.6 system-ui,sans-serif}
+main{max-width:460px;padding:24px}h1{font-size:17px;margin:0 0 10px}p{color:#9aa1b2;margin:6px 0}code{background:#1f2430;padding:1px 6px;border-radius:4px;color:#e6b450}</style>
+</head><body><main><h1>아직 그림이 없습니다</h1>
+<p>터미널의 Claude에게 <b>다이어그램</b>, <b>차트</b>, <b>그림</b>을 부탁하면 <code>private/index.html</code>에 그리고, 여기에 바로 나타납니다.</p>
+<p>예: "결제 흐름을 다이어그램으로 그려줘"</p></main></body></html>`;
+
+// "2026-11-16_18-02-31.html" in local time; -2, -3 ... when one exists.
+function historyName(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.html`;
+}
+const HISTORY_FILE = /^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d(-\d+)?\.html$/;
+
+// Earlier drawings, newest first (names sort by time).
+async function listHistory(dir) {
+  let names;
+  try { names = await fs.promises.readdir(path.join(dir, HISTORY_DIR)); } catch { return []; }
+  return names.filter((n) => HISTORY_FILE.test(n)).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}
+
+// Keeps the version a change replaced, then the newest HISTORY_MAX only.
+async function keepHistory(dir, content, at) {
+  const hist = path.join(dir, HISTORY_DIR);
+  await fs.promises.mkdir(hist, { recursive: true });
+  const base = historyName(at).replace(/\.html$/, '');
+  let name = `${base}.html`;
+  for (let k = 2; await fs.promises.access(path.join(hist, name)).then(() => true, () => false); k++) name = `${base}-${k}.html`;
+  await fs.promises.writeFile(path.join(hist, name), content);
+  const all = await listHistory(dir);
+  for (const old of all.slice(HISTORY_MAX)) await fs.promises.unlink(path.join(hist, old)).catch(() => {});
+}
+
+// Change detection for each private folder: the last version seen (time,
+// size, content), a version number that grows with each change, and the
+// earlier version copied to .history when a change replaces it. Asked by
+// the page while the preview shows (every second) and by main.js when a
+// Claude Write/Edit of private/index.html arrives. One check at a time per
+// folder; a check during one gets its answer.
+class PreviewWatch {
+  constructor({ emit = () => {}, now = Date.now } = {}) {
+    this.emit = emit;
+    this.now = now;
+    this.state = new Map(); // dir -> { mtimeMs, size, content, version, at, pending }
+  }
+
+  // `wrote`: Claude just wrote the file (a hook): announced even on the
+  // first look, so a preview never looked at yet still opens for it.
+  async check(dir, key, wrote = false) {
+    let st = this.state.get(dir);
+    if (!st) { st = { seen: false, mtimeMs: null, size: null, content: null, version: 0, at: null, pending: null }; this.state.set(dir, st); }
+    if (st.pending) return st.pending;
+    st.pending = this.checkNow(dir, st, key, wrote).finally(() => { st.pending = null; });
+    return st.pending;
+  }
+
+  async checkNow(dir, st, key, wrote) {
+    const file = path.join(dir, INDEX);
+    const info = await fs.promises.stat(file).catch(() => null);
+    // The first look at a folder only records it; every later change is
+    // announced (also a drawing that appears where there was none).
+    const first = !st.seen;
+    st.seen = true;
+    if (!info || !info.isFile()) {
+      const was = st.mtimeMs !== null;
+      Object.assign(st, { mtimeMs: null, size: null, content: null });
+      if (was) { st.version++; st.at = this.now(); this.emit({ key, dir, version: st.version }); }
+      return this.answer(dir, st, false);
+    }
+    if (info.mtimeMs === st.mtimeMs && info.size === st.size) return this.answer(dir, st, true);
+    const content = info.size <= CONTENT_MAX ? await fs.promises.readFile(file).catch(() => null) : null;
+    const same = content && st.content && content.equals(st.content);
+    if (!first && !same && st.content) await keepHistory(dir, st.content, st.at || this.now()).catch(() => {});
+    Object.assign(st, { mtimeMs: info.mtimeMs, size: info.size, content });
+    if (first || !same) {
+      st.version++;
+      st.at = this.now();
+      if (!first || wrote) this.emit({ key, dir, version: st.version });
+    }
+    return this.answer(dir, st, true);
+  }
+
+  async answer(dir, st, exists) {
+    return { exists, version: st.version, at: st.at, history: await listHistory(dir) };
+  }
+}
+
+// One file of a private folder for the omni-preview:// protocol: `segs` as
+// from the URL path. index.html that does not exist yet is the guide page.
+// HTML gets the scroll keeper. -> { status, type, body }.
+async function serveFile(dir, segs) {
+  const ok = (type, body) => ({ status: 200, type, body });
+  if (!segs.length || (segs.length === 1 && segs[0] === INDEX)) {
+    const info = await fs.promises.stat(path.join(dir, INDEX)).catch(() => null);
+    if (!info) return ok(MIME['.html'], withScrollKeeper(GUIDE_PAGE));
+    segs = [INDEX];
+  }
+  const file = path.join(dir, ...segs);
+  // ".." and absolute parts never get here (relSegments); a link inside the
+  // folder must not lead out of it either.
+  if (!(await insideReal(dir, file))) return { status: 403, type: MIME['.txt'], body: 'not allowed' };
+  const info = await fs.promises.stat(file).catch(() => null);
+  if (!info || !info.isFile()) return { status: 404, type: MIME['.txt'], body: 'not found' };
+  if (info.size > FILE_MAX) return { status: 413, type: MIME['.txt'], body: 'too large' };
+  const body = await fs.promises.readFile(file);
+  const type = mimeOf(file);
+  return ok(type, type.startsWith('text/html') ? withScrollKeeper(body.toString('utf8')) : body);
+}
+
+// The URL path of an omni-preview:// request as segments, or null.
+function urlSegments(pathname, win = process.platform === 'win32') {
+  let rel;
+  try { rel = decodeURIComponent(String(pathname || '').replace(/^\/+/, '')); } catch { return null; }
+  return relSegments(rel, win);
+}
+
+module.exports = {
+  PREVIEW_DIR, INDEX, HISTORY_DIR, HISTORY_MAX, PAGE_CSP, GUIDE_PAGE,
+  PreviewWatch, serveFile, urlSegments, listHistory, historyName, withScrollKeeper, mimeOf,
+};
