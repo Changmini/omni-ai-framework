@@ -359,6 +359,13 @@
     return Math.round(Math.min(max, Math.max(PREVIEW_MIN, centerWidth * r)));
   }
 
+  // A drawing's page tried to go elsewhere and was refused: shown again,
+  // unless it was just shown again for the same (it would go on and on).
+  const PREVIEW_RESTORE_GAP = 5000;
+  function previewRestore(restoredAt, now) {
+    return now - restoredAt < PREVIEW_RESTORE_GAP ? 'halt' : 'restore';
+  }
+
   // "2026-11-16_18-02-31.html" -> "18:02:31", with the date when not `today`
   // ("2026-11-16").
   function historyLabel(name, today) {
@@ -370,6 +377,6 @@
 
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, statusMark, treeMarks,
-    previewOnChange, previewPlacement, previewWidth, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
+    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

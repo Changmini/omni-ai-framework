@@ -199,3 +199,7 @@ test('the scroll keeper goes before the last </body>', () => {
   assert.ok(out.startsWith('<body><script>const s = "</body>";</script><script>'), 'not inside the string');
   assert.ok(out.endsWith('</script></body>'));
 });
+
+test('the page tells the app when the user presses in it (trusted presses only)', () => {
+  assert.match(withScrollKeeper('<body></body>'), /pointerdown.*isTrusted.*omniPreview:"touch"/);
+});

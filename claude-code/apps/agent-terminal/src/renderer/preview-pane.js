@@ -70,6 +70,9 @@
     let shownVersion = null;
     let changedAt = 0;
     let lastTouch = 0; // the user clicked in the pane
+    let loaded = null; // what the frame was last given: "<private path> <src>"
+    let restoredAt = 0;
+    let halted = false; // the page kept going elsewhere: left until a new version or ⟳
     const scrolls = new Map(); // src without ?v= -> { x, y }
 
     pane.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
@@ -93,6 +96,9 @@
       if (state && state.error) {
         mark.textContent = state.error;
         mark.dataset.kind = 'error';
+      } else if (halted) {
+        mark.textContent = '그림이 다른 페이지로 가려 해 멈췄습니다 · ⟳';
+        mark.dataset.kind = 'error';
       } else if (index > 0) {
         mark.textContent = `이전 그림 · ${root.ViewLogic.historyLabel(state.history[index - 1], today())}`;
         mark.dataset.kind = 'old';
@@ -108,15 +114,33 @@
       }
     }
 
+    // The URL alone is not enough to know the frame shows it: a terminal
+    // that moved to another project has the same URL (t<id>, version 1).
     function load() {
       const src = srcFor();
-      if (frame.getAttribute('src') === src) return;
+      const key = `${state && state.shown} ${src}`;
+      if (loaded === key) return;
+      loaded = key;
       frame.setAttribute('src', src);
     }
 
-    // A reload must not take the keyboard from the terminal.
+    function blank() {
+      loaded = null;
+      frame.setAttribute('src', 'about:blank');
+    }
+
+    // The page must not take the keyboard from the terminal: not when it
+    // loads, nor later (a script calling focus()). Unless the user pressed
+    // in the pane or the page just before.
+    const untouched = () => Date.now() - lastTouch > 1500;
     frame.addEventListener('load', () => {
-      if (document.activeElement === frame && Date.now() - lastTouch > 1500) refocus();
+      if (document.activeElement === frame && untouched()) refocus();
+    });
+    window.addEventListener('blur', () => {
+      // After the page's "touch" message (sent as the user pressed) arrives.
+      setTimeout(() => {
+        if (document.activeElement === frame && document.hasFocus() && untouched()) refocus();
+      }, 150);
     });
 
     // The page's scroll position (numbers only), kept per drawing and sent
@@ -124,7 +148,9 @@
     window.addEventListener('message', (e) => {
       if (e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
       const key = srcKey();
-      if (e.data.omniPreview === 'scroll') {
+      if (e.data.omniPreview === 'touch') {
+        lastTouch = Date.now();
+      } else if (e.data.omniPreview === 'scroll') {
         const x = Number(e.data.x);
         const y = Number(e.data.y);
         if (Number.isFinite(x) && Number.isFinite(y)) scrolls.set(key, { x, y });
@@ -141,8 +167,12 @@
       let r;
       try { r = await api.previewCheck(want); } catch { r = { error: '읽을 수 없습니다' }; }
       if (want !== id) return null;
+      // The terminal went to another project: its drawings from the start.
+      const moved = Boolean(state && r.shown !== state.shown);
+      if (moved) { index = 0; shownVersion = null; scrolls.clear(); }
       const fresh = state && !state.error && r.version !== shownVersion && shownVersion !== null;
       state = r;
+      if (fresh || moved) halted = false;
       if (fresh) { changedAt = Date.now(); index = 0; }
       if (index > (r.history || []).length) index = 0;
       shownVersion = r.version;
@@ -158,16 +188,18 @@
       index = 0;
       shownVersion = null;
       scrolls.clear();
+      halted = false;
       renderHead();
-      frame.setAttribute('src', 'about:blank');
+      blank();
       poll();
     }
 
-    older.addEventListener('click', () => { if (state && index < state.history.length) { index++; renderHead(); load(); } });
-    newer.addEventListener('click', () => { if (index > 0) { index--; renderHead(); load(); } });
+    older.addEventListener('click', () => { if (state && index < state.history.length) { index++; halted = false; renderHead(); load(); } });
+    newer.addEventListener('click', () => { if (index > 0) { index--; halted = false; renderHead(); load(); } });
     reload.addEventListener('click', () => {
       if (!state) return;
-      frame.setAttribute('src', 'about:blank');
+      halted = false;
+      blank();
       requestAnimationFrame(load);
       poll();
     });
@@ -184,7 +216,14 @@
       target: () => id,
       // Shows the drawing again (after its page tried to go elsewhere and
       // was refused, leaving an error page).
-      restore() { frame.setAttribute('src', 'about:blank'); requestAnimationFrame(load); },
+      // A page that goes elsewhere again right away is not reloaded over
+      // and over: it stays stopped until a new version or ⟳.
+      restore() {
+        if (root.ViewLogic.previewRestore(restoredAt, Date.now()) === 'halt') { halted = true; renderHead(); return; }
+        restoredAt = Date.now();
+        blank();
+        requestAnimationFrame(load);
+      },
       // Marks the drawing new ("방금 갱신됨"): it opened for a new drawing.
       flash() { changedAt = Date.now(); renderHead(); },
       shown: () => (state ? state.shown : null),

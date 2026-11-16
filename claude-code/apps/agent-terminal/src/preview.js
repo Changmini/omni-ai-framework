@@ -46,9 +46,12 @@ const PAGE_CSP = [
 
 // Added to every HTML page shown: the page tells the app where it is
 // scrolled, and the app sends that back after a reload, so a redrawn page
-// keeps its place. Messages carry numbers only.
+// keeps its place. It also tells when the user presses in the page (so the
+// app lets the page keep the keyboard then, and only then). Messages carry
+// numbers only.
 const SCROLL_KEEPER = '<script>(function(){var t;function s(){parent.postMessage({omniPreview:"scroll",x:scrollX,y:scrollY},"*")}'
   + 'addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(s,120)},{passive:true});'
+  + 'addEventListener("pointerdown",function(e){if(e.isTrusted)parent.postMessage({omniPreview:"touch"},"*")},true);'
   + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&d&&d.omniPreview==="restore"){scrollTo(+d.x||0,+d.y||0)}});'
   + 'parent.postMessage({omniPreview:"ready"},"*")})();</script>';
 

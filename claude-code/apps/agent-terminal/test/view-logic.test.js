@@ -173,3 +173,10 @@ test('preview: what a new drawing does, where the preview goes, how wide', () =>
   assert.strictEqual(historyLabel('2026-11-15_09-00-00-2.html', '2026-11-16'), '11-15 09:00:00');
   assert.strictEqual(historyLabel('x.html', '2026-11-16'), '');
 });
+
+test('a drawing that keeps leaving is shown again once, then left stopped', () => {
+  const { previewRestore } = require('../src/renderer/view-logic');
+  assert.strictEqual(previewRestore(0, 100000), 'restore');
+  assert.strictEqual(previewRestore(100000, 101000), 'halt');
+  assert.strictEqual(previewRestore(100000, 106000), 'restore');
+});

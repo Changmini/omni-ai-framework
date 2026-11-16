@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard, protocol, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard, protocol, screen, session, webFrameMain } = require('electron');
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
@@ -75,14 +75,19 @@ async function checkPreview(id, wrote = false) {
 // own CSP (frame-src omni-preview:) refuses such a navigation however it
 // starts; will-frame-navigate also stops the ones it is told of (a page's
 // timer is not). A refused one leaves an error page in the frame: the pane
-// is told to show the drawing again. New windows are never opened by a page.
+// is told to show the drawing again. Only for the preview frame itself: a
+// frame inside a drawing is refused by the drawing's own CSP (frame-src
+// 'none') and must not reload the drawing (it would again, and again).
+// New windows are never opened by a page.
 function guardNavigation(wc) {
   const preview = (url) => String(url).startsWith(`${PREVIEW_SCHEME}://`);
   wc.on('will-frame-navigate', (e) => {
     if (!e.isMainFrame && !preview(e.url)) e.preventDefault();
   });
-  wc.on('did-fail-provisional-load', (_e, _code, _desc, url, isMainFrame) => {
-    if (!isMainFrame && !preview(url) && url !== 'about:blank') wc.send('preview:blocked');
+  wc.on('did-fail-provisional-load', (_e, _code, _desc, url, isMainFrame, pid, rid) => {
+    if (isMainFrame || preview(url) || url === 'about:blank') return;
+    const frame = webFrameMain.fromId(pid, rid);
+    if (frame && frame.parent && !frame.parent.parent) wc.send('preview:blocked');
   });
 }
 
