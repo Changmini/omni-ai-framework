@@ -180,3 +180,20 @@ test('a drawing that keeps leaving is shown again once, then left stopped', () =
   assert.strictEqual(previewRestore(100000, 101000), 'halt');
   assert.strictEqual(previewRestore(100000, 106000), 'restore');
 });
+
+test('textRanges marks every match of a content search in a line', () => {
+  const { textRanges } = require('../src/renderer/view-logic');
+  assert.deepStrictEqual(textRanges('Hello hello HELLO', 'hello', true), [[0, 5], [6, 11], [12, 17]]);
+  assert.deepStrictEqual(textRanges('Hello hello', 'Hello', false), [[0, 5]]);
+  assert.deepStrictEqual(textRanges('사용자 생성 사용자', '사용자', true), [[0, 3], [7, 10]]);
+  assert.deepStrictEqual(textRanges('abc', '', true), []);
+});
+
+test('hitView: no indent, and a far match brought into view', () => {
+  const { hitView } = require('../src/renderer/view-logic');
+  assert.deepStrictEqual(hitView('    return user;', 'user', true), { text: 'return user;', ranges: [[7, 11]] });
+  const far = `${'a'.repeat(80)} user`;
+  const v = hitView(far, 'user', true);
+  assert.ok(v.text.startsWith('…'));
+  assert.strictEqual(v.text.slice(v.ranges[0][0], v.ranges[0][1]), 'user');
+});
