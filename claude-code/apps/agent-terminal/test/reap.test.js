@@ -1,61 +1,94 @@
 'use strict';
 // Closing a terminal ends everything started from it: found by the marker
-// in the environment, whatever its parent or session.
+// in the environment, whatever its parent or session. A tmux session that
+// another open terminal shows stays.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync, spawnSync } = require('node:child_process');
 const reap = require('../src/reap');
 const { SessionManager } = require('../src/sessions');
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const env = (id, extra = []) => ['A=1', 'OMNI_TERMINAL_RUN=r1', `OMNI_TERMINAL_ID=${id}`, ...extra];
+
 test('isMarked: the run and, unless null, the terminal', () => {
-  const env = ['A=1', 'OMNI_TERMINAL_RUN=r1', 'OMNI_TERMINAL_ID=2'];
-  assert.strictEqual(reap.isMarked(env, 'r1', '2'), true);
-  assert.strictEqual(reap.isMarked(env, 'r1', '20'), false);
-  assert.strictEqual(reap.isMarked(env, 'r1', null), true);
-  assert.strictEqual(reap.isMarked(env, 'r2', '2'), false, 'another run of the app');
+  assert.strictEqual(reap.isMarked(env('2'), 'r1', '2'), true);
+  assert.strictEqual(reap.isMarked(env('2'), 'r1', '20'), false);
+  assert.strictEqual(reap.isMarked(env('2'), 'r1', null), true);
+  assert.strictEqual(reap.isMarked(env('2'), 'r2', '2'), false, 'another run of the app');
   assert.strictEqual(reap.isMarked(['OMNI_TERMINAL_RUN=r1x', 'OMNI_TERMINAL_ID=2'], 'r1', '2'), false);
+  assert.deepStrictEqual(reap.tmuxOf(['TMUX=/tmp/tmux-1000/default,4321,0']), { socket: '/tmp/tmux-1000/default', server: 4321 });
 });
 
-test('findLinux reads the environment of each process', async () => {
+test('listLinux reads the environment of each process', async () => {
   const proc = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-proc-'));
-  const put = (pid, env) => { fs.mkdirSync(path.join(proc, pid)); fs.writeFileSync(path.join(proc, pid, 'environ'), env.join('\0') + '\0'); };
-  put('100', ['OMNI_TERMINAL_RUN=r1', 'OMNI_TERMINAL_ID=1']);
-  put('101', ['OMNI_TERMINAL_RUN=r1', 'OMNI_TERMINAL_ID=2']);
-  put('102', ['OMNI_TERMINAL_ID=1']);
+  const put = (pid, e) => { fs.mkdirSync(path.join(proc, pid)); fs.writeFileSync(path.join(proc, pid, 'environ'), e.join('\0') + '\0'); };
+  put('100', env('1'));
+  put('101', env('2'));
   fs.mkdirSync(path.join(proc, 'self'));
-  assert.deepStrictEqual(await reap.findLinux('r1', '1', proc), [100]);
-  assert.deepStrictEqual(await reap.findLinux('r1', null, proc), [100, 101]);
+  const procs = await reap.listLinux(proc);
+  assert.deepStrictEqual(reap.markedPids(procs, 'r1', '1'), [100]);
+  assert.deepStrictEqual(reap.markedPids(procs, 'r1', null), [100, 101]);
 });
 
-test('parsePs: the marker as whole words of `ps -E` lines', () => {
-  const out = '  200 sleep 30 PATH=/bin OMNI_TERMINAL_RUN=r1 OMNI_TERMINAL_ID=1\n  201 sleep 30 OMNI_TERMINAL_RUN=r1 OMNI_TERMINAL_ID=11\n';
-  assert.deepStrictEqual(reap.parsePs(out, 'r1', '1'), [200]);
+test('parsePs: the environment words of `ps -E` lines', () => {
+  const procs = reap.parsePs('  200 sleep 30 PATH=/bin OMNI_TERMINAL_RUN=r1 OMNI_TERMINAL_ID=1\n  201 sleep 30 OMNI_TERMINAL_RUN=r1 OMNI_TERMINAL_ID=11\n');
+  assert.deepStrictEqual(reap.markedPids(procs, 'r1', '1'), [200]);
+});
+
+test('a tmux server another open terminal is attached to stays, with what it shows', async () => {
+  const SOCK = '/tmp/tmux-1000/default';
+  const procs = [
+    { pid: 10, env: env('1') }, // terminal 1's shell
+    { pid: 11, env: env('1') }, // the tmux server it started
+    { pid: 12, env: env('1', [`TMUX=${SOCK},11,0`]) }, // a pane of the shared session
+    { pid: 13, env: env('1', [`TMUX=${SOCK},11,1`]) }, // a pane of terminal 1's own session
+    { pid: 20, env: env('2') }, // terminal 2's tmux client
+  ];
+  const calls = [];
+  const tmux = async (socket, args) => {
+    calls.push(args.join(' '));
+    if (args[0] === 'list-clients') return '20 shared\n10 mine\n';
+    if (args[0] === 'list-sessions') return 'shared\nmine\n';
+    return '';
+  };
+  const spared = await reap.spareSharedTmux(procs, 'r1', '1', ['2'], tmux);
+  assert.deepStrictEqual([...spared], [11]);
+  assert.ok(calls.includes('kill-session -t =mine'), 'the session only terminal 1 showed ends');
+  assert.ok(!calls.includes('kill-session -t =shared'));
+  assert.deepStrictEqual(reap.toEnd(procs, 'r1', '1', spared), [10], 'the server and its panes are left');
+  // Nobody else attached (terminal 2 closed): the server ends with the rest.
+  const alone = await reap.spareSharedTmux(procs, 'r1', '1', [], tmux);
+  assert.deepStrictEqual(reap.toEnd(procs, 'r1', '1', alone), [10, 11, 12, 13]);
+  // tmux cannot be asked: left as it was.
+  const unknown = await reap.spareSharedTmux(procs, 'r1', '1', ['2'], async () => null);
+  assert.deepStrictEqual(reap.toEnd(procs, 'r1', '1', unknown), [10]);
 });
 
 test('reapTerminal: asked to end, killed when still there after the grace period', async () => {
   const sent = [];
   let looks = 0;
   const r = await reap.reapTerminal('r1', '1', {
-    findFn: async () => (looks++ === 0 ? [10, 11] : [11]),
+    list: async () => (looks++ === 0 ? [{ pid: 10, env: env('1') }, { pid: 11, env: env('1') }] : [{ pid: 11, env: env('1') }]),
     kill: (pids, sig) => sent.push([sig, pids]),
     wait: async () => {},
     wsl: () => {},
   });
   assert.deepStrictEqual(sent, [['SIGHUP', [10, 11]], ['SIGTERM', [10, 11]], ['SIGKILL', [11]]]);
-  assert.deepStrictEqual(r, { asked: [10, 11], killed: [11] });
+  assert.deepStrictEqual(r.killed, [11]);
 });
 
-test('the WSL scan runs for each distro the terminal went into', () => {
+test('the WSL script runs for each distro the terminal went into', () => {
   const runs = [];
-  reap.reapWsl('r1', '3', ['Ubuntu', 'Debian'], 'win32', (file, argv) => { runs.push([file, argv]); return { unref() {} }; });
-  assert.deepStrictEqual(runs.map(([f, a]) => [f, a[1], a.slice(-2)]), [['wsl.exe', 'Ubuntu', ['r1', '3']], ['wsl.exe', 'Debian', ['r1', '3']]]);
-  reap.reapWsl('r1', '3', ['Ubuntu'], 'linux', () => { throw new Error('not on linux'); });
+  reap.reapWsl('r1', '3', ['Ubuntu', 'Debian'], ['1', '2'], 'win32', (file, argv) => { runs.push([file, argv]); return { unref() {} }; });
+  assert.deepStrictEqual(runs.map(([f, a]) => [f, a[1], a.slice(-3)]), [['wsl.exe', 'Ubuntu', ['r1', '3', '1 2']], ['wsl.exe', 'Debian', ['r1', '3', '1 2']]]);
+  reap.reapWsl('r1', '3', ['Ubuntu'], [], 'linux', () => { throw new Error('not on linux'); });
 });
 
-test('closing a terminal reaps it; quitting reaps every terminal at once', () => {
+test('closing a terminal reaps it with the terminals still open; quitting reaps all', () => {
   const calls = [];
   const fakePty = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
   const m = new SessionManager({
@@ -68,30 +101,81 @@ test('closing a terminal reaps it; quitting reaps every terminal at once', () =>
   });
   const a = m.create({});
   const b = m.create({});
-  m.reportShellCwd(b.id, { cwd: '/home/user' });
   m.kill(a.id);
   m.killAll();
-  assert.deepStrictEqual(calls, [['env', 'r1'], ['env', 'r1'], ['terminal', 'r1', a.id, []], ['all', 'r1', []]]);
+  assert.deepStrictEqual(calls, [['env', 'r1'], ['env', 'r1'], ['terminal', 'r1', a.id, [], [b.id]], ['all', 'r1', []]]);
 });
 
-// The real thing (Linux): what outlives a hangup ends too, another
-// terminal's process does not.
-test('reapTerminal ends nohup, setsid and HUP-ignoring processes of the terminal only', { skip: process.platform !== 'linux' }, async () => {
-  const env = (id) => ({ ...process.env, OMNI_TERMINAL_RUN: 'rtest', OMNI_TERMINAL_ID: id });
+// ---------- the real thing (Linux) ----------
+
+const linux = process.platform === 'linux';
+const hasTmux = linux && spawnSync('tmux', ['-V']).status === 0 && spawnSync('script', ['--version']).status === 0;
+const penv = (id) => ({ ...process.env, OMNI_TERMINAL_RUN: 'rtest', OMNI_TERMINAL_ID: id, TMUX: '' });
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+test('reapTerminal ends nohup, setsid and HUP-ignoring processes of the terminal only', { skip: !linux }, async () => {
   const kids = [
-    spawn('sh', ['-c', "trap '' HUP TERM; while :; do sleep 1; done"], { env: env('7'), stdio: 'ignore' }),
-    spawn('setsid', ['sleep', '60'], { env: env('7'), stdio: 'ignore', detached: true }),
-    spawn('nohup', ['sleep', '60'], { env: env('7'), stdio: 'ignore' }),
+    spawn('sh', ['-c', "trap '' HUP TERM; while :; do sleep 1; done"], { env: penv('7'), stdio: 'ignore' }),
+    spawn('setsid', ['sleep', '60'], { env: penv('7'), stdio: 'ignore', detached: true }),
+    spawn('nohup', ['sleep', '60'], { env: penv('7'), stdio: 'ignore' }),
   ];
-  const other = spawn('sleep', ['60'], { env: env('8'), stdio: 'ignore' });
-  await new Promise((r) => setTimeout(r, 300));
-  const before = await reap.findLinux('rtest', '7');
-  assert.ok(before.length >= 3, `found ${before}`);
-  const r = await reap.reapTerminal('rtest', '7');
+  const other = spawn('sleep', ['60'], { env: penv('8'), stdio: 'ignore' });
+  await sleep(300);
+  const marked = async (id) => reap.markedPids(await reap.listLinux(), 'rtest', id);
+  assert.ok((await marked('7')).length >= 3);
+  const r = await reap.reapTerminal('rtest', '7', { live: ['8'] });
   assert.ok(r.killed.length >= 1, 'the one ignoring TERM was killed');
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.deepStrictEqual(await reap.findLinux('rtest', '7'), []);
-  assert.deepStrictEqual(await reap.findLinux('rtest', '8'), [other.pid], 'another terminal is left alone');
+  await sleep(200);
+  assert.deepStrictEqual(await marked('7'), []);
+  assert.deepStrictEqual(await marked('8'), [other.pid], 'another terminal is left alone');
   other.kill('SIGKILL');
   for (const k of kids) k.kill('SIGKILL');
+});
+
+// A tmux server started from terminal 7, with a session terminal 8 is
+// attached to and one only terminal 7 had: closing 7 leaves the server and
+// the shared session (terminal 8 goes on), ends the other session.
+async function tmuxSetup() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-tmux-'));
+  const sock = path.join(dir, 'sock');
+  execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'shared', 'sleep 300'], { env: penv('7') });
+  execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'mine', 'sleep 301'], { env: penv('7') });
+  const client = spawn('script', ['-qc', `tmux -S ${sock} attach -t shared`, '/dev/null'], { env: penv('8'), stdio: 'ignore' });
+  for (let i = 0; i < 50 && !String(spawnSync('tmux', ['-S', sock, 'list-clients']).stdout).trim(); i++) await sleep(100);
+  const server = Number(String(execFileSync('tmux', ['-S', sock, 'display', '-p', '#{pid}'])).trim());
+  const sessions = () => String(spawnSync('tmux', ['-S', sock, 'list-sessions', '-F', '#{session_name}']).stdout).trim().split('\n').filter(Boolean);
+  return { sock, client, server, sessions, done: () => { spawnSync('tmux', ['-S', sock, 'kill-server']); client.kill('SIGKILL'); } };
+}
+
+test('closing a terminal leaves a tmux session another open terminal shows', { skip: !hasTmux }, async () => {
+  const t = await tmuxSetup();
+  try {
+    assert.deepStrictEqual(t.sessions().sort(), ['mine', 'shared']);
+    await reap.reapTerminal('rtest', '7', { live: ['8'] });
+    await sleep(300);
+    assert.ok(alive(t.server), 'the server stays');
+    assert.deepStrictEqual(t.sessions(), ['shared'], 'only the shared session is left');
+    assert.ok(alive(t.client.pid), 'terminal 8 goes on');
+    // Terminal 8 closed too: nothing is left to show it, it ends.
+    await reap.reapTerminal('rtest', '7', { live: [] });
+    await sleep(300);
+    assert.ok(!alive(t.server), 'the server ended');
+  } finally { t.done(); }
+});
+
+test('the WSL script does the same (run here with sh)', { skip: !hasTmux }, async () => {
+  const t = await tmuxSetup();
+  try {
+    const keep = spawn('setsid', ['sleep', '60'], { env: penv('7'), stdio: 'ignore', detached: true });
+    await sleep(200);
+    execFileSync('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '7', '8'], { timeout: 20000 });
+    await sleep(300);
+    assert.ok(alive(t.server), 'the server stays');
+    assert.deepStrictEqual(t.sessions(), ['shared']);
+    assert.ok(alive(t.client.pid), 'terminal 8 goes on');
+    assert.ok(!alive(keep.pid) || String(fs.readFileSync(`/proc/${keep.pid}/stat`)).split(' ')[2] === 'Z', 'terminal 7 setsid process ended');
+    execFileSync('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '', ''], { timeout: 20000 });
+    await sleep(300);
+    assert.ok(!alive(t.server), 'quitting: the server ended');
+  } finally { t.done(); }
 });
