@@ -8,6 +8,7 @@ const { wslToWindows, windowsToWsl } = require('./wsl');
 const { activityEntry, oneLine, ACTIVITY_MAX } = require('./activity');
 const gitView = require('./git-view');
 const fileTree = require('./file-tree');
+const contentSearch = require('./content-search');
 const { statusMark } = require('./renderer/view-logic');
 
 const SEARCH_MAX = 20000; // files the file tab's search box knows of
@@ -596,6 +597,41 @@ class SessionManager {
     }
     const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
     return { root: t.root, ...w };
+  }
+
+  // The file tab's "내용" search (content-search.js): the lines of the
+  // project's files holding `query`. A newer search of the same terminal
+  // stops this one (its answer is { stale: true }).
+  async searchText(id, query) {
+    const s = this.sessions.get(id);
+    if (!s || !s.tree) return { error: '파일 목록을 읽을 수 없습니다' };
+    const q = contentSearch.checkQuery(query);
+    if (!q) return { error: `${contentSearch.QUERY_MIN}자 이상 입력하세요` };
+    const seq = (s.textSeq || 0) + 1;
+    s.textSeq = seq;
+    const stale = () => s.textSeq !== seq || !this.sessions.has(id);
+    const t = s.tree;
+    const ignoreCase = contentSearch.ignoreCaseFor(q);
+    const hits = new contentSearch.Hits(q, ignoreCase);
+    let note = null;
+    if (t.git) {
+      const r = await this.gitLister(contentSearch.grepArgs(q, ignoreCase), { ...this.gitTarget(s, t.root), sep: 10, okCodes: [0, 1], timeoutMs: 20000 }, (row) => {
+        if (stale()) return false;
+        const m = contentSearch.parseGrepLine(row);
+        return !m || hits.add(...m);
+      });
+      if (stale()) return { stale: true };
+      if (r.timedOut) hits.truncated = true;
+      if (r.ok || r.timedOut) return { root: t.root, query: q, ignoreCase, ...hits.result() };
+      // git could not search (missing here): the folder is read instead.
+      note = 'git으로 찾지 못해 폴더를 직접 읽었습니다 (git이 무시하는 파일도 섞일 수 있음)';
+    }
+    const w = await fileTree.walkFiles(t.host, SEARCH_MAX);
+    if (stale()) return { stale: true };
+    const r = await contentSearch.searchFiles(t.host, w.files, hits, { stale });
+    if (r.stale) return { stale: true };
+    if (w.truncated) hits.truncated = true;
+    return { root: t.root, query: q, ignoreCase, ...hits.result(), ...(note ? { note } : {}) };
   }
 
   // Marks entries git ignores (shown dimmed, like other editors). Asked in

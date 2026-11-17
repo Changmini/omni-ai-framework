@@ -392,10 +392,11 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .vbtn.failed { color: var(--err); border-color: var(--err); }
 .vbtn.done { color: var(--ok); border-color: var(--ok); }
 .viewer-body { flex: 1; min-height: 0; overflow: auto; outline: none; }
-.viewer-code { display: flex; min-width: max-content; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+.viewer-code { position: relative; display: flex; min-width: max-content; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .viewer-code pre { margin: 0; padding: 10px 0; }
 .viewer-gutter { padding: 10px 10px 10px 14px !important; text-align: right; color: var(--muted); user-select: none; opacity: .7; border-right: 1px solid var(--line); }
 .viewer-text { padding: 10px 16px !important; color: var(--text); }
+.viewer-hit { position: absolute; left: 0; right: 0; background: rgba(217, 119, 87, .18); box-shadow: inset 2px 0 var(--accent); pointer-events: none; }
 .viewer-body > .card-pre { max-height: none; border-radius: 0; background: none; padding: 10px 14px; font-size: 12.5px; white-space: pre; overflow-wrap: normal; min-width: max-content; }
 .viewer-msg { padding: 24px; color: var(--muted); font-size: 13px; }
 /* Markdown read view */
@@ -428,8 +429,15 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tree-head { color: var(--muted); font-size: 11px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .tree-head > span { direction: ltr; unicode-bidi: isolate; }
 .tree { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.tree-search-row { display: flex; gap: 4px; margin: 0 0 6px; }
+.search-mode { display: flex; flex: none; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.search-mode button {
+  padding: 0 7px; font: 11.5px inherit; font-family: inherit; color: var(--muted); background: var(--bg); border: 0; cursor: pointer;
+}
+.search-mode button + button { border-left: 1px solid var(--line); }
+.search-mode button[aria-pressed="true"] { color: var(--text); background: var(--panel); font-weight: 700; }
 .tree-search {
-  width: 100%; margin: 0 0 6px; padding: 5px 8px; font: 12px var(--mono);
+  flex: 1; min-width: 0; width: 100%; margin: 0; padding: 5px 8px; font: 12px var(--mono);
   background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; outline: none;
 }
 .tree-search:focus { border-color: var(--accent); }
@@ -458,6 +466,14 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tree-result .tree-name mark { background: none; color: var(--accent); font-weight: 700; }
 .tree-result .tree-dir { color: var(--muted); font-size: 11px; margin-left: 6px; }
 .tree-result[aria-selected="true"] { background: var(--panel); box-shadow: inset 2px 0 var(--accent); }
+/* content search: a file, then its lines */
+.text-file { margin-top: 4px; }
+.text-count { color: var(--muted); font-size: 10.5px; font-family: var(--mono); }
+.tree-row.text-hit { grid-template-columns: 38px minmax(0, 1fr); padding-left: 10px; font-family: var(--mono); font-size: 11.5px; }
+.text-ln { color: var(--muted); text-align: right; padding-right: 6px; font-size: 10.5px; }
+.text-line { overflow: hidden; text-overflow: ellipsis; color: var(--text); opacity: .85; }
+.text-line mark { background: rgba(217, 119, 87, .28); color: var(--text); border-radius: 2px; }
+.tree > li.hint.text-more { padding-left: 52px; }
 
 /* git tab */
 .git-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }

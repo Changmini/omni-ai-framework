@@ -180,8 +180,11 @@ async function gitShow(target, rev, run = runGit) {
 // Runs git with -z output and hands each NUL-ended record to `onRecord` as
 // it arrives, so a long list (every file of a large repository) is never
 // held or parsed in one piece on the main process. `onRecord` returning
-// false stops git early. -> { ok, missing, timedOut, stopped, stderr }.
-function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000 } = {}, onRecord) {
+// false stops git early. `sep`: 10 for line output (git grep), the last
+// line handed on also without its newline. `okCodes`: exit codes that are
+// not failures (git grep: 1 is "nothing found").
+// -> { ok, missing, timedOut, stopped, code, stderr }.
+function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000, sep = 0, okCodes = [0] } = {}, onRecord) {
   const [file, argv] = gitCommand(args, { cwd, distro, platform });
   return new Promise((resolve) => {
     let child;
@@ -200,11 +203,11 @@ function streamGit(args, { cwd, distro = null, platform = process.platform, spaw
     child.stdout.on('data', (chunk) => {
       if (stopped) return;
       let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
-      let at = buf.indexOf(0);
+      let at = buf.indexOf(sep);
       while (at !== -1) {
         if (onRecord(buf.subarray(0, at).toString('utf8')) === false) { stopped = true; halt(); return; }
         buf = buf.subarray(at + 1);
-        at = buf.indexOf(0);
+        at = buf.indexOf(sep);
       }
       rest = Buffer.from(buf);
     });
@@ -212,7 +215,8 @@ function streamGit(args, { cwd, distro = null, platform = process.platform, spaw
     child.on('error', (e) => finish({ ok: false, missing: e && e.code === 'ENOENT', stderr: '' }));
     child.on('close', (code) => {
       const stderr = decodeOutput(Buffer.concat(errParts));
-      finish({ ok: stopped || (code === 0 && !timedOut), missing: false, timedOut, stopped, stderr });
+      if (sep !== 0 && !stopped && rest.length && onRecord(rest.toString('utf8')) === false) stopped = true;
+      finish({ ok: stopped || (okCodes.includes(code) && !timedOut), missing: false, timedOut, stopped, code, stderr });
     });
   });
 }

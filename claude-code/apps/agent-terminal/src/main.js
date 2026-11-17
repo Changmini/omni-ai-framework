@@ -203,6 +203,7 @@ function registerIpc() {
   });
   ipcMain.handle('files:list', (_e, id, rel, fresh) => manager.fileTree(str(id, 20), str(rel, 4000) ?? '', fresh === true));
   ipcMain.handle('files:all', (_e, id) => manager.fileList(str(id, 20)));
+  ipcMain.handle('files:grep', (_e, id, query) => manager.searchText(str(id, 20), str(query, 400)));
   ipcMain.handle('preview:check', (_e, id) => checkPreview(str(id, 20)));
   ipcMain.handle('preview:open-external', async (_e, id) => {
     const target = await manager.previewDir(str(id, 20));

@@ -1290,9 +1290,9 @@ function diffStat(lines) {
 
 // `views`: [{ key, label, lines }] (a diff) or [{ key, label, load }] (async,
 // resolves to { text } | { lines } | { binary, size } | { error }).
-function openViewer({ path, views, key, actions = {} }) {
+function openViewer({ path, views, key, line = null, actions = {} }) {
   hideCard();
-  viewing = { path, views, actions, token: null };
+  viewing = { path, views, actions, line, token: null };
   setViewerPath(path);
   viewer.tabs.replaceChildren(...views.map((v) => {
     const b = h('button', 'tab', v.label);
@@ -1390,7 +1390,9 @@ function markdownView(text, link = null) {
 
 // A file behind a Claude config item: Markdown is shown read ("읽기") and as
 // written ("원문"); other files (settings JSON) as they are.
-function openConfigFile(id, file) {
+// `line`: shown from that line, marked (a content search result); a
+// Markdown file then opens as written.
+function openConfigFile(id, file, line = null) {
   if (!id) return;
   const read = () => api.readFile(id, file);
   const views = /\.(md|markdown)$/i.test(file)
@@ -1399,7 +1401,21 @@ function openConfigFile(id, file) {
       { key: 'file', label: '원문', load: read },
     ]
     : [{ key: 'file', label: '파일', load: read }];
-  openViewer({ path: file, views, actions: { reveal: () => api.revealFile(id, file) } });
+  openViewer({ path: file, views, key: line ? 'file' : undefined, line, actions: { reveal: () => api.revealFile(id, file) } });
+}
+
+// Marks line `line` of a code view and scrolls it into view.
+function markLine(box, line) {
+  const text = box.querySelector('.viewer-text');
+  if (!text) return;
+  const style = getComputedStyle(text);
+  const lh = parseFloat(style.lineHeight) || 18;
+  const top = (parseFloat(style.paddingTop) || 0) + (line - 1) * lh;
+  const mark = h('div', 'viewer-hit');
+  mark.style.top = `${top}px`;
+  mark.style.height = `${lh}px`;
+  box.append(mark);
+  viewer.body.scrollTop = Math.max(0, top - viewer.body.clientHeight / 3);
 }
 
 function codeView(text) {
@@ -1442,6 +1458,7 @@ async function showView(key) {
     const { box, count } = codeView(r.text || '');
     viewer.body.replaceChildren(box);
     viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
+    if (viewing.line && viewing.line <= count) markLine(box, viewing.line);
   }
 }
 
@@ -1963,25 +1980,50 @@ async function toggleTreeFolder(t, rel) {
   if (row) row.focus({ preventScroll: true });
 }
 
-function openTreeFile(t, abs) {
+function openTreeFile(t, abs, line = null) {
   treeSelected = abs;
   for (const row of treeEls.body.querySelectorAll('.tree-row:not([data-dir])')) {
     row.setAttribute('aria-selected', String(row.dataset.abs === abs));
   }
-  openConfigFile(t.id, abs);
+  openConfigFile(t.id, abs, line);
 }
 
 const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추가됨 (스테이징)', R: '이름 바뀜', C: '충돌' };
 
-// ---------- file tab: search by file name ----------
-// The project's file list is read once (git ls-files: tracked and untracked
-// files git does not ignore; else a walk of the folder) and filtered here
-// as you type (view-logic.js searchFiles).
+// ---------- file tab: search by file name, or in the files ----------
+// 이름: the project's file list is read once (git ls-files: tracked and
+// untracked files git does not ignore; else a walk of the folder) and
+// filtered here as you type (view-logic.js searchFiles).
+// 내용: the lines holding the typed text, found by the main process (git
+// grep; content-search.js), grouped by file; a line opens the file there.
 
 const search = {
   input: $('#tree-search'), results: $('#tree-results'), query: '', list: null, loading: null, running: null, active: 0, timer: null,
   enterAt: 0, entering: false, enterAfterCompose: false,
+  mode: readPref('treeSearchMode', 'name') === 'text' ? 'text' : 'name',
+  modeEl: $('#search-mode'),
 };
+
+function setSearchMode(mode) {
+  search.mode = mode;
+  writePref('treeSearchMode', mode);
+  for (const b of search.modeEl.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  const text = mode === 'text';
+  search.input.placeholder = text ? '파일 내용 검색 (2자 이상)' : '파일 이름 검색';
+  search.input.setAttribute('aria-label', text ? '파일 내용 검색' : '파일 이름 검색');
+  search.input.title = text
+    ? '파일 안에서 이 글자를 찾음 (대문자가 있으면 대소문자 구분) · ↑↓ 고르기 · Enter 열기 · Alt+C 이름 검색 · Esc 지우기'
+    : '공백으로 나눈 낱말이 모두 들어간 파일 · ↑↓ 고르기 · Enter 열기 · Alt+C 내용 검색 · Esc 지우기';
+  search.query = ''; // searched again in the new mode
+  search.active = 0;
+  applySearch();
+}
+search.modeEl.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b) return;
+  setSearchMode(b.dataset.mode);
+  search.input.focus();
+});
 
 // The file list for tree `t`: the one read already, or one read now (shared
 // by the searches typed while it loads).
@@ -2015,6 +2057,7 @@ async function searchNow() {
   treeEls.body.hidden = on;
   treeEls.head.hidden = on;
   if (!on || !t) return;
+  if (search.mode === 'text') { await textSearchNow(t, q); return; }
   if (!search.list) search.results.replaceChildren(h('li', 'hint', '파일 목록을 읽는 중…'));
   const list = await searchList(t);
   if (q !== search.query || tree !== t) return; // typed on, or another project
@@ -2053,15 +2096,76 @@ function searchRow(t, f, k, list) {
   return li;
 }
 
-// Opens a result, and opens its folders in the tree for when the search
-// is cleared.
-function openSearchResult(t, rel, k) {
+// The content search: the lines found, under their file.
+async function textSearchNow(t, q) {
+  if (q.length < 2) { search.results.replaceChildren(h('li', 'hint', '2자 이상 입력하세요')); return; }
+  if (!search.results.querySelector('.tree-result')) search.results.replaceChildren(h('li', 'hint', '찾는 중…'));
+  const r = await api.searchText(t.id, q).catch(() => null);
+  if (q !== search.query || tree !== t || search.mode !== 'text') return; // typed on, or another project or mode
+  if (!r || r.stale) return;
+  if (r.error) { search.results.replaceChildren(h('li', 'hint', r.error)); return; }
+  const rows = [];
+  let k = 0;
+  for (const f of r.files) {
+    rows.push(textFileRow(t, f, k++));
+    for (const hit of f.hits) rows.push(textHitRow(t, f, hit, k++, r));
+    if (f.more) rows.push(h('li', 'hint text-more', `… 이 파일에 ${f.more}줄 더`));
+  }
+  search.active = Math.min(search.active, Math.max(0, k - 1));
+  rows.forEach((row) => { if (row.classList.contains('tree-result')) row.setAttribute('aria-selected', String(Number(row.dataset.k) === search.active)); });
+  const summary = r.files.length
+    ? `${r.count.toLocaleString()}줄 · 파일 ${r.files.length.toLocaleString()}개${r.truncated ? ' · 처음 일부만 표시, 글자를 더 넣어 좁혀 보세요' : ''}${r.ignoreCase ? '' : ' · 대소문자 구분'}`
+    : '일치하는 내용 없음';
+  rows.unshift(h('li', 'hint', summary));
+  if (r.note) rows.push(h('li', 'hint', r.note));
+  search.results.replaceChildren(...rows);
+}
+
+function textFileRow(t, f, k) {
+  const li = h('li', 'tree-row tree-result text-file');
+  li.setAttribute('role', 'option');
+  li.dataset.k = k;
+  const abs = treeAbs(t.root, f.path);
+  li.dataset.abs = abs;
+  const mark = t.marks.file(f.path);
+  if (mark) li.dataset.st = mark;
+  li.title = abs;
+  const cut = f.path.lastIndexOf('/') + 1;
+  const name = h('span', 'tree-name', f.path.slice(cut));
+  if (cut) name.append(h('span', 'tree-dir', f.path.slice(0, cut - 1)));
+  li.append(h('span', 'tree-caret', '▾'), name, h('span', 'text-count', String(f.hits.length + f.more)));
+  li.addEventListener('click', () => openSearchResult(t, f.path, k));
+  return li;
+}
+
+function textHitRow(t, f, hit, k, r) {
+  const li = h('li', 'tree-row tree-result text-hit');
+  li.setAttribute('role', 'option');
+  li.dataset.k = k;
+  li.title = `${f.path}:${hit.line}`;
+  const text = h('span', 'text-line');
+  const shown = ViewLogic.hitView(hit.text, r.query, r.ignoreCase);
+  let at = 0;
+  for (const [a, b] of shown.ranges) {
+    if (a > at) text.append(document.createTextNode(shown.text.slice(at, a)));
+    text.append(h('mark', null, shown.text.slice(a, b)));
+    at = b;
+  }
+  if (at < shown.text.length) text.append(document.createTextNode(shown.text.slice(at)));
+  li.append(h('span', 'text-ln', String(hit.line)), text);
+  li.addEventListener('click', () => openSearchResult(t, f.path, k, hit.line));
+  return li;
+}
+
+// Opens a result (at `line` for a found line), and opens its folders in
+// the tree for when the search is cleared.
+function openSearchResult(t, rel, k, line = null) {
   if (tree !== t) return; // results of a terminal no longer shown
   search.active = k;
-  for (const row of search.results.querySelectorAll('.tree-result')) row.setAttribute('aria-selected', String(row.dataset.abs === treeAbs(t.root, rel)));
+  [...search.results.querySelectorAll('.tree-result')].forEach((row, i) => row.setAttribute('aria-selected', String(i === k)));
   const open = treeOpen.get(t.root);
   for (let cut = rel.indexOf('/'); cut !== -1; cut = rel.indexOf('/', cut + 1)) open.add(rel.slice(0, cut));
-  openTreeFile(t, treeAbs(t.root, rel));
+  openTreeFile(t, treeAbs(t.root, rel), line);
 }
 
 // Runs the search for what is typed now (no-op when it already has).
@@ -2078,7 +2182,7 @@ function applySearch() {
 
 search.input.addEventListener('input', () => {
   clearTimeout(search.timer);
-  search.timer = setTimeout(applySearch, 80);
+  search.timer = setTimeout(applySearch, search.mode === 'text' ? 300 : 80); // a content search reads files
 });
 // Enter: search what is typed (or wait for the search still reading the
 // file list), then open the chosen result. Once per press: an IME may send
@@ -2116,6 +2220,11 @@ search.input.addEventListener('keydown', async (e) => {
     await searchEnter();
     return;
   }
+  if (e.altKey && e.code === 'KeyC') {
+    e.preventDefault();
+    setSearchMode(search.mode === 'text' ? 'name' : 'text');
+    return;
+  }
   const rows = [...search.results.querySelectorAll('.tree-result')];
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
@@ -2130,6 +2239,7 @@ search.input.addEventListener('keydown', async (e) => {
     search.input.dispatchEvent(new Event('input'));
   }
 });
+setSearchMode(search.mode); // the remembered mode's box
 
 // ---------- HTML preview (private/index.html beside the terminal) ----------
 // Claude draws diagrams and charts into the project's private/index.html;

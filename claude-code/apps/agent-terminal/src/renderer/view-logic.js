@@ -273,6 +273,31 @@
     });
   }
 
+  // The content search: [start, end) ranges of `query` in a found line, for
+  // highlighting (as the main process matched it: ignoring case or not).
+  function textRanges(text, query, ignoreCase) {
+    const hay = ignoreCase ? String(text).toLowerCase() : String(text);
+    const needle = ignoreCase ? String(query).toLowerCase() : String(query);
+    const out = [];
+    if (!needle || hay.length !== String(text).length) return out; // lower case changed the length: no marks
+    for (let at = hay.indexOf(needle); at !== -1 && out.length < 50; at = hay.indexOf(needle, at + needle.length)) out.push([at, at + needle.length]);
+    return out;
+  }
+
+  // A found line as the results show it in a narrow panel: without its
+  // indent, and starting a little before the first match when that is far
+  // in ("…" where cut), with the match ranges moved along.
+  function hitView(text, query, ignoreCase, lead = 12) {
+    const s = String(text);
+    const ranges = textRanges(s, query, ignoreCase);
+    const indent = s.length - s.trimStart().length;
+    let from = indent;
+    let prefix = '';
+    if (ranges.length && ranges[0][0] - indent > lead + 4) { from = ranges[0][0] - lead; prefix = '…'; }
+    const shift = prefix.length - from;
+    return { text: prefix + s.slice(from), ranges: ranges.filter(([a]) => a >= from).map(([a, b]) => [a + shift, b + shift]) };
+  }
+
   // How the file tab marks a changed path, from `git status` (the X and Y
   // letters of --porcelain=v1): 'C' conflict, 'U' untracked, 'A' added,
   // 'R' renamed, 'M' modified, or null (deleted: not on disk, not shown).
@@ -376,7 +401,7 @@
   }
 
   return {
-    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, statusMark, treeMarks,
+    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

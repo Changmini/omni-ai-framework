@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   onPreviewDetached: on('preview:detached'),
   onPreviewBlocked: on('preview:blocked'),
   allFiles: (id) => ipcRenderer.invoke('files:all', id),
+  searchText: (id, query) => ipcRenderer.invoke('files:grep', id, query),
   gitDiff: (id, path) => ipcRenderer.invoke('git:diff', id, path),
   gitShow: (id, rev) => ipcRenderer.invoke('git:show', id, rev),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
