@@ -203,3 +203,12 @@ test('the scroll keeper goes before the last </body>', () => {
 test('the page tells the app when the user presses in it (trusted presses only)', () => {
   assert.match(withScrollKeeper('<body></body>'), /pointerdown.*isTrusted.*omniPreview:"touch"/);
 });
+
+test("the app's scrollbars go first in the page, never before the doctype", () => {
+  const { withScrollbars } = require('../src/preview');
+  assert.match(withScrollbars('<!doctype html><html><head><style>x{}</style></head></html>'), /^<!doctype html><html><head><style>::-webkit-scrollbar\{width:6px.*<\/style><style>x\{\}/);
+  assert.match(withScrollbars('<!DOCTYPE html>\n<html lang="ko"><body></body></html>'), /^<!DOCTYPE html>\n<html lang="ko"><style>::-webkit-scrollbar/);
+  assert.match(withScrollbars('<!doctype html><p>x</p>'), /^<!doctype html><style>::-webkit-scrollbar/);
+  assert.match(withScrollbars('<svg></svg>'), /^<style>::-webkit-scrollbar.*<svg><\/svg>$/);
+  assert.ok(!withScrollbars('<header>x</header>').startsWith('<header><style>'), '<header> is not <head>');
+});
