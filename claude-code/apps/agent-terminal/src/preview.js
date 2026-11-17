@@ -48,12 +48,33 @@ const PAGE_CSP = [
 // scrolled, and the app sends that back after a reload, so a redrawn page
 // keeps its place. It also tells when the user presses in the page (so the
 // app lets the page keep the keyboard then, and only then). Messages carry
-// numbers only.
+// numbers only. And it gives the scrollbars' track the page's own
+// background (--omni-sb-bg; SCROLLBAR_STYLE): the page's background does
+// not reach under a scrollbar, the frame's white would show there.
 const SCROLL_KEEPER = '<script>(function(){var t;function s(){parent.postMessage({omniPreview:"scroll",x:scrollX,y:scrollY},"*")}'
+  + 'function g(){function c(e){var v=e&&getComputedStyle(e).backgroundColor;return v&&v!=="transparent"&&!/^rgba\\(.*,\\s*0\\)$/.test(v)?v:null}'
+  + 'var r=document.documentElement;r.style.setProperty("--omni-sb-bg",c(r)||c(document.body)||"#fff")}g();addEventListener("load",g);'
   + 'addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(s,120)},{passive:true});'
   + 'addEventListener("pointerdown",function(e){if(e.isTrusted)parent.postMessage({omniPreview:"touch"},"*")},true);'
   + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&d&&d.omniPreview==="restore"){scrollTo(+d.x||0,+d.y||0)}});'
   + 'parent.postMessage({omniPreview:"ready"},"*")})();</script>';
+
+// The app's thin scrollbars (renderer/styles.css), so a drawing scrolls
+// like the rest of the app. Put first in the page: a drawing's own
+// scrollbar style, later, still wins.
+const SCROLLBAR_STYLE = '<style>::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--omni-sb-bg,transparent)}'
+  + '::-webkit-scrollbar-thumb{background:rgba(125,132,148,.28);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:rgba(125,132,148,.5)}'
+  + '::-webkit-scrollbar-thumb:active{background:rgba(217,119,87,.7)}::-webkit-scrollbar-corner{background:var(--omni-sb-bg,transparent)}</style>';
+
+// After the opening <head> (else <html>, else the doctype: nothing may come
+// before a doctype, or the page would render in quirks mode).
+function withScrollbars(html) {
+  for (const re of [/<head(\s[^>]*)?>/i, /<html(\s[^>]*)?>/i, /<!doctype[^>]*>/i]) {
+    const m = re.exec(html);
+    if (m) return html.slice(0, m.index + m[0].length) + SCROLLBAR_STYLE + html.slice(m.index + m[0].length);
+  }
+  return SCROLLBAR_STYLE + html;
+}
 
 // Before the last </body> (an earlier one may be inside a script string).
 function withScrollKeeper(html) {
@@ -172,7 +193,7 @@ async function serveFile(dir, segs) {
   const ok = (type, body) => ({ status: 200, type, body });
   if (!segs.length || (segs.length === 1 && segs[0] === INDEX)) {
     const info = await fs.promises.stat(path.join(dir, INDEX)).catch(() => null);
-    if (!info) return ok(MIME['.html'], withScrollKeeper(GUIDE_PAGE));
+    if (!info) return ok(MIME['.html'], withScrollKeeper(withScrollbars(GUIDE_PAGE)));
     segs = [INDEX];
   }
   const file = path.join(dir, ...segs);
@@ -184,7 +205,7 @@ async function serveFile(dir, segs) {
   if (info.size > FILE_MAX) return { status: 413, type: MIME['.txt'], body: 'too large' };
   const body = await fs.promises.readFile(file);
   const type = mimeOf(file);
-  return ok(type, type.startsWith('text/html') ? withScrollKeeper(body.toString('utf8')) : body);
+  return ok(type, type.startsWith('text/html') ? withScrollKeeper(withScrollbars(body.toString('utf8'))) : body);
 }
 
 // The URL path of an omni-preview:// request as segments, or null.
@@ -196,5 +217,5 @@ function urlSegments(pathname, win = process.platform === 'win32') {
 
 module.exports = {
   PREVIEW_DIR, INDEX, HISTORY_DIR, HISTORY_MAX, PAGE_CSP, GUIDE_PAGE,
-  PreviewWatch, serveFile, urlSegments, listHistory, historyName, withScrollKeeper, mimeOf,
+  PreviewWatch, serveFile, urlSegments, listHistory, historyName, withScrollKeeper, withScrollbars, mimeOf,
 };
