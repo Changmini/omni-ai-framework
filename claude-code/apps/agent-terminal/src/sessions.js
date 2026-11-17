@@ -55,7 +55,9 @@ class SessionManager {
     gitRunner = gitView.runGit,
     gitLister = gitView.streamGit,
     // Ending what a terminal started when it closes (reap.js):
-    // { terminal(run, id, distros), all(run, distros) }, and this run's marker.
+    // { terminal(run, id, distros, live), all(run, distros) }, and this run's
+    // marker. `live`: the terminals still open (a tmux session one of them
+    // shows is not ended).
     reaper = null,
     runId = null,
   }) {
@@ -892,7 +894,7 @@ class SessionManager {
     this.sessions.delete(id);
     this.emit('session:removed', { id });
     if (reap && this.reaper && this.runId) {
-      Promise.resolve(this.reaper.terminal(this.runId, id, [...s.wslDistros])).catch(() => {});
+      Promise.resolve(this.reaper.terminal(this.runId, id, [...s.wslDistros], [...this.sessions.keys()])).catch(() => {});
     }
     return true;
   }

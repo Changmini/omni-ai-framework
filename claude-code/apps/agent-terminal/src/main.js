@@ -348,7 +348,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     readUsage: readContextUsage,
     runId: reap.newRunId(),
     reaper: {
-      terminal: (run, id, distros) => reap.reapTerminal(run, id, { distros }),
+      terminal: (run, id, distros, live) => reap.reapTerminal(run, id, { distros, live }),
       all: (run, distros) => reap.reapAllSync(run, { distros }),
     },
     claudePaths: {
