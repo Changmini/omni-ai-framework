@@ -26,7 +26,7 @@ test('checkQuery, smart case and long lines', () => {
 test('Hits: at most PER_FILE_MAX lines shown per file, HITS_MAX in all', () => {
   const h = new cs.Hits('x', true);
   for (let k = 1; k <= cs.PER_FILE_MAX + 5; k++) h.add('a.txt', k, 'x');
-  assert.deepStrictEqual([h.files[0].hits.length, h.files[0].more], [cs.PER_FILE_MAX, 5]);
+  assert.deepStrictEqual([h.files[0].hits.length, h.files[0].more, h.count, h.total], [cs.PER_FILE_MAX, 5, cs.PER_FILE_MAX, cs.PER_FILE_MAX + 5]);
   for (let k = 1; k <= cs.HITS_MAX; k++) if (!h.add(`f${k}.txt`, 1, 'x')) break;
   assert.strictEqual(h.result().truncated, true);
   assert.strictEqual(h.result().count, cs.HITS_MAX);
@@ -92,4 +92,36 @@ test('a newer search stops the one running', async () => {
   const [a, b] = await Promise.all([m.searchText(id, 'createuser'), m.searchText(id, 'createuser')]);
   assert.deepStrictEqual(a, { stale: true });
   assert.ok(b.files.length > 0);
+});
+
+test('one file full of matches leaves room for the others', () => {
+  const h = new cs.Hits('x', true);
+  for (let k = 1; k <= 5000; k++) assert.ok(h.add('reports/run.log', k, 'x'));
+  assert.ok(h.add('src/a.js', 1, 'x'), 'still searching');
+  const r = h.result();
+  assert.deepStrictEqual(r.files.map((f) => [f.path, f.hits.length, f.more]), [['reports/run.log', cs.PER_FILE_MAX, 5000 - cs.PER_FILE_MAX], ['src/a.js', 1, 0]]);
+  assert.strictEqual(r.truncated, false);
+  const big = new cs.Hits('x', true);
+  let k = 0;
+  while (big.add('huge.log', ++k, 'x'));
+  assert.strictEqual(big.total, cs.SEEN_MAX, 'stops after SEEN_MAX lines found');
+  assert.strictEqual(big.result().truncated, true);
+});
+
+test('a too long query says so', async () => {
+  const root = project(true);
+  const { m, id } = await manager(root);
+  assert.match((await m.searchText(id, 'y'.repeat(cs.QUERY_MAX + 1))).error, /200자 이하/);
+});
+
+test('streamGit: an abort stops git at once, even while it prints nothing', async () => {
+  const { spawn } = require('node:child_process');
+  const { streamGit } = require('../src/git-view');
+  const ac = new AbortController();
+  const started = Date.now();
+  const p = streamGit(['grep'], { cwd: '.', spawnFn: () => spawn('sleep', ['30']), signal: ac.signal, sep: 10 }, () => true);
+  setTimeout(() => ac.abort(), 100);
+  const r = await p;
+  assert.ok(Date.now() - started < 5000, 'not left running');
+  assert.strictEqual(r.stopped, true);
 });

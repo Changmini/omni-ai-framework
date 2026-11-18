@@ -182,9 +182,10 @@ async function gitShow(target, rev, run = runGit) {
 // held or parsed in one piece on the main process. `onRecord` returning
 // false stops git early. `sep`: 10 for line output (git grep), the last
 // line handed on also without its newline. `okCodes`: exit codes that are
-// not failures (git grep: 1 is "nothing found").
+// not failures (git grep: 1 is "nothing found"). `signal`: an AbortSignal
+// that stops git at once (a newer search began), output or not.
 // -> { ok, missing, timedOut, stopped, code, stderr }.
-function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000, sep = 0, okCodes = [0] } = {}, onRecord) {
+function streamGit(args, { cwd, distro = null, platform = process.platform, spawnFn = spawn, timeoutMs = 15000, sep = 0, okCodes = [0], signal = null } = {}, onRecord) {
   const [file, argv] = gitCommand(args, { cwd, distro, platform });
   return new Promise((resolve) => {
     let child;
@@ -200,6 +201,11 @@ function streamGit(args, { cwd, distro = null, platform = process.platform, spaw
     // write (broken pipe) however the kill reaches it.
     const halt = () => { child.stdout.destroy(); child.kill(); };
     const timer = setTimeout(() => { timedOut = true; halt(); }, timeoutMs);
+    if (signal) {
+      const abort = () => { if (!done && !stopped) { stopped = true; halt(); } };
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    }
     child.stdout.on('data', (chunk) => {
       if (stopped) return;
       let buf = rest.length ? Buffer.concat([rest, chunk]) : chunk;
