@@ -1294,8 +1294,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented) return;
   const t = e.target instanceof Element ? e.target : null;
   const inField = Boolean(t && (t.closest('.term') || t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')));
-  const act = ViewLogic.escapeAction({ cardOpen: !card.hidden, viewerOpen: Boolean(viewing), inField });
+  const act = ViewLogic.escapeAction({
+    cardOpen: !card.hidden, viewerOpen: Boolean(viewing), inField,
+    findOpen: !vfind.bar.hidden, inFind: Boolean(t && t.closest('#viewer-find')),
+  });
   if (act.hideCard) hideCard();
+  if (act.closeFind) closeViewerFind();
   if (act.closeViewer) closeViewer();
   if (!act.consume) return;
   e.preventDefault();
@@ -1326,7 +1330,10 @@ function diffStat(lines) {
 // resolves to { text } | { lines } | { binary, size } | { error }).
 function openViewer({ path, views, key, line = null, find = null, actions = {} }) {
   hideCard();
-  closeViewerFind(false);
+  // An open find bar stays, with its word: found again in this file.
+  clearTimeout(vfind.timer);
+  clearFindMarks();
+  vfind.ranges = [];
   viewing = { path, views, actions, line, find, token: null };
   setViewerPath(path);
   viewer.tabs.replaceChildren(...views.map((v) => {
@@ -1571,8 +1578,15 @@ function runViewerFind(fromY = viewer.body.getBoundingClientRect().top) {
   }
   if (!vfind.ranges.length) { vfind.count.textContent = '없음'; return; }
   CSS.highlights.set('viewer-find', new Highlight(...vfind.ranges));
-  const at = vfind.ranges.findIndex((r) => r.getBoundingClientRect().bottom > fromY + 1);
-  vfind.index = at === -1 ? 0 : at;
+  // The matches run down the page in order: the first below `fromY` by
+  // halving (not a measure of each).
+  let lo = 0;
+  let hi = vfind.ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (vfind.ranges[mid].getBoundingClientRect().bottom > fromY + 1) hi = mid; else lo = mid + 1;
+  }
+  vfind.index = lo < vfind.ranges.length ? lo : 0;
   showFindCurrent();
 }
 
@@ -1595,8 +1609,15 @@ function stepFind(dir) {
   showFindCurrent();
 }
 
+// Right under the viewer's head, however tall it is.
+function placeViewerFind() {
+  const head = viewer.el.querySelector('.viewer-head');
+  if (head) vfind.bar.style.top = `${head.offsetHeight + 6}px`;
+}
+
 function openViewerFind() {
   if (!viewing) return;
+  placeViewerFind();
   const sel = String(window.getSelection() || '');
   if (sel && !sel.includes('\n') && viewer.body.contains(window.getSelection().anchorNode)) vfind.input.value = sel;
   vfind.bar.hidden = false;
@@ -1626,6 +1647,7 @@ function afterViewShown() {
     vfind.bar.hidden = false;
   }
   if (vfind.bar.hidden) return;
+  placeViewerFind();
   const hit = viewer.body.querySelector('.viewer-hit');
   runViewerFind(hit ? hit.getBoundingClientRect().top : undefined);
 }
@@ -1634,17 +1656,36 @@ vfind.input.addEventListener('input', () => {
   clearTimeout(vfind.timer);
   vfind.timer = setTimeout(() => { vfind.timer = null; runViewerFind(); }, 120);
 });
+// Enter: to the next match (Shift: previous); right after typing, to the
+// first one for the new word.
+function findEnter(back) {
+  if (vfind.timer) {
+    clearTimeout(vfind.timer);
+    vfind.timer = null;
+    runViewerFind();
+    if (back) stepFind(-1);
+    return;
+  }
+  stepFind(back ? -1 : 1);
+}
+let findEnterAfterCompose = null; // the Enter that ended a Hangul syllable: acted on once it is in the box
 vfind.input.addEventListener('keydown', (e) => {
-  if (e.isComposing || e.keyCode === 229) return; // Hangul being composed
+  if (e.isComposing || e.keyCode === 229) {
+    if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') findEnterAfterCompose = { back: e.shiftKey };
+    return;
+  }
   if (e.key === 'Enter') {
     e.preventDefault();
-    if (vfind.timer) { clearTimeout(vfind.timer); vfind.timer = null; runViewerFind(); if (e.shiftKey) stepFind(-1); return; }
-    stepFind(e.shiftKey ? -1 : 1);
-  } else if (e.key === 'Escape') {
-    e.preventDefault();
-    e.stopPropagation(); // closes the find bar, not the viewer
-    closeViewerFind();
+    findEnter(e.shiftKey);
   }
+  // Esc: the document's handler (escapeAction) closes the find bar.
+});
+vfind.input.addEventListener('compositionend', () => {
+  const pending = findEnterAfterCompose;
+  findEnterAfterCompose = null;
+  if (!pending) return;
+  // The syllable's input event comes next: then the word is complete.
+  setTimeout(() => findEnter(pending.back), 0);
 });
 vfind.prev.addEventListener('click', () => stepFind(-1));
 vfind.next.addEventListener('click', () => stepFind(1));
@@ -1652,7 +1693,6 @@ vfind.close.addEventListener('click', () => closeViewerFind());
 viewer.el.addEventListener('keydown', (e) => {
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); openViewerFind(); }
   else if (e.key === 'F3' && !vfind.bar.hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
-  else if (e.key === 'Escape' && !vfind.bar.hidden) { e.preventDefault(); e.stopPropagation(); closeViewerFind(); } // then Esc closes the viewer
 });
 viewer.copy.addEventListener('click', async () => {
   if (!viewing) return;
@@ -2276,6 +2316,7 @@ async function textSearchNow(t, q) {
   if (q !== search.query || tree !== t || search.mode !== 'text') return; // typed on, or another project or mode
   if (r && r.stale) return; // a newer search answers
   if (!r || r.error) { search.results.replaceChildren(h('li', 'hint', (r && r.error) || '찾지 못했습니다')); return; }
+  search.shownQuery = q;
   const rows = [];
   let k = 0;
   for (const f of r.files) {
@@ -2337,8 +2378,9 @@ function openSearchResult(t, rel, k, line = null) {
   [...search.results.querySelectorAll('.tree-result')].forEach((row, i) => row.setAttribute('aria-selected', String(i === k)));
   const open = treeOpen.get(t.root);
   for (let cut = rel.indexOf('/'); cut !== -1; cut = rel.indexOf('/', cut + 1)) open.add(rel.slice(0, cut));
-  // From the content search: the word goes into the viewer's find bar.
-  openTreeFile(t, treeAbs(t.root, rel), line, search.mode === 'text' ? search.query : null);
+  // From the content search: the word those results were found with goes
+  // into the viewer's find bar (not one typed since).
+  openTreeFile(t, treeAbs(t.root, rel), line, search.mode === 'text' ? search.shownQuery : null);
 }
 
 // Runs the search for what is typed now (no-op when it already has).

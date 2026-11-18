@@ -23,13 +23,19 @@ test('diff kinds: commit view, edit pairs and merge (combined) diffs', () => {
   assert.deepStrictEqual(diffKinds(merge), ['meta', 'meta', 'meta', 'meta', 'hunk', 'del', 'add', 'add', 'ctx']);
 });
 
-test('Esc: a terminal or text field keeps its key; otherwise the card, then the viewer', () => {
-  const t = (cardOpen, viewerOpen, inField) => escapeAction({ cardOpen, viewerOpen, inField });
-  assert.deepStrictEqual(t(true, false, true), { hideCard: true, closeViewer: false, consume: false });
-  assert.deepStrictEqual(t(true, true, false), { hideCard: true, closeViewer: false, consume: true });
-  assert.deepStrictEqual(t(false, true, false), { hideCard: false, closeViewer: true, consume: true });
-  assert.deepStrictEqual(t(false, true, true), { hideCard: false, closeViewer: false, consume: false });
-  assert.deepStrictEqual(t(false, false, false), { hideCard: false, closeViewer: false, consume: false });
+test('Esc: a terminal or text field keeps its key; otherwise the card, then the find bar, then the viewer', () => {
+  const t = (cardOpen, viewerOpen, inField, findOpen = false, inFind = false) => escapeAction({ cardOpen, viewerOpen, inField, findOpen, inFind });
+  const none = { hideCard: false, closeFind: false, closeViewer: false };
+  assert.deepStrictEqual(t(true, false, true), { ...none, hideCard: true, consume: false });
+  assert.deepStrictEqual(t(true, true, false), { ...none, hideCard: true, consume: true });
+  assert.deepStrictEqual(t(false, true, false), { ...none, closeViewer: true, consume: true });
+  assert.deepStrictEqual(t(false, true, true), { ...none, consume: false });
+  assert.deepStrictEqual(t(false, false, false), { ...none, consume: false });
+  // The find bar open: Esc in the text or in its box closes it, not the viewer.
+  assert.deepStrictEqual(t(false, true, false, true), { ...none, closeFind: true, consume: true });
+  assert.deepStrictEqual(t(false, true, true, true, true), { ...none, closeFind: true, consume: true });
+  // The card open and focus in the find box: only the card goes.
+  assert.deepStrictEqual(t(true, true, true, true, true), { ...none, hideCard: true, consume: true });
 });
 
 test('serial: one run at a time, and one more after for calls meanwhile', async () => {

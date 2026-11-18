@@ -57,10 +57,14 @@
   // whether the key was typed into a text field or a terminal. In a field it
   // still closes the card but goes on to the field (Esc interrupts Claude in
   // a terminal, cancels a rename, closes the search box).
-  function escapeAction({ cardOpen, viewerOpen, inField }) {
-    if (cardOpen) return { hideCard: true, closeViewer: false, consume: !inField };
-    if (viewerOpen && !inField) return { hideCard: false, closeViewer: true, consume: true };
-    return { hideCard: false, closeViewer: false, consume: false };
+  // `findOpen`: the viewer's find bar shows; `inFind`: the key came from
+  // its box. One Esc does one thing: the card, then the find bar, then the
+  // viewer.
+  function escapeAction({ cardOpen, viewerOpen, inField, findOpen = false, inFind = false }) {
+    if (cardOpen) return { hideCard: true, closeFind: false, closeViewer: false, consume: !inField || inFind };
+    if (viewerOpen && findOpen && (inFind || !inField)) return { hideCard: false, closeFind: true, closeViewer: false, consume: true };
+    if (viewerOpen && !inField) return { hideCard: false, closeFind: false, closeViewer: true, consume: true };
+    return { hideCard: false, closeFind: false, closeViewer: false, consume: false };
   }
 
   // Runs `task` (async) one at a time: a call while it runs asks for one more
