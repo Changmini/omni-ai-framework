@@ -353,6 +353,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     runId: reap.newRunId(),
     reaper: {
       terminal: (run, id, distros, live) => reap.reapTerminal(run, id, { distros, live }),
+      recheck: (run, live) => reap.recheckTmux(run, { live }),
       all: (run, distros) => reap.reapAllSync(run, { distros }),
     },
     claudePaths: {

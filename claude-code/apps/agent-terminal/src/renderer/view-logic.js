@@ -273,10 +273,33 @@
     });
   }
 
-  // A shortcut line that opens a shell inside WSL (the app's PowerShell
-  // `wsl`, with only -d/-u/--cd/~): the next line waits for that shell.
+  // A shortcut line that opens a shell inside WSL (`wsl`, `wsl.exe` or its
+  // full path, with only -d/-u/--cd/~ options): the next line waits for
+  // that shell (shellReady).
   function entersWsl(line) {
-    return /^\s*wsl(\.exe)?((\s+(-d|--distribution|-u|--user|--cd)\s+\S+)|(\s+~))*\s*$/i.test(String(line || ''));
+    return /^\s*(&\s*)?("[^"]*[\\/]|[^"\s]*[\\/])?wsl(\.exe)?"?((\s+(-d|--distribution|-u|--user|--cd)(\s+|=)\S+)|(\s+~))*\s*$/i
+      .test(String(line || ''));
+  }
+
+  // The text before the cursor looks like a shell prompt ("user@host:~$ ",
+  // "PS C:\\> ", "# ", fish's "> "), not a message such as a WSL warning.
+  function promptLike(text) {
+    return /[$#>%❯»]\s*$/.test(String(text || '').replace(/\s+$/, ' '));
+  }
+
+  // Whether a shortcut's next line may be typed: the shell reported in
+  // after the line was sent (`reportAt`: its prompt's folder report), or,
+  // for a shell that cannot report (no app integration; inside WSL a tmux
+  // started by ~/.bashrc, or NAT networking), it printed something at least
+  // `lateMs` after the line (not just the echo of the line itself) and has
+  // been quiet since: `quietMs` when what the cursor follows looks like a
+  // prompt (`prompt`), else `slowMs` (wsl.exe may print a warning of its own
+  // and then go on starting for seconds). A shell starting silently (WSL
+  // booting) gets neither: typed early, the line would be lost.
+  function shellReady({ reportAt = 0, lastDataAt = 0, sentAt, now, prompt = false, lateMs = 500, quietMs = 800, slowMs = 4000 }) {
+    if (reportAt > sentAt) return true;
+    if (!(lastDataAt > sentAt + lateMs)) return false;
+    return now - lastDataAt >= (prompt ? quietMs : slowMs);
   }
 
   // The content search: [start, end) ranges of `query` in a found line, for
@@ -407,7 +430,7 @@
   }
 
   return {
-    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, entersWsl, statusMark, treeMarks,
+    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

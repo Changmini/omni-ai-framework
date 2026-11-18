@@ -145,13 +145,13 @@ async function tmuxPlan(procs, run, live, tmux = runTmux) {
   return { spared, ended };
 }
 
-// The processes to end: terminal `id`'s, and the ended tmux servers with
-// what runs in them; never a kept server or anything in it.
+// The processes to end: terminal `id`'s (none when null), and the ended
+// tmux servers with what runs in them; never a kept server or anything in it.
 function toEnd(procs, run, id, plan) {
   return procs.filter((p) => {
     const t = tmuxOf(p.env);
     if (plan.spared.has(p.pid) || (t && plan.spared.has(t.server))) return false;
-    if (isMarked(p.env, run, id)) return true;
+    if (id !== null && isMarked(p.env, run, id)) return true;
     return envGet(p.env, RUN_VAR) === run && (plan.ended.has(p.pid) || Boolean(t && plan.ended.has(t.server)));
   }).map((p) => p.pid);
 }
@@ -184,6 +184,17 @@ async function reapTerminal(run, id, {
   list = listProcs, tmux = runTmux, kill = signal, wait = delay, wsl = reapWsl,
 } = {}) {
   wsl(run, id, distros, live, platform);
+  return endPlanned(run, id, { live, platform, list, tmux, kill, wait });
+}
+
+// Kept tmux servers looked at again (SessionManager, every minute while one
+// is kept): one no open terminal is attached to any more ends. Inside WSL
+// the script does this itself.
+function recheckTmux(run, { live = [], platform = process.platform, list = listProcs, tmux = runTmux, kill = signal, wait = delay } = {}) {
+  return endPlanned(run, null, { live, platform, list, tmux, kill, wait });
+}
+
+async function endPlanned(run, id, { live, platform, list, tmux, kill, wait }) {
   const procs = await list(platform);
   const plan = await tmuxPlan(procs, run, live, tmux);
   const asked = toEnd(procs, run, id, plan);
@@ -216,5 +227,5 @@ function reapAllSync(run, { distros = [], platform = process.platform } = {}) {
 
 module.exports = {
   RUN_VAR, ID_VAR, GRACE_MS, newRunId, isMarked, tmuxOf, listLinux, parsePs, markedPids,
-  tmuxPlan, toEnd, reapTerminal, reapAllSync, reapWsl, WSL_SCRIPT,
+  tmuxPlan, toEnd, reapTerminal, recheckTmux, reapAllSync, reapWsl, WSL_SCRIPT,
 };

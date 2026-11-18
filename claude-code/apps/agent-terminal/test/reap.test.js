@@ -137,6 +137,7 @@ test('reapTerminal ends nohup, setsid and HUP-ignoring processes of the terminal
 // (terminal 8 goes on); closing 8 later, with terminal 9 still open, ends it.
 async function tmuxSetup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-tmux-'));
+  fs.mkdirSync(path.join(dir, 'tmp')); // TMPDIR of the WSL script (its lock), apart per test
   const sock = path.join(dir, 'sock');
   execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'shared', 'sleep 300'], { env: penv('7') });
   execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'detached', 'sleep 301'], { env: penv('7') });
@@ -145,7 +146,7 @@ async function tmuxSetup() {
   const server = Number(String(execFileSync('tmux', ['-S', sock, 'display', '-p', '#{pid}'])).trim());
   const sessions = () => String(spawnSync('tmux', ['-S', sock, 'list-sessions', '-F', '#{session_name}']).stdout).trim().split('\n').filter(Boolean).sort();
   const other = spawn('sleep', ['60'], { env: penv('9'), stdio: 'ignore' }); // terminal 9: open, not in tmux
-  return { sock, client, server, sessions, done: () => { spawnSync('tmux', ['-S', sock, 'kill-server']); client.kill('SIGKILL'); other.kill('SIGKILL'); } };
+  return { dir, sock, client, server, sessions, done: () => { spawnSync('tmux', ['-S', sock, 'kill-server']); client.kill('SIGKILL'); other.kill('SIGKILL'); } };
 }
 
 test('closing a terminal leaves a tmux server another open terminal is attached to; it ends once none is', { skip: !hasTmux }, async () => {
@@ -162,25 +163,6 @@ test('closing a terminal leaves a tmux server another open terminal is attached 
     await reap.reapTerminal('rtest', '8', { live: ['9'] });
     await sleep(300);
     assert.ok(!alive(t.server), 'nobody attached: the server terminal 7 started ended');
-  } finally { t.done(); }
-});
-
-test('the WSL script does the same (run here with sh)', { skip: !hasTmux }, async () => {
-  const t = await tmuxSetup();
-  try {
-    const keep = spawn('setsid', ['sleep', '60'], { env: penv('7'), stdio: 'ignore', detached: true });
-    await sleep(200);
-    execFileSync('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '7', '8 9'], { timeout: 20000 });
-    await sleep(300);
-    assert.ok(alive(t.server), 'the server stays');
-    assert.deepStrictEqual(t.sessions(), ['detached', 'shared']);
-    assert.ok(alive(t.client.pid), 'terminal 8 goes on');
-    assert.ok(!alive(keep.pid) || String(fs.readFileSync(`/proc/${keep.pid}/stat`)).split(' ')[2] === 'Z', 'terminal 7 setsid process ended');
-    t.client.kill('SIGKILL');
-    await sleep(300);
-    execFileSync('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '8', '9'], { timeout: 20000 });
-    await sleep(300);
-    assert.ok(!alive(t.server), 'nobody attached: ended');
   } finally { t.done(); }
 });
 
@@ -201,4 +183,46 @@ test('the app bash starts editors and openers without the marker, also through a
   assert.match(run('', 'code a'), /code:--reuse a run=none/, 'the alias still works');
   assert.match(run('', 'omni-keep sh -c \'echo "keep:${OMNI_TERMINAL_RUN:-none}"\''), /keep:none/);
   assert.match(run('', 'sh -c \'echo "plain:$OMNI_TERMINAL_RUN"\''), /plain:r1/, 'everything else keeps it');
+});
+
+test('a kept tmux server ends at a later look once the open terminal detached', { skip: !hasTmux }, async () => {
+  const t = await tmuxSetup();
+  try {
+    await reap.reapTerminal('rtest', '7', { live: ['8', '9'] });
+    await sleep(300);
+    assert.ok(alive(t.server), 'kept for terminal 8');
+    let r = await reap.recheckTmux('rtest', { live: ['8', '9'] });
+    assert.deepStrictEqual(r.spared, [t.server], 'still attached: kept');
+    t.client.kill('SIGKILL'); // terminal 8 detached (stays open)
+    await sleep(300);
+    r = await reap.recheckTmux('rtest', { live: ['8', '9'] });
+    await sleep(300);
+    assert.deepStrictEqual(r.ended, [t.server]);
+    assert.ok(!alive(t.server), 'nobody attached: ended');
+  } finally { t.done(); }
+});
+
+test('the WSL script does the same (run here with sh), looking again while it keeps a server', { skip: !hasTmux }, async () => {
+  const t = await tmuxSetup();
+  try {
+    const keep = spawn('setsid', ['sleep', '60'], { env: penv('7'), stdio: 'ignore', detached: true });
+    await sleep(200);
+    const env = { ...process.env, OMNI_REAP_EVERY: '1', TMPDIR: path.join(t.dir, 'tmp') };
+    const script = spawn('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '7', '8 9'], { env, stdio: 'ignore' });
+    const exited = new Promise((r) => script.on('exit', r));
+    await sleep(3500);
+    // A later close while the server is kept: it leaves the looking to the first.
+    const second = spawn('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '10', '8 9'], { env, stdio: 'ignore' });
+    const secondExit = await Promise.race([new Promise((r) => second.on('exit', r)), sleep(6000).then(() => 'running')]);
+    assert.strictEqual(secondExit, 0, 'one looking loop per run');
+    assert.ok(alive(t.server), 'kept while terminal 8 is attached');
+    assert.deepStrictEqual(t.sessions(), ['detached', 'shared'], 'every session stays');
+    assert.ok(alive(t.client.pid), 'terminal 8 goes on');
+    assert.ok(!alive(keep.pid) || String(fs.readFileSync(`/proc/${keep.pid}/stat`)).split(' ')[2] === 'Z', 'terminal 7 setsid process ended');
+    assert.strictEqual(script.exitCode, null, 'still looking');
+    t.client.kill('SIGKILL'); // terminal 8 detached
+    await Promise.race([exited, sleep(15000)]);
+    assert.ok(!alive(t.server), 'ended once none is attached');
+    assert.notStrictEqual(script.exitCode, null, 'and the script exited');
+  } finally { t.done(); }
 });

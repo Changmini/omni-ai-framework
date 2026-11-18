@@ -344,3 +344,27 @@ test('a shell report tells the window the shell is ready (and whether it is insi
   m.shellReported(id);
   assert.deepStrictEqual(events.filter(([c]) => c === 'session:shell').map(([, p]) => p), [{ id, wsl: 'Ubuntu-24.04' }, { id, wsl: null }]);
 });
+
+test('a kept tmux server is looked at again until none is kept', async () => {
+  const looks = [];
+  const fakePty = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
+  const m = new SessionManager({
+    spawn: () => fakePty(), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, runId: 'r1',
+    reaper: { terminal: async () => ({ spared: [11] }), recheck: async (run, live) => { looks.push(live); return looks.length === 1 ? null : { spared: looks.length < 3 ? [11] : [] }; }, all() {} },
+  });
+  const a = m.create({});
+  const b = m.create({});
+  m.kill(a.id);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(m.tmuxTimer, 'kill() started the looks');
+  clearInterval(m.tmuxTimer);
+  m.tmuxTimer = null;
+  m.watchKeptTmux(10);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.strictEqual(looks.length, 3, 'a failed look tried again; stopped once none was kept');
+  assert.deepStrictEqual(looks[0], [b.id], 'with the terminals open now');
+  assert.strictEqual(m.tmuxTimer, null);
+  m.killAll();
+  m.watchKeptTmux(10);
+  assert.strictEqual(m.tmuxTimer, null, 'not after the app quits');
+});

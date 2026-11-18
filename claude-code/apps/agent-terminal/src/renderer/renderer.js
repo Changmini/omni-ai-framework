@@ -697,20 +697,23 @@ async function waitQuiet(id, quietMs = 500, maxMs = 8000) {
   }
 }
 
-// When each terminal's shell last reported in: { at, wslAt } (from inside
-// WSL). Kept apart from `agents`: a new terminal's first report may come
-// before it is listed.
+// When each terminal's shell last reported in (its prompt's folder). Kept
+// apart from `agents`: a new terminal's first report may come before it is
+// listed.
 const shellSeen = new Map();
 
-// Resolves once the shell of terminal `id` reported in after `after` (ms):
-// from inside WSL when `wsl` is set; or after `maxMs` anyway.
-async function waitShell(id, after, { wsl = false, maxMs = 30000 } = {}) {
-  const start = Date.now();
+// Resolves once terminal `id`'s shell is ready for the next line after one
+// sent at `sentAt` (view-logic.js shellReady), or after `maxMs` anyway.
+async function waitShell(id, sentAt, { lateMs = 500, maxMs = 30000 } = {}) {
   for (;;) {
-    if (!agents.has(id)) return; // closed meanwhile
-    const seen = shellSeen.get(id);
-    if (seen && (wsl ? seen.wslAt : seen.at) > after) return;
-    if (Date.now() - start >= maxMs) return;
+    const a = agents.get(id);
+    if (!a) return; // closed meanwhile
+    const now = Date.now();
+    const b = a.term.buffer.active;
+    const cursorLine = b.getLine(b.baseY + b.cursorY);
+    const prompt = ViewLogic.promptLike(cursorLine ? cursorLine.translateToString(false).slice(0, b.cursorX) : '');
+    if (ViewLogic.shellReady({ reportAt: shellSeen.get(id) || 0, lastDataAt: a.lastDataAt || 0, sentAt, now, prompt, lateMs })) return;
+    if (now - sentAt >= maxMs) return;
     await sleep(100);
   }
 }
@@ -734,7 +737,7 @@ async function typeShortcut(sc, lines) {
     const opened = Date.now();
     id = await newTerminal();
     if (sc.name) { agents.get(id).info.name = sc.name; api.rename(id, sc.name); renderItem(id); }
-    await waitShell(id, opened - 1, { maxMs: 15000 }); // first prompt
+    await waitShell(id, opened - 1, { lateMs: 0, maxMs: 15000 }); // first prompt
     await waitQuiet(id, 300);
   }
   for (const line of lines) {
@@ -742,7 +745,9 @@ async function typeShortcut(sc, lines) {
     const sent = Date.now();
     api.sendLine(id, line);
     if (ViewLogic.entersWsl(line)) {
-      await waitShell(id, sent, { wsl: true });
+      // While wsl runs, the shell outside does not prompt: a report now is
+      // the WSL shell's (or that of a wsl that failed at once).
+      await waitShell(id, sent);
       await waitQuiet(id, 300);
     } else {
       await waitQuiet(id);
@@ -2606,12 +2611,7 @@ api.onData(({ id, data }) => {
 api.onStatus(({ id, status, error }) => update(id, { status, error }));
 api.onAgent(({ id, claude }) => update(id, { claude }));
 api.onMeta(({ id, ...patch }) => update(id, patch)); // cwd/branch, or name
-api.onShell?.(({ id, wsl }) => {
-  const seen = shellSeen.get(id) || { at: 0, wslAt: 0 };
-  seen.at = Date.now();
-  if (wsl) seen.wslAt = seen.at; // kept: the prompt's own report after it says nothing of WSL
-  shellSeen.set(id, seen);
-});
+api.onShell?.(({ id }) => shellSeen.set(id, Date.now()));
 api.onRemoved?.(({ id }) => shellSeen.delete(id));
 api.onExit(({ id, exitCode }) => {
   const a = agents.get(id);
