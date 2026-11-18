@@ -392,6 +392,10 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .vbtn.failed { color: var(--err); border-color: var(--err); }
 .vbtn.done { color: var(--ok); border-color: var(--ok); }
 .viewer-body { flex: 1; min-height: 0; overflow: auto; outline: none; }
+/* find in the file: the bar under the head, matches as the terminal's search shows them */
+.viewer-find { top: 48px; }
+::highlight(viewer-find) { background-color: #2b4a6b; }
+::highlight(viewer-find-current) { background-color: #7a3d26; color: #fff; }
 .viewer-code { position: relative; display: flex; min-width: max-content; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .viewer-code pre { margin: 0; padding: 10px 0; }
 .viewer-gutter { padding: 10px 10px 10px 14px !important; text-align: right; color: var(--muted); user-select: none; opacity: .7; border-right: 1px solid var(--line); }

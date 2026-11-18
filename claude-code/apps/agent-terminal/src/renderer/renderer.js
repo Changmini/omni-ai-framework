@@ -74,7 +74,7 @@ const SHORTCUTS = {
   KeyC: () => copySelection(activeId),
   KeyV: () => pasteInto(activeId),
   KeyA: () => agents.get(activeId)?.term.selectAll(),
-  KeyF: () => openSearch(),
+  KeyF: () => (viewing ? openViewerFind() : openSearch()), // in a file shown: find there
   KeyI: () => setInspectorOpen(app.classList.contains('inspector-closed')),
   KeyP: () => togglePreview(),
 };
@@ -1324,9 +1324,10 @@ function diffStat(lines) {
 
 // `views`: [{ key, label, lines }] (a diff) or [{ key, label, load }] (async,
 // resolves to { text } | { lines } | { binary, size } | { error }).
-function openViewer({ path, views, key, line = null, actions = {} }) {
+function openViewer({ path, views, key, line = null, find = null, actions = {} }) {
   hideCard();
-  viewing = { path, views, actions, line, token: null };
+  closeViewerFind(false);
+  viewing = { path, views, actions, line, find, token: null };
   setViewerPath(path);
   viewer.tabs.replaceChildren(...views.map((v) => {
     const b = h('button', 'tab', v.label);
@@ -1425,8 +1426,9 @@ function markdownView(text, link = null) {
 // A file behind a Claude config item: Markdown is shown read ("읽기") and as
 // written ("원문"); other files (settings JSON) as they are.
 // `line`: shown from that line, marked (a content search result); a
-// Markdown file then opens as written.
-function openConfigFile(id, file, line = null) {
+// Markdown file then opens as written. `find`: the word that search found,
+// put in the viewer's find bar.
+function openConfigFile(id, file, line = null, find = null) {
   if (!id) return;
   const read = () => api.readFile(id, file);
   const views = /\.(md|markdown)$/i.test(file)
@@ -1435,7 +1437,7 @@ function openConfigFile(id, file, line = null) {
       { key: 'file', label: '원문', load: read },
     ]
     : [{ key: 'file', label: '파일', load: read }];
-  openViewer({ path: file, views, key: line ? 'file' : undefined, line, actions: { reveal: () => api.revealFile(id, file) } });
+  openViewer({ path: file, views, key: line ? 'file' : undefined, line, find, actions: { reveal: () => api.revealFile(id, file) } });
 }
 
 // Marks line `line` of a code view and scrolls it into view.
@@ -1494,6 +1496,7 @@ async function showView(key) {
     viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
     if (viewing.line && viewing.line <= count) markLine(box, viewing.line);
   }
+  afterViewShown();
 }
 
 // A long path is cut at its start, so the file name stays visible.
@@ -1504,6 +1507,7 @@ function setViewerPath(p) {
 
 function closeViewer(focusTerminal = true) {
   if (!viewing) return;
+  closeViewerFind(false);
   viewing = null;
   viewer.el.hidden = true;
   viewer.body.replaceChildren();
@@ -1516,6 +1520,140 @@ function flashButton(btn, ok) {
 }
 
 viewer.close.addEventListener('click', () => closeViewer());
+
+// ---------- find in the file viewer ----------
+// Ctrl+Shift+F (or Ctrl+F in the viewer) while a file is shown: like the
+// terminal's search, every match marked, the current one brighter, Enter /
+// Shift+Enter to the next / previous, Esc closes it. Matches are drawn with
+// CSS highlights (the shown text is not changed); line numbers are not
+// searched.
+const vfind = {
+  bar: $('#viewer-find'), input: $('#viewer-find-input'), count: $('#viewer-find-count'),
+  prev: $('#viewer-find-prev'), next: $('#viewer-find-next'), close: $('#viewer-find-close'),
+  ranges: [], index: -1, timer: null,
+};
+const FIND_MAX = 5000;
+const canHighlight = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight === 'function';
+
+function clearFindMarks() {
+  if (!canHighlight) return;
+  CSS.highlights.delete('viewer-find');
+  CSS.highlights.delete('viewer-find-current');
+}
+
+// The shown text, as text nodes in order (not the line numbers).
+function viewerTextNodes() {
+  const walker = document.createTreeWalker(viewer.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement && n.parentElement.closest('.viewer-gutter') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  const out = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n);
+  return out;
+}
+
+// Finds what is typed in the shown text; the current match is the first
+// one at or below `fromY` (a screen position: what is in view, or the line
+// a content search result marked).
+function runViewerFind(fromY = viewer.body.getBoundingClientRect().top) {
+  clearFindMarks();
+  vfind.ranges = [];
+  vfind.index = -1;
+  const q = vfind.input.value;
+  if (!q || !viewing || !canHighlight) { vfind.count.textContent = q && !canHighlight ? '지원 안 됨' : ''; return; }
+  for (const node of viewerTextNodes()) {
+    for (const [a, b] of ViewLogic.findAll(node.data, q, FIND_MAX - vfind.ranges.length)) {
+      const r = new Range();
+      r.setStart(node, a);
+      r.setEnd(node, b);
+      vfind.ranges.push(r);
+    }
+    if (vfind.ranges.length >= FIND_MAX) break;
+  }
+  if (!vfind.ranges.length) { vfind.count.textContent = '없음'; return; }
+  CSS.highlights.set('viewer-find', new Highlight(...vfind.ranges));
+  const at = vfind.ranges.findIndex((r) => r.getBoundingClientRect().bottom > fromY + 1);
+  vfind.index = at === -1 ? 0 : at;
+  showFindCurrent();
+}
+
+function showFindCurrent() {
+  const r = vfind.ranges[vfind.index];
+  if (!r) return;
+  CSS.highlights.set('viewer-find-current', new Highlight(r));
+  const more = vfind.ranges.length >= FIND_MAX ? '+' : '';
+  vfind.count.textContent = `${vfind.index + 1}/${vfind.ranges.length}${more}`;
+  // Into view, a third from the top (below the find bar), and sideways in a long line.
+  const box = viewer.body.getBoundingClientRect();
+  const rect = r.getBoundingClientRect();
+  if (rect.top < box.top + 40 || rect.bottom > box.bottom - 10) viewer.body.scrollTop += rect.top - box.top - box.height / 3;
+  if (rect.left < box.left || rect.right > box.right) viewer.body.scrollLeft += rect.left - box.left - box.width / 3;
+}
+
+function stepFind(dir) {
+  if (!vfind.ranges.length) { runViewerFind(); return; }
+  vfind.index = (vfind.index + dir + vfind.ranges.length) % vfind.ranges.length;
+  showFindCurrent();
+}
+
+function openViewerFind() {
+  if (!viewing) return;
+  const sel = String(window.getSelection() || '');
+  if (sel && !sel.includes('\n') && viewer.body.contains(window.getSelection().anchorNode)) vfind.input.value = sel;
+  vfind.bar.hidden = false;
+  vfind.input.focus();
+  vfind.input.select();
+  runViewerFind();
+}
+
+function closeViewerFind(focusBody = true) {
+  clearTimeout(vfind.timer);
+  clearFindMarks();
+  vfind.ranges = [];
+  if (vfind.bar.hidden) return;
+  vfind.bar.hidden = true;
+  vfind.count.textContent = '';
+  if (focusBody && viewing) viewer.body.focus({ preventScroll: true });
+}
+
+// A view was drawn (opened, another tab, read again): found again in it.
+// A file opened from the content search starts with its word, at the line
+// that result was.
+function afterViewShown() {
+  if (!viewing) return;
+  if (viewing.find) {
+    vfind.input.value = viewing.find;
+    viewing.find = null;
+    vfind.bar.hidden = false;
+  }
+  if (vfind.bar.hidden) return;
+  const hit = viewer.body.querySelector('.viewer-hit');
+  runViewerFind(hit ? hit.getBoundingClientRect().top : undefined);
+}
+
+vfind.input.addEventListener('input', () => {
+  clearTimeout(vfind.timer);
+  vfind.timer = setTimeout(() => { vfind.timer = null; runViewerFind(); }, 120);
+});
+vfind.input.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // Hangul being composed
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (vfind.timer) { clearTimeout(vfind.timer); vfind.timer = null; runViewerFind(); if (e.shiftKey) stepFind(-1); return; }
+    stepFind(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation(); // closes the find bar, not the viewer
+    closeViewerFind();
+  }
+});
+vfind.prev.addEventListener('click', () => stepFind(-1));
+vfind.next.addEventListener('click', () => stepFind(1));
+vfind.close.addEventListener('click', () => closeViewerFind());
+viewer.el.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); openViewerFind(); }
+  else if (e.key === 'F3' && !vfind.bar.hidden) { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+  else if (e.key === 'Escape' && !vfind.bar.hidden) { e.preventDefault(); e.stopPropagation(); closeViewerFind(); } // then Esc closes the viewer
+});
 viewer.copy.addEventListener('click', async () => {
   if (!viewing) return;
   const text = viewing.actions.copy ? viewing.actions.copy.text : viewing.absPath || viewing.path;
@@ -2014,12 +2152,12 @@ async function toggleTreeFolder(t, rel) {
   if (row) row.focus({ preventScroll: true });
 }
 
-function openTreeFile(t, abs, line = null) {
+function openTreeFile(t, abs, line = null, find = null) {
   treeSelected = abs;
   for (const row of treeEls.body.querySelectorAll('.tree-row:not([data-dir])')) {
     row.setAttribute('aria-selected', String(row.dataset.abs === abs));
   }
-  openConfigFile(t.id, abs, line);
+  openConfigFile(t.id, abs, line, find);
 }
 
 const MARK_LABEL = { M: '수정됨', U: '새 파일 (추적 안 함)', A: '추가됨 (스테이징)', R: '이름 바뀜', C: '충돌' };
@@ -2199,7 +2337,8 @@ function openSearchResult(t, rel, k, line = null) {
   [...search.results.querySelectorAll('.tree-result')].forEach((row, i) => row.setAttribute('aria-selected', String(i === k)));
   const open = treeOpen.get(t.root);
   for (let cut = rel.indexOf('/'); cut !== -1; cut = rel.indexOf('/', cut + 1)) open.add(rel.slice(0, cut));
-  openTreeFile(t, treeAbs(t.root, rel), line);
+  // From the content search: the word goes into the viewer's find bar.
+  openTreeFile(t, treeAbs(t.root, rel), line, search.mode === 'text' ? search.query : null);
 }
 
 // Runs the search for what is typed now (no-op when it already has).

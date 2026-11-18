@@ -117,6 +117,13 @@
             <button id="viewer-editor" class="vbtn" type="button" hidden>VS Code</button>
             <button id="viewer-close" class="icon-btn" type="button" title="닫기 (Esc)" aria-label="닫기">✕</button>
           </div>
+          <div id="viewer-find" class="search-bar viewer-find" hidden role="search">
+            <input id="viewer-find-input" placeholder="파일에서 찾기" spellcheck="false" aria-label="파일에서 찾기">
+            <span id="viewer-find-count" class="search-count"></span>
+            <button id="viewer-find-prev" class="icon-btn" type="button" title="이전 (Shift+Enter)" aria-label="이전">↑</button>
+            <button id="viewer-find-next" class="icon-btn" type="button" title="다음 (Enter)" aria-label="다음">↓</button>
+            <button id="viewer-find-close" class="icon-btn" type="button" title="닫기 (Esc)" aria-label="닫기">✕</button>
+          </div>
           <div id="viewer-body" class="viewer-body" tabindex="-1"></div>
         </section>
       </div>
