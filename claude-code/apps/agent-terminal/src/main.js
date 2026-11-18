@@ -235,7 +235,10 @@ function registerIpc() {
   // Raw OSC 7 / OSC 9;9 payload from the terminal; parsed here, not in the page.
   ipcMain.on('session:cwd', (_e, id, kind, data) => {
     const d = str(data, 4000);
-    if (d !== null && (kind === 7 || kind === 9)) manager.setCwd(str(id, 20), parseCwdReport(kind, d), true);
+    if (d !== null && (kind === 7 || kind === 9)) {
+      manager.setCwd(str(id, 20), parseCwdReport(kind, d), true);
+      manager.shellReported(str(id, 20));
+    }
   });
   ipcMain.handle('dialog:pickFolder', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });

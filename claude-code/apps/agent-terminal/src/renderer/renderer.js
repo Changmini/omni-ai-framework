@@ -667,9 +667,12 @@ setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
 
 // ---------- shortcuts ----------
 // A saved list of commands. Clicking one types them into a terminal, one line
-// at a time: each line waits until the previous one's output has settled, so
-// a line like `wsl` gets its new shell before the next line arrives. Works the
-// same on Windows, WSL and Linux because it is just typing.
+// at a time: each line waits until the previous one's output has settled.
+// A line that enters WSL (`wsl -d Ubuntu`) waits longer: until the shell
+// inside reports in (its first prompt), since WSL may start silently for
+// seconds and a line typed before its shell exists is lost. A new terminal
+// likewise waits for its shell's first report. Works the same on Windows,
+// WSL and Linux because it is just typing.
 const scEls = {
   list: $('#shortcut-list'), empty: $('#shortcut-empty'), add: $('#shortcut-add'),
   form: $('#shortcut-form'), cancel: $('#shortcut-cancel'),
@@ -694,6 +697,24 @@ async function waitQuiet(id, quietMs = 500, maxMs = 8000) {
   }
 }
 
+// When each terminal's shell last reported in: { at, wslAt } (from inside
+// WSL). Kept apart from `agents`: a new terminal's first report may come
+// before it is listed.
+const shellSeen = new Map();
+
+// Resolves once the shell of terminal `id` reported in after `after` (ms):
+// from inside WSL when `wsl` is set; or after `maxMs` anyway.
+async function waitShell(id, after, { wsl = false, maxMs = 30000 } = {}) {
+  const start = Date.now();
+  for (;;) {
+    if (!agents.has(id)) return; // closed meanwhile
+    const seen = shellSeen.get(id);
+    if (seen && (wsl ? seen.wslAt : seen.at) > after) return;
+    if (Date.now() - start >= maxMs) return;
+    await sleep(100);
+  }
+}
+
 const runningShortcuts = new Set(); // a second click while one runs is ignored
 
 async function runShortcut(sc) {
@@ -710,14 +731,22 @@ async function runShortcut(sc) {
 async function typeShortcut(sc, lines) {
   let id = activeId;
   if (sc.newTerminal || !id) {
+    const opened = Date.now();
     id = await newTerminal();
     if (sc.name) { agents.get(id).info.name = sc.name; api.rename(id, sc.name); renderItem(id); }
-    await waitQuiet(id, 700); // first prompt
+    await waitShell(id, opened - 1, { maxMs: 15000 }); // first prompt
+    await waitQuiet(id, 300);
   }
   for (const line of lines) {
     if (!agents.has(id)) return;
+    const sent = Date.now();
     api.sendLine(id, line);
-    await waitQuiet(id);
+    if (ViewLogic.entersWsl(line)) {
+      await waitShell(id, sent, { wsl: true });
+      await waitQuiet(id, 300);
+    } else {
+      await waitQuiet(id);
+    }
   }
   agents.get(id)?.term.focus();
 }
@@ -2577,6 +2606,13 @@ api.onData(({ id, data }) => {
 api.onStatus(({ id, status, error }) => update(id, { status, error }));
 api.onAgent(({ id, claude }) => update(id, { claude }));
 api.onMeta(({ id, ...patch }) => update(id, patch)); // cwd/branch, or name
+api.onShell?.(({ id, wsl }) => {
+  const seen = shellSeen.get(id) || { at: 0, wslAt: 0 };
+  seen.at = Date.now();
+  if (wsl) seen.wslAt = seen.at; // kept: the prompt's own report after it says nothing of WSL
+  shellSeen.set(id, seen);
+});
+api.onRemoved?.(({ id }) => shellSeen.delete(id));
 api.onExit(({ id, exitCode }) => {
   const a = agents.get(id);
   if (!a) return;

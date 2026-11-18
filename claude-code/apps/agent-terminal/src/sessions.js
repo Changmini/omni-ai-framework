@@ -198,6 +198,14 @@ class SessionManager {
       ? { distro: String(wslDistro), home: typeof home === 'string' ? home : null } : null;
     if (s.wsl) s.wslDistros.add(s.wsl.distro);
     this.setCwd(id, cwd, true);
+    this.shellReported(id, wslDistro ? String(wslDistro) : null);
+  }
+
+  // The shell reported in (its folder, at a prompt): it is ready for input.
+  // A shortcut waits for this after a line that starts a new shell (wsl).
+  // `wsl`: the distro a shell inside WSL named.
+  shellReported(id, wsl = null) {
+    if (this.sessions.has(id)) this.emit('session:shell', { id, wsl });
   }
 
   // Where this host can read a path the shell or Claude reported.

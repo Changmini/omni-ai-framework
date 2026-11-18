@@ -44,20 +44,44 @@ const PAGE_CSP = [
   "base-uri 'self'",
 ].join('; ');
 
-// Added to every HTML page shown: the page tells the app where it is
-// scrolled, and the app sends that back after a reload, so a redrawn page
-// keeps its place. It also tells when the user presses in the page (so the
-// app lets the page keep the keyboard then, and only then). Messages carry
-// numbers only. And it gives the scrollbars' track the page's own
-// background (--omni-sb-bg; SCROLLBAR_STYLE): the page's background does
-// not reach under a scrollbar, the frame's white would show there.
-const SCROLL_KEEPER = '<script>(function(){var t;function s(){parent.postMessage({omniPreview:"scroll",x:scrollX,y:scrollY},"*")}'
-  + 'function g(){function c(e){var v=e&&getComputedStyle(e).backgroundColor;return v&&v!=="transparent"&&!/^rgba\\(.*,\\s*0\\)$/.test(v)?v:null}'
-  + 'var r=document.documentElement;r.style.setProperty("--omni-sb-bg",c(r)||c(document.body)||"#fff")}g();addEventListener("load",g);'
-  + 'addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(s,120)},{passive:true});'
-  + 'addEventListener("pointerdown",function(e){if(e.isTrusted)parent.postMessage({omniPreview:"touch"},"*")},true);'
-  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&d&&d.omniPreview==="restore"){scrollTo(+d.x||0,+d.y||0)}});'
-  + 'parent.postMessage({omniPreview:"ready"},"*")})();</script>';
+// Added to every HTML page shown (as its source text; it runs in the page):
+// - the page tells the app where it is scrolled, and the app sends that
+//   back after a reload, so a redrawn page keeps its place;
+// - it tells when the user presses in the page (the app lets the page keep
+//   the keyboard then, and only then);
+// - it gives the scrollbars' track (SCROLLBAR_STYLE) the page's background:
+//   the page's own background does not reach under a scrollbar, the
+//   frame's white would show there. A colour, else the first colour of a
+//   gradient, else (an image) dark or white by the text colour.
+// Messages carry numbers only.
+/* eslint-disable no-undef -- runs in the page */
+function pageHelper() {
+  let timer;
+  const sendScroll = () => parent.postMessage({ omniPreview: 'scroll', x: scrollX, y: scrollY }, '*');
+  addEventListener('scroll', () => { clearTimeout(timer); timer = setTimeout(sendScroll, 120); }, { passive: true });
+  addEventListener('pointerdown', (e) => { if (e.isTrusted) parent.postMessage({ omniPreview: 'touch' }, '*'); }, true);
+  addEventListener('message', (e) => {
+    const d = e.data;
+    if (e.source === parent && d && d.omniPreview === 'restore') scrollTo(Number(d.x) || 0, Number(d.y) || 0);
+  });
+  const clear = (c) => !c || c === 'transparent' || /^rgba\(.*,\s*0\)$/.test(c);
+  const color = (el) => { const c = el && getComputedStyle(el).backgroundColor; return clear(c) ? null : c; };
+  const gradient = (el) => { const m = el && /rgba?\([^)]*\)/.exec(getComputedStyle(el).backgroundImage); return m && !clear(m[0]) ? m[0] : null; };
+  const byText = () => {
+    const m = /(\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(document.body || document.documentElement).color);
+    return m && (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) / 255 > 0.5 ? '#14161c' : '#fff';
+  };
+  const track = () => {
+    const root = document.documentElement;
+    const body = document.body;
+    root.style.setProperty('--omni-sb-bg', color(root) || color(body) || gradient(root) || gradient(body) || byText());
+  };
+  track();
+  addEventListener('load', track);
+  parent.postMessage({ omniPreview: 'ready' }, '*');
+}
+/* eslint-enable no-undef */
+const SCROLL_KEEPER = `<script>(${pageHelper.toString()})();</script>`;
 
 // The app's thin scrollbars (renderer/styles.css), so a drawing scrolls
 // like the rest of the app. Put first in the page: a drawing's own

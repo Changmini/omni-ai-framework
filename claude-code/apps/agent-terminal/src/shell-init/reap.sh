@@ -4,51 +4,59 @@
 # Linux and macOS). Every process started from an app terminal carries
 # OMNI_TERMINAL_RUN (the app's run) and OMNI_TERMINAL_ID (the terminal).
 #   $1 the run, $2 the closed terminal (empty: the app quits, every terminal),
-#   $3 the terminals still open ("1 3"): a tmux server one of them is attached
-#      to stays, with the sessions they show; its other sessions are ended.
+#   $3 the terminals still open ("1 3"): a tmux server started from a closed
+#      terminal stays, whole, while one of them is attached to it, and ends
+#      at a later close once none is (as tmuxPlan in src/reap.js).
 run=$1; id=$2; live=" $3 "
 envof() { tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null; }
 val() { printf '%s\n' "$1" | sed -n "s/^$2=//p" | head -n 1; }
+has() { case " $1 " in *" $2 "*) return 0;; esac; return 1; }
+# mine: the closed terminal's processes (every terminal's when $id is empty);
+# closed: those of every terminal no longer open; others: of those still open.
 scan() {
-  mine=""; others=""
+  mine=""; closed=""; others=""
   for d in /proc/[0-9]*; do
     p=${d#/proc/}; [ "$p" = "$$" ] && continue
     e=$(envof "$p") || continue
     [ "$(val "$e" OMNI_TERMINAL_RUN)" = "$run" ] || continue
     t=$(val "$e" OMNI_TERMINAL_ID)
-    if [ -z "$id" ] || [ "$t" = "$id" ]; then mine="$mine $p"
-    else case "$live" in *" $t "*) others="$others $p";; esac; fi
+    if [ -z "$id" ] || [ "$t" = "$id" ]; then mine="$mine $p"; fi
+    if has "$live" "$t"; then others="$others $p"; else closed="$closed $p"; fi
   done
 }
-spare=""
+# The tmux server a process runs in (TMUX=socket,pid,n), or nothing.
 tmuxsrv() { x=$(val "$(envof "$1")" TMUX); [ -n "$x" ] || return 1; s=${x%,*}; echo "${s##*,}"; }
-keep() {
-  out=""
-  for p in $mine; do
-    case " $spare " in *" $p "*) continue;; esac
-    srv=$(tmuxsrv "$p") && case " $spare " in *" $srv "*) continue;; esac
-    out="$out $p"
-  done
-  echo $out
-}
-scan
-if [ -n "$id" ] && [ -n "$others" ]; then
-  done_srv=" "
+# tmux servers of closed terminals: kept while an open terminal is attached,
+# else ended.
+spare=""; ended=""
+plan() {
+  seen=" "
   for d in /proc/[0-9]*; do
     p=${d#/proc/}; x=$(val "$(envof "$p")" TMUX); [ -n "$x" ] || continue
     s=${x%,*}; srv=${s##*,}; sock=${s%,*}
-    case " $mine " in *" $srv "*) ;; *) continue;; esac
-    case "$done_srv" in *" $srv "*) continue;; esac
-    done_srv="$done_srv$srv "
-    c=$(tmux -S "$sock" list-clients -F '#{client_pid} #{session_name}' 2>/dev/null) || { spare="$spare $srv"; continue; }
-    shown=$(printf '%s\n' "$c" | while read -r cp sn; do case " $others " in *" $cp "*) echo "$sn";; esac; done)
-    [ -n "$shown" ] || continue
-    spare="$spare $srv"
-    tmux -S "$sock" list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r sn; do
-      printf '%s\n' "$shown" | grep -qxF -- "$sn" || tmux -S "$sock" kill-session -t "=$sn"
-    done
+    has "$closed" "$srv" || continue
+    has "$seen" "$srv" && continue
+    seen="$seen$srv "
+    if [ -z "$others" ]; then ended="$ended $srv"; continue; fi
+    c=$(tmux -S "$sock" list-clients -F '#{client_pid}' 2>/dev/null) || { spare="$spare $srv"; continue; }
+    attached=""
+    for cp in $c; do has "$others" "$cp" && attached=1; done
+    if [ -n "$attached" ]; then spare="$spare $srv"; else ended="$ended $srv"; fi
   done
-fi
-p=$(keep); [ -z "$p" ] && exit 0
+}
+# The processes to end: the closed terminal's and the ended servers' (with
+# what runs in them), never a kept server's.
+pick() {
+  out=""
+  for p in $closed; do
+    has "$spare" "$p" && continue
+    srv=$(tmuxsrv "$p") || srv=""
+    [ -n "$srv" ] && has "$spare" "$srv" && continue
+    if has "$mine" "$p" || has "$ended" "$p" || { [ -n "$srv" ] && has "$ended" "$srv"; }; then out="$out $p"; fi
+  done
+  echo $out
+}
+scan; plan
+p=$(pick); [ -z "$p" ] && exit 0
 kill -HUP $p 2>/dev/null; kill -TERM $p 2>/dev/null; sleep 2
-scan; p=$(keep); [ -n "$p" ] && kill -KILL $p 2>/dev/null; exit 0
+scan; p=$(pick); [ -n "$p" ] && kill -KILL $p 2>/dev/null; exit 0

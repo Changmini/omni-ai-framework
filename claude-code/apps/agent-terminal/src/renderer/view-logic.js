@@ -273,6 +273,12 @@
     });
   }
 
+  // A shortcut line that opens a shell inside WSL (the app's PowerShell
+  // `wsl`, with only -d/-u/--cd/~): the next line waits for that shell.
+  function entersWsl(line) {
+    return /^\s*wsl(\.exe)?((\s+(-d|--distribution|-u|--user|--cd)\s+\S+)|(\s+~))*\s*$/i.test(String(line || ''));
+  }
+
   // The content search: [start, end) ranges of `query` in a found line, for
   // highlighting (as the main process matched it: ignoring case or not).
   function textRanges(text, query, ignoreCase) {
@@ -401,7 +407,7 @@
   }
 
   return {
-    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, statusMark, treeMarks,
+    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, entersWsl, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));
