@@ -55,9 +55,45 @@ const PAGE_CSP = [
 //   gradient, else (an image) dark or white by the text colour; again when
 //   the page changes it (a class or style on <html>/<body>, the system's
 //   light or dark mode).
+// - its animations (CSS, Web Animations, requestAnimationFrame loops) rest
+//   after REST_MS without the mouse or keys on the page: an endless
+//   animation repaints for as long as the drawing shows (several % of a
+//   CPU core). Moving the mouse over it plays them again.
 // Messages carry numbers only.
 /* eslint-disable no-undef -- runs in the page */
 function pageHelper() {
+  const REST_MS = 30000;
+  let resting = false;
+  let restTimer = 0;
+  let paused = [];
+  const waiting = []; // frame callbacks asked for while resting
+  const raf = window.requestAnimationFrame.bind(window);
+  const caf = window.cancelAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => {
+    if (!resting) return raf(cb);
+    waiting.push(cb);
+    return -waiting.length;
+  };
+  window.cancelAnimationFrame = (n) => { if (n < 0) waiting[-n - 1] = null; else caf(n); };
+  const rest = () => {
+    resting = true;
+    paused = document.getAnimations().filter((a) => a.playState === 'running');
+    for (const a of paused) a.pause();
+    parent.postMessage({ omniPreview: 'rest', on: true }, '*');
+  };
+  const wake = () => {
+    clearTimeout(restTimer);
+    restTimer = setTimeout(rest, REST_MS);
+    if (!resting) return;
+    resting = false;
+    for (const a of paused) { try { a.play(); } catch { /* gone */ } }
+    paused = [];
+    for (const cb of waiting.splice(0)) if (cb) raf(cb);
+    parent.postMessage({ omniPreview: 'rest', on: false }, '*');
+  };
+  for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown']) addEventListener(type, wake, { passive: true, capture: true });
+  wake();
+
   let timer;
   const sendScroll = () => parent.postMessage({ omniPreview: 'scroll', x: scrollX, y: scrollY }, '*');
   addEventListener('scroll', () => { clearTimeout(timer); timer = setTimeout(sendScroll, 120); }, { passive: true });
