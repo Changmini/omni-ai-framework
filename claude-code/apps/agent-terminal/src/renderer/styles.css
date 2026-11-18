@@ -432,7 +432,7 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tree-search-row { display: flex; gap: 4px; margin: 0 0 6px; }
 .search-mode { display: flex; flex: none; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 .search-mode button {
-  padding: 0 7px; font: 11.5px inherit; font-family: inherit; color: var(--muted); background: var(--bg); border: 0; cursor: pointer;
+  padding: 0 7px; font-size: 11.5px; font-family: inherit; color: var(--muted); background: var(--bg); border: 0; cursor: pointer;
 }
 .search-mode button + button { border-left: 1px solid var(--line); }
 .search-mode button[aria-pressed="true"] { color: var(--text); background: var(--panel); font-weight: 700; }

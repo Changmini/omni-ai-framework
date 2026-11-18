@@ -2102,8 +2102,8 @@ async function textSearchNow(t, q) {
   if (!search.results.querySelector('.tree-result')) search.results.replaceChildren(h('li', 'hint', '찾는 중…'));
   const r = await api.searchText(t.id, q).catch(() => null);
   if (q !== search.query || tree !== t || search.mode !== 'text') return; // typed on, or another project or mode
-  if (!r || r.stale) return;
-  if (r.error) { search.results.replaceChildren(h('li', 'hint', r.error)); return; }
+  if (r && r.stale) return; // a newer search answers
+  if (!r || r.error) { search.results.replaceChildren(h('li', 'hint', (r && r.error) || '찾지 못했습니다')); return; }
   const rows = [];
   let k = 0;
   for (const f of r.files) {
@@ -2114,7 +2114,7 @@ async function textSearchNow(t, q) {
   search.active = Math.min(search.active, Math.max(0, k - 1));
   rows.forEach((row) => { if (row.classList.contains('tree-result')) row.setAttribute('aria-selected', String(Number(row.dataset.k) === search.active)); });
   const summary = r.files.length
-    ? `${r.count.toLocaleString()}줄 · 파일 ${r.files.length.toLocaleString()}개${r.truncated ? ' · 처음 일부만 표시, 글자를 더 넣어 좁혀 보세요' : ''}${r.ignoreCase ? '' : ' · 대소문자 구분'}`
+    ? `${(r.total ?? r.count).toLocaleString()}줄 · 파일 ${r.files.length.toLocaleString()}개${r.truncated ? ' · 처음 일부만 표시, 글자를 더 넣어 좁혀 보세요' : ''}${r.ignoreCase ? '' : ' · 대소문자 구분'}`
     : '일치하는 내용 없음';
   rows.unshift(h('li', 'hint', summary));
   if (r.note) rows.push(h('li', 'hint', r.note));

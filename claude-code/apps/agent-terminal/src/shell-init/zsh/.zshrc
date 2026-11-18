@@ -17,5 +17,19 @@ if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
   }
 fi
 
+# Closing an app terminal ends everything started from it (src/reap.js finds
+# them by OMNI_TERMINAL_RUN in their environment). Programs with a window of
+# their own (an editor, a browser opened by xdg-open) are meant to go on:
+# they start without that marker. `omni-keep <command>` does the same for
+# anything else that should outlive the terminal (a daemon, pm2).
+omni-keep() { env -u OMNI_TERMINAL_RUN -u OMNI_TERMINAL_ID "$@"; }
+for __omni_gui in code code-insiders codium cursor windsurf subl zed xdg-open gio open; do
+  typeset -f "$__omni_gui" >/dev/null 2>&1 && continue # the user's own function stays
+  command -v "$__omni_gui" >/dev/null 2>&1 || continue
+  # "function name": an alias of the same name is not expanded here.
+  eval "function $__omni_gui { omni-keep $__omni_gui \"\$@\"; }"
+done
+unset __omni_gui
+
 __omni_cwd() { printf '\033]7;file://%s%s\033\\' "${HOST:-localhost}" "$PWD"; }
 autoload -Uz add-zsh-hook && add-zsh-hook precmd __omni_cwd

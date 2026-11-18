@@ -606,16 +606,24 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s || !s.tree) return { error: '파일 목록을 읽을 수 없습니다' };
     const q = contentSearch.checkQuery(query);
-    if (!q) return { error: `${contentSearch.QUERY_MIN}자 이상 입력하세요` };
+    if (!q) {
+      const long = typeof query === 'string' && query.length > contentSearch.QUERY_MAX;
+      return { error: long ? `${contentSearch.QUERY_MAX}자 이하로 입력하세요` : `${contentSearch.QUERY_MIN}자 이상 입력하세요` };
+    }
     const seq = (s.textSeq || 0) + 1;
     s.textSeq = seq;
+    // The search before this one stops now (its git grep too, even while
+    // it finds nothing more).
+    if (s.textAbort) s.textAbort.abort();
+    const abort = new AbortController();
+    s.textAbort = abort;
     const stale = () => s.textSeq !== seq || !this.sessions.has(id);
     const t = s.tree;
     const ignoreCase = contentSearch.ignoreCaseFor(q);
     const hits = new contentSearch.Hits(q, ignoreCase);
     let note = null;
     if (t.git) {
-      const r = await this.gitLister(contentSearch.grepArgs(q, ignoreCase), { ...this.gitTarget(s, t.root), sep: 10, okCodes: [0, 1], timeoutMs: 20000 }, (row) => {
+      const r = await this.gitLister(contentSearch.grepArgs(q, ignoreCase), { ...this.gitTarget(s, t.root), sep: 10, okCodes: [0, 1], timeoutMs: 20000, signal: abort.signal }, (row) => {
         if (stale()) return false;
         const m = contentSearch.parseGrepLine(row);
         return !m || hits.add(...m);
@@ -927,6 +935,7 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s) return false;
     if (!s.tracker.exited) s.pty.kill();
+    if (s.textAbort) s.textAbort.abort(); // a content search still running
     this.sessions.delete(id);
     this.emit('session:removed', { id });
     if (reap && this.reaper && this.runId) {

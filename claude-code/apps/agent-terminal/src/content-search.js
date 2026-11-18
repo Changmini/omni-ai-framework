@@ -5,14 +5,18 @@
 // files git does not ignore, binary files skipped); without git the files
 // of the folder walk are read here. The query is literal text (no
 // patterns); it ignores case unless it has a capital letter ("smart case",
-// as other editors). Results stop at HITS_MAX lines, PER_FILE_MAX per file.
+// as other editors). At most PER_FILE_MAX lines are shown per file (the
+// rest only counted, so one file full of matches leaves room for the
+// others), HITS_MAX shown in all, and the search stops after SEEN_MAX
+// lines found.
 // The HTML preview's earlier drawings (private/.history) are left out.
 
 const fs = require('node:fs');
 const path = require('node:path');
 
-const HITS_MAX = 500; // lines found, over all files
+const HITS_MAX = 500; // lines shown, over all files
 const PER_FILE_MAX = 50; // lines shown per file (the rest counted)
+const SEEN_MAX = 20000; // lines found (shown or counted): then it stops
 const LINE_MAX = 240; // characters of a line shown, around the match
 const FILE_MAX = 2 * 1024 * 1024; // larger files are not read (no git)
 const QUERY_MIN = 2;
@@ -37,7 +41,8 @@ function clipLine(text, query, ignoreCase) {
 }
 
 // Gathers the lines found: { files: [{ path, hits: [{ line, text }], more }],
-// count, truncated }. add() returns false once there are enough.
+// count (shown), total (found), truncated }. add() returns false once
+// there are enough.
 class Hits {
   constructor(query, ignoreCase) {
     this.query = query;
@@ -45,25 +50,27 @@ class Hits {
     this.files = [];
     this.byPath = new Map();
     this.count = 0;
+    this.total = 0;
     this.truncated = false;
   }
 
   add(file, line, text) {
-    if (this.count >= HITS_MAX) { this.truncated = true; return false; }
+    if (this.count >= HITS_MAX || this.total >= SEEN_MAX) { this.truncated = true; return false; }
+    this.total++;
     let f = this.byPath.get(file);
     if (!f) {
       f = { path: file, hits: [], more: 0 };
       this.byPath.set(file, f);
       this.files.push(f);
     }
-    if (f.hits.length >= PER_FILE_MAX) f.more++;
-    else f.hits.push({ line, text: clipLine(text, this.query, this.ignoreCase) });
+    if (f.hits.length >= PER_FILE_MAX) { f.more++; return true; }
+    f.hits.push({ line, text: clipLine(text, this.query, this.ignoreCase) });
     this.count++;
     return true;
   }
 
   result() {
-    return { files: this.files, count: this.count, truncated: this.truncated };
+    return { files: this.files, count: this.count, total: this.total, truncated: this.truncated };
   }
 }
 
@@ -112,4 +119,4 @@ async function searchFiles(host, files, hits, { budgetMs = 4000, now = Date.now,
   return {};
 }
 
-module.exports = { HITS_MAX, PER_FILE_MAX, LINE_MAX, QUERY_MIN, ignoreCaseFor, checkQuery, clipLine, Hits, parseGrepLine, grepArgs, searchFiles };
+module.exports = { HITS_MAX, PER_FILE_MAX, SEEN_MAX, LINE_MAX, QUERY_MIN, QUERY_MAX, ignoreCaseFor, checkQuery, clipLine, Hits, parseGrepLine, grepArgs, searchFiles };

@@ -179,3 +179,22 @@ test('the WSL script does the same (run here with sh)', { skip: !hasTmux }, asyn
     assert.ok(!alive(t.server), 'quitting: the server ended');
   } finally { t.done(); }
 });
+
+// Programs with a window of their own start without the terminal's marker
+// (they are meant to outlive it); omni-keep does that for anything.
+test('the app bash starts editors and openers without the marker, also through an alias', { skip: !linux }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-keep-'));
+  fs.mkdirSync(path.join(dir, 'bin'));
+  fs.mkdirSync(path.join(dir, 'home'));
+  fs.writeFileSync(path.join(dir, 'bin', 'code'), '#!/bin/sh\necho "code:$* run=${OMNI_TERMINAL_RUN:-none}"\n', { mode: 0o755 });
+  const run = (bashrc, line) => spawnSync('bash', ['--rcfile', path.join(__dirname, '..', 'src', 'shell-init', 'omni.bash'), '-i'], {
+    input: `${line}\nexit\n`, encoding: 'utf8',
+    env: { PATH: `${path.join(dir, 'bin')}:/usr/bin:/bin`, HOME: path.join(dir, 'home'), OMNI_TERMINAL_RUN: 'r1', OMNI_TERMINAL_ID: '1', OMNI_NO_AUTO_SETUP: '1' },
+  }).stdout;
+  fs.writeFileSync(path.join(dir, 'home', '.bashrc'), '');
+  assert.match(run('', 'code a b'), /code:a b run=none/);
+  fs.writeFileSync(path.join(dir, 'home', '.bashrc'), "alias code='code --reuse'\n");
+  assert.match(run('', 'code a'), /code:--reuse a run=none/, 'the alias still works');
+  assert.match(run('', 'omni-keep sh -c \'echo "keep:${OMNI_TERMINAL_RUN:-none}"\''), /keep:none/);
+  assert.match(run('', 'sh -c \'echo "plain:$OMNI_TERMINAL_RUN"\''), /plain:r1/, 'everything else keeps it');
+});
