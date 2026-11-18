@@ -302,6 +302,21 @@
     return now - lastDataAt >= (prompt ? quietMs : slowMs);
   }
 
+  // Find in the file viewer: [start, end) of every `query` in `text`, at
+  // most `max`. Ignoring case unless the query has a capital letter (as
+  // the content search).
+  function findAll(text, query, max = 5000) {
+    const q = String(query || '');
+    const out = [];
+    if (!q || max <= 0) return out;
+    const ignoreCase = q === q.toLowerCase();
+    const s = String(text);
+    const hay = ignoreCase ? s.toLowerCase() : s;
+    if (hay.length !== s.length) return out; // lower case changed the length: positions would be off
+    for (let at = hay.indexOf(q); at !== -1 && out.length < max; at = hay.indexOf(q, at + q.length)) out.push([at, at + q.length]);
+    return out;
+  }
+
   // The content search: [start, end) ranges of `query` in a found line, for
   // highlighting (as the main process matched it: ignoring case or not).
   function textRanges(text, query, ignoreCase) {
@@ -430,7 +445,7 @@
   }
 
   return {
-    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
+    diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

@@ -227,3 +227,13 @@ test('promptLike: a prompt, not a message', () => {
   for (const t of ['user@sample-host:~$ ', 'PS C:\\Users\\user> ', 'root@x:/# ', 'sample-app on main ❯ ', 'user@host ~ % ']) assert.strictEqual(promptLike(t), true, t);
   for (const t of ['wsl: A localhost proxy configuration was detected but not mirrored into WSL.', 'Welcome to Ubuntu 24.04', '']) assert.strictEqual(promptLike(t), false, t);
 });
+
+test('findAll: every match in the shown text, smart case, capped', () => {
+  const { findAll } = require('../src/renderer/view-logic');
+  assert.deepStrictEqual(findAll('User user USER', 'user'), [[0, 4], [5, 9], [10, 14]]);
+  assert.deepStrictEqual(findAll('User user USER', 'User'), [[0, 4]], 'a capital letter: case counts');
+  assert.deepStrictEqual(findAll('사용자 생성 사용자', '사용자'), [[0, 3], [7, 10]]);
+  assert.deepStrictEqual(findAll('aaaa', 'aa'), [[0, 2], [2, 4]], 'not overlapping');
+  assert.strictEqual(findAll('x'.repeat(100), 'x', 10).length, 10);
+  assert.deepStrictEqual(findAll('abc', ''), []);
+});
