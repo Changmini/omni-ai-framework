@@ -197,3 +197,9 @@ test('hitView: no indent, and a far match brought into view', () => {
   assert.ok(v.text.startsWith('…'));
   assert.strictEqual(v.text.slice(v.ranges[0][0], v.ranges[0][1]), 'user');
 });
+
+test('entersWsl: a shortcut line that opens a shell inside WSL', () => {
+  const { entersWsl } = require('../src/renderer/view-logic');
+  for (const l of ['wsl', 'wsl -d Ubuntu-24.04', 'WSL.exe -d Ubuntu ~', 'wsl --cd ~/x', '  wsl -u user -d Ubuntu  ']) assert.strictEqual(entersWsl(l), true, l);
+  for (const l of ['wsl ls', 'wsl -d Ubuntu -- ls', 'wsl --shutdown', 'cd ~/ai-gateway', 'echo wsl']) assert.strictEqual(entersWsl(l), false, l);
+});

@@ -336,3 +336,11 @@ test('reading tools do not trigger a team file read', () => {
   for (let i = 0; i < 4; i++) { m.pollStatus(); t += 500; }
   assert.strictEqual(reads, base + 1);
 });
+
+test('a shell report tells the window the shell is ready (and whether it is inside WSL)', () => {
+  const { m, events } = setup();
+  const { id } = m.create({});
+  m.reportShellCwd(id, { cwd: '/home/user', wslDistro: 'Ubuntu-24.04', home: '/home/user' });
+  m.shellReported(id);
+  assert.deepStrictEqual(events.filter(([c]) => c === 'session:shell').map(([, p]) => p), [{ id, wsl: 'Ubuntu-24.04' }, { id, wsl: null }]);
+});

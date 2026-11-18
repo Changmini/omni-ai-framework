@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   onData: on('session:data'),
   onExit: on('session:exit'),
+  onShell: on('session:shell'),
   onStatus: on('session:status'),
   onRemoved: on('session:removed'),
   onAgent: on('session:agent'),

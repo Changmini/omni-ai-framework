@@ -14,9 +14,9 @@
 // tmux: a server started from the closed terminal may also be showing
 // sessions to other terminals still open (a ~/.bashrc that attaches every
 // shell to one session, or sessions of one server). Ending it would end
-// those terminals too. Such a server stays, with the sessions another open
-// terminal shows; its other sessions (only this terminal's) are ended. A
-// process inside a tmux pane says which server it is in (TMUX=socket,pid,n).
+// those terminals too. Such a server stays, whole, while an open terminal
+// is attached; it ends at a later close once none is. A process inside a
+// tmux pane says which server it is in (TMUX=socket,pid,n).
 //
 // Linux reads /proc/<pid>/environ, macOS `ps -E`. On Windows node-pty ends
 // the processes of the terminal's console itself; processes inside WSL are
@@ -117,46 +117,42 @@ function runTmux(socket, args) {
   });
 }
 
-// The tmux servers started from terminal `id` that another open terminal
-// (`live`: ids) is attached to. They stay, with the sessions those
-// terminals show; their other sessions are ended. -> Set of server pids.
-async function spareSharedTmux(procs, run, id, live, tmux = runTmux) {
-  const mine = new Set(markedPids(procs, run, id));
-  const others = new Set(procs.filter((p) => {
-    const t = envGet(p.env, ID_VAR);
-    return envGet(p.env, RUN_VAR) === run && t !== id && live.includes(t);
-  }).map((p) => p.pid));
-  const servers = new Map(); // server pid -> socket, for servers of this terminal
+// tmux servers started from a closed terminal (this one, or one closed
+// earlier whose server was kept then): kept while an open terminal
+// (`live`: ids) is attached to it, with all its sessions (a detached one
+// may be an open terminal's: tmux cannot say whose a session is); ended
+// once none is, also when the terminal that started it closed before.
+// -> { spared, ended }: Sets of server pids.
+async function tmuxPlan(procs, run, live, tmux = runTmux) {
+  const liveIds = new Set(live);
+  const ofRun = procs.filter((p) => envGet(p.env, RUN_VAR) === run);
+  const closed = new Set(ofRun.filter((p) => !liveIds.has(envGet(p.env, ID_VAR))).map((p) => p.pid));
+  const others = new Set(ofRun.filter((p) => liveIds.has(envGet(p.env, ID_VAR))).map((p) => p.pid));
+  const servers = new Map(); // server pid -> socket, for servers of closed terminals
   for (const p of procs) {
     const t = tmuxOf(p.env);
-    if (t && mine.has(t.server)) servers.set(t.server, t.socket);
+    if (t && closed.has(t.server)) servers.set(t.server, t.socket);
   }
   const spared = new Set();
+  const ended = new Set();
   for (const [server, socket] of servers) {
-    const clients = await tmux(socket, ['list-clients', '-F', '#{client_pid} #{session_name}']);
+    if (!others.size) { ended.add(server); continue; }
+    const clients = await tmux(socket, ['list-clients', '-F', '#{client_pid}']);
     if (clients === null) { spared.add(server); continue; } // cannot tell: left as it was
-    const shown = new Set();
-    for (const line of clients.split('\n')) {
-      const m = /^(\d+) (.+)$/.exec(line.trim());
-      if (m && others.has(Number(m[1]))) shown.add(m[2]);
-    }
-    if (!shown.size) continue; // only this terminal's: ended with the rest
-    spared.add(server);
-    const sessions = await tmux(socket, ['list-sessions', '-F', '#{session_name}']);
-    for (const name of String(sessions || '').split('\n').map((s) => s.trim()).filter(Boolean)) {
-      if (!shown.has(name)) await tmux(socket, ['kill-session', '-t', `=${name}`]);
-    }
+    const attached = clients.split('\n').some((l) => others.has(Number(l.trim())));
+    (attached ? spared : ended).add(server);
   }
-  return spared;
+  return { spared, ended };
 }
 
-// The processes of terminal `id` to end: not a spared tmux server, nor
-// anything running in one.
-function toEnd(procs, run, id, spared) {
+// The processes to end: terminal `id`'s, and the ended tmux servers with
+// what runs in them; never a kept server or anything in it.
+function toEnd(procs, run, id, plan) {
   return procs.filter((p) => {
-    if (!isMarked(p.env, run, id) || spared.has(p.pid)) return false;
     const t = tmuxOf(p.env);
-    return !(t && spared.has(t.server));
+    if (plan.spared.has(p.pid) || (t && plan.spared.has(t.server))) return false;
+    if (isMarked(p.env, run, id)) return true;
+    return envGet(p.env, RUN_VAR) === run && (plan.ended.has(p.pid) || Boolean(t && plan.ended.has(t.server)));
   }).map((p) => p.pid);
 }
 
@@ -181,23 +177,24 @@ function reapWsl(run, id, distros, live = [], platform = process.platform, run_ 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One terminal closed (`live`: the terminals still open): everything it
-// started ends, but a tmux session another open terminal shows stays.
-// -> { asked, killed, spared } (pids, for tests).
+// started ends, but a tmux server an open terminal is attached to stays
+// (tmuxPlan). -> { asked, killed, spared, ended } (pids, for tests).
 async function reapTerminal(run, id, {
   distros = [], live = [], platform = process.platform,
   list = listProcs, tmux = runTmux, kill = signal, wait = delay, wsl = reapWsl,
 } = {}) {
   wsl(run, id, distros, live, platform);
   const procs = await list(platform);
-  const spared = live.length ? await spareSharedTmux(procs, run, id, live, tmux) : new Set();
-  const asked = toEnd(procs, run, id, spared);
-  if (!asked.length) return { asked, killed: [], spared: [...spared] };
+  const plan = await tmuxPlan(procs, run, live, tmux);
+  const asked = toEnd(procs, run, id, plan);
+  const result = { asked, killed: [], spared: [...plan.spared], ended: [...plan.ended] };
+  if (!asked.length) return result;
   kill(asked, 'SIGHUP');
   kill(asked, 'SIGTERM');
   await wait(GRACE_MS);
-  const killed = toEnd(await list(platform), run, id, spared);
-  kill(killed, 'SIGKILL');
-  return { asked, killed, spared: [...spared] };
+  result.killed = toEnd(await list(platform), run, id, plan);
+  kill(result.killed, 'SIGKILL');
+  return result;
 }
 
 // The app quits: every terminal's processes (tmux servers too: no terminal
@@ -219,5 +216,5 @@ function reapAllSync(run, { distros = [], platform = process.platform } = {}) {
 
 module.exports = {
   RUN_VAR, ID_VAR, GRACE_MS, newRunId, isMarked, tmuxOf, listLinux, parsePs, markedPids,
-  spareSharedTmux, toEnd, reapTerminal, reapAllSync, reapWsl, WSL_SCRIPT,
+  tmuxPlan, toEnd, reapTerminal, reapAllSync, reapWsl, WSL_SCRIPT,
 };

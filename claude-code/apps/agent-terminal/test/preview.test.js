@@ -201,7 +201,7 @@ test('the scroll keeper goes before the last </body>', () => {
 });
 
 test('the page tells the app when the user presses in it (trusted presses only)', () => {
-  assert.match(withScrollKeeper('<body></body>'), /pointerdown.*isTrusted.*omniPreview:"touch"/);
+  assert.match(withScrollKeeper('<body></body>'), /pointerdown[\s\S]*isTrusted[\s\S]*omniPreview: 'touch'/);
 });
 
 test("the app's scrollbars go first in the page, never before the doctype", () => {
