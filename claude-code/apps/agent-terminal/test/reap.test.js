@@ -137,6 +137,7 @@ test('reapTerminal ends nohup, setsid and HUP-ignoring processes of the terminal
 // (terminal 8 goes on); closing 8 later, with terminal 9 still open, ends it.
 async function tmuxSetup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-tmux-'));
+  fs.mkdirSync(path.join(dir, 'tmp')); // TMPDIR of the WSL script (its lock), apart per test
   const sock = path.join(dir, 'sock');
   execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'shared', 'sleep 300'], { env: penv('7') });
   execFileSync('tmux', ['-S', sock, 'new-session', '-d', '-s', 'detached', 'sleep 301'], { env: penv('7') });
@@ -145,7 +146,7 @@ async function tmuxSetup() {
   const server = Number(String(execFileSync('tmux', ['-S', sock, 'display', '-p', '#{pid}'])).trim());
   const sessions = () => String(spawnSync('tmux', ['-S', sock, 'list-sessions', '-F', '#{session_name}']).stdout).trim().split('\n').filter(Boolean).sort();
   const other = spawn('sleep', ['60'], { env: penv('9'), stdio: 'ignore' }); // terminal 9: open, not in tmux
-  return { sock, client, server, sessions, done: () => { spawnSync('tmux', ['-S', sock, 'kill-server']); client.kill('SIGKILL'); other.kill('SIGKILL'); } };
+  return { dir, sock, client, server, sessions, done: () => { spawnSync('tmux', ['-S', sock, 'kill-server']); client.kill('SIGKILL'); other.kill('SIGKILL'); } };
 }
 
 test('closing a terminal leaves a tmux server another open terminal is attached to; it ends once none is', { skip: !hasTmux }, async () => {
@@ -206,9 +207,14 @@ test('the WSL script does the same (run here with sh), looking again while it ke
   try {
     const keep = spawn('setsid', ['sleep', '60'], { env: penv('7'), stdio: 'ignore', detached: true });
     await sleep(200);
-    const script = spawn('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '7', '8 9'], { env: { ...process.env, OMNI_REAP_EVERY: '1' }, stdio: 'ignore' });
+    const env = { ...process.env, OMNI_REAP_EVERY: '1', TMPDIR: path.join(t.dir, 'tmp') };
+    const script = spawn('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '7', '8 9'], { env, stdio: 'ignore' });
     const exited = new Promise((r) => script.on('exit', r));
     await sleep(3500);
+    // A later close while the server is kept: it leaves the looking to the first.
+    const second = spawn('sh', ['-c', reap.WSL_SCRIPT, 'sh', 'rtest', '10', '8 9'], { env, stdio: 'ignore' });
+    const secondExit = await Promise.race([new Promise((r) => second.on('exit', r)), sleep(6000).then(() => 'running')]);
+    assert.strictEqual(secondExit, 0, 'one looking loop per run');
     assert.ok(alive(t.server), 'kept while terminal 8 is attached');
     assert.deepStrictEqual(t.sessions(), ['detached', 'shared'], 'every session stays');
     assert.ok(alive(t.client.pid), 'terminal 8 goes on');

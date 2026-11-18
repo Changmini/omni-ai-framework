@@ -74,10 +74,16 @@ end_picked() {
 }
 scan; plan; end_picked
 # A server kept for an open terminal: looked at again every minute until
-# none is kept (it ended, or the app quit and ended it). ${OMNI_REAP_EVERY}
-# shortens the wait in tests.
-while [ -n "$id" ] && [ -n "$spare" ]; do
-  sleep "${OMNI_REAP_EVERY:-60}"
-  scan; spare=""; ended=""; plan; end_picked
-done
+# none is kept (it ended, or the app quit and ended it). One such loop per
+# run of the app (a lock folder): a later close leaves the looking to it.
+# ${OMNI_REAP_EVERY} shortens the wait in tests.
+lock="${TMPDIR:-/tmp}/omni-reap-$run"
+if [ -n "$id" ] && [ -n "$spare" ] && mkdir "$lock" 2>/dev/null; then
+  trap 'rmdir "$lock" 2>/dev/null' EXIT
+  trap 'exit 0' HUP INT TERM
+  while [ -n "$spare" ]; do
+    sleep "${OMNI_REAP_EVERY:-60}"
+    scan; spare=""; ended=""; plan; end_picked
+  done
+fi
 exit 0

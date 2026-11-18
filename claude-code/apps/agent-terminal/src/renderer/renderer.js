@@ -709,7 +709,10 @@ async function waitShell(id, sentAt, { lateMs = 500, maxMs = 30000 } = {}) {
     const a = agents.get(id);
     if (!a) return; // closed meanwhile
     const now = Date.now();
-    if (ViewLogic.shellReady({ reportAt: shellSeen.get(id) || 0, lastDataAt: a.lastDataAt || 0, sentAt, now, lateMs })) return;
+    const b = a.term.buffer.active;
+    const cursorLine = b.getLine(b.baseY + b.cursorY);
+    const prompt = ViewLogic.promptLike(cursorLine ? cursorLine.translateToString(false).slice(0, b.cursorX) : '');
+    if (ViewLogic.shellReady({ reportAt: shellSeen.get(id) || 0, lastDataAt: a.lastDataAt || 0, sentAt, now, prompt, lateMs })) return;
     if (now - sentAt >= maxMs) return;
     await sleep(100);
   }

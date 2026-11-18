@@ -948,7 +948,7 @@ class SessionManager {
     this.emit('session:removed', { id });
     if (reap && this.reaper && this.runId) {
       Promise.resolve(this.reaper.terminal(this.runId, id, [...s.wslDistros], [...this.sessions.keys()]))
-        .then((r) => { if (r && r.spared && r.spared.length) this.watchKeptTmux(); })
+        .then((r) => { if (r && r.spared && r.spared.length && !this.quitting) this.watchKeptTmux(); })
         .catch(() => {});
     }
     return true;
@@ -958,14 +958,15 @@ class SessionManager {
   // every minute: once no open terminal is attached (it detached, say), it
   // ends. The timer stops when none is kept.
   watchKeptTmux(everyMs = 60000) {
-    if (this.tmuxTimer || !this.reaper || !this.reaper.recheck) return;
+    if (this.tmuxTimer || this.quitting || !this.reaper || !this.reaper.recheck) return;
     let busy = false;
     this.tmuxTimer = setInterval(async () => {
       if (busy) return;
       busy = true;
       const r = await Promise.resolve(this.reaper.recheck(this.runId, [...this.sessions.keys()])).catch(() => null);
       busy = false;
-      if (!r || !r.spared || !r.spared.length) { clearInterval(this.tmuxTimer); this.tmuxTimer = null; }
+      // A look that failed (null) is tried again next time.
+      if (r && (!r.spared || !r.spared.length)) { clearInterval(this.tmuxTimer); this.tmuxTimer = null; }
     }, everyMs);
     if (this.tmuxTimer.unref) this.tmuxTimer.unref();
   }
@@ -976,6 +977,7 @@ class SessionManager {
     for (const s of this.sessions.values()) for (const d of s.wslDistros) distros.add(d);
     for (const id of [...this.sessions.keys()]) this.kill(id, { reap: false });
     if (this.timer) clearInterval(this.timer);
+    this.quitting = true;
     if (this.tmuxTimer) { clearInterval(this.tmuxTimer); this.tmuxTimer = null; }
     if (this.reaper && this.runId) {
       try { this.reaper.all(this.runId, [...distros]); } catch { /* best effort */ }

@@ -350,7 +350,7 @@ test('a kept tmux server is looked at again until none is kept', async () => {
   const fakePty = () => ({ onData() {}, onExit() {}, write() {}, kill() {} });
   const m = new SessionManager({
     spawn: () => fakePty(), emit: () => {}, shell: { file: 'sh', args: [] }, pollMs: 0, runId: 'r1',
-    reaper: { terminal: async () => ({ spared: [11] }), recheck: async (run, live) => { looks.push(live); return { spared: looks.length < 3 ? [11] : [] }; }, all() {} },
+    reaper: { terminal: async () => ({ spared: [11] }), recheck: async (run, live) => { looks.push(live); return looks.length === 1 ? null : { spared: looks.length < 3 ? [11] : [] }; }, all() {} },
   });
   const a = m.create({});
   const b = m.create({});
@@ -361,8 +361,10 @@ test('a kept tmux server is looked at again until none is kept', async () => {
   m.tmuxTimer = null;
   m.watchKeptTmux(10);
   await new Promise((r) => setTimeout(r, 200));
-  assert.strictEqual(looks.length, 3, 'stopped once none was kept');
+  assert.strictEqual(looks.length, 3, 'a failed look tried again; stopped once none was kept');
   assert.deepStrictEqual(looks[0], [b.id], 'with the terminals open now');
   assert.strictEqual(m.tmuxTimer, null);
   m.killAll();
+  m.watchKeptTmux(10);
+  assert.strictEqual(m.tmuxTimer, null, 'not after the app quits');
 });

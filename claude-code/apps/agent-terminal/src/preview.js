@@ -82,8 +82,10 @@ function pageHelper() {
   };
   track();
   addEventListener('load', track);
+  // Once changes pause (a page animating <body>'s style is not restyled
+  // every frame for this).
   let pending = 0;
-  const later = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(track); };
+  const later = () => { clearTimeout(pending); pending = setTimeout(track, 200); };
   const watch = { attributes: true, attributeFilter: ['class', 'style'] };
   const observer = new MutationObserver(later);
   observer.observe(document.documentElement, watch);
