@@ -73,6 +73,7 @@
     let loaded = null; // what the frame was last given: "<private path> <src>"
     let restoredAt = 0;
     let halted = false; // the page kept going elsewhere: left until a new version or ⟳
+    let resting = false; // the page's animations rest (preview.js pageHelper)
     const scrolls = new Map(); // src without ?v= -> { x, y }
 
     pane.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
@@ -99,6 +100,9 @@
       } else if (halted) {
         mark.textContent = '그림이 다른 페이지로 가려 해 멈췄습니다 · ⟳';
         mark.dataset.kind = 'error';
+      } else if (resting) {
+        mark.textContent = '⏸ 움직임 멈춤 · 마우스를 올리면 재생';
+        mark.dataset.kind = '';
       } else if (index > 0) {
         mark.textContent = `이전 그림 · ${root.ViewLogic.historyLabel(state.history[index - 1], today())}`;
         mark.dataset.kind = 'old';
@@ -121,11 +125,13 @@
       const key = `${state && state.shown} ${src}`;
       if (loaded === key) return;
       loaded = key;
+      resting = false;
       frame.setAttribute('src', src);
     }
 
     function blank() {
       loaded = null;
+      resting = false;
       frame.setAttribute('src', 'about:blank');
     }
 
@@ -148,7 +154,10 @@
     window.addEventListener('message', (e) => {
       if (e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
       const key = srcKey();
-      if (e.data.omniPreview === 'touch') {
+      if (e.data.omniPreview === 'rest') {
+        resting = e.data.on === true;
+        renderHead();
+      } else if (e.data.omniPreview === 'touch') {
         lastTouch = Date.now();
       } else if (e.data.omniPreview === 'scroll') {
         const x = Number(e.data.x);

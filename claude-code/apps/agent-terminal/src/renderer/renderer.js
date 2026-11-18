@@ -97,6 +97,8 @@ function navTarget(e) {
   return null;
 }
 
+const BLINK_REST_MS = 30000;
+
 function addAgent(info) {
   const el = document.createElement('div');
   el.className = 'term';
@@ -128,7 +130,18 @@ function addAgent(info) {
     leave: () => { el.title = ''; },
   }));
   term.open(el);
-  term.onData((data) => api.write(info.id, data));
+  // The cursor blinks while the terminal is in use and rests (steady) after
+  // BLINK_REST_MS without typing: a blinking cursor repaints the terminal
+  // twice a second for as long as it has the keyboard (a few % of a CPU
+  // core, battery on a laptop), also when nobody looks.
+  let blinkTimer = null;
+  const wake = () => {
+    if (!term.options.cursorBlink) term.options.cursorBlink = true;
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(() => { term.options.cursorBlink = false; }, BLINK_REST_MS);
+  };
+  if (term.textarea) term.textarea.addEventListener('focus', wake);
+  term.onData((data) => { wake(); api.write(info.id, data); });
   term.attachCustomKeyEventHandler((e) => {
     if (isShortcut(e)) return false;
     // Ctrl+C copies while text is selected (like Windows Terminal); otherwise
@@ -200,7 +213,7 @@ function addAgent(info) {
   enableDrag(item, info.id);
   els.list.appendChild(item);
 
-  agents.set(info.id, { info, term, fit, el, item, search, activity: [] });
+  agents.set(info.id, { info, term, fit, el, item, search, activity: [], stopBlink: () => clearTimeout(blinkTimer) });
   loadActivity(info.id);
   renderItem(info.id);
   renderList();
@@ -209,6 +222,7 @@ function addAgent(info) {
 function removeAgent(id) {
   const a = agents.get(id);
   if (!a) return;
+  if (a.stopBlink) a.stopBlink();
   a.term.dispose();
   a.el.remove();
   a.item.remove();
