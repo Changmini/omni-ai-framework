@@ -201,5 +201,20 @@ test('hitView: no indent, and a far match brought into view', () => {
 test('entersWsl: a shortcut line that opens a shell inside WSL', () => {
   const { entersWsl } = require('../src/renderer/view-logic');
   for (const l of ['wsl', 'wsl -d Ubuntu-24.04', 'WSL.exe -d Ubuntu ~', 'wsl --cd ~/x', '  wsl -u user -d Ubuntu  ']) assert.strictEqual(entersWsl(l), true, l);
-  for (const l of ['wsl ls', 'wsl -d Ubuntu -- ls', 'wsl --shutdown', 'cd ~/ai-gateway', 'echo wsl']) assert.strictEqual(entersWsl(l), false, l);
+  for (const l of ['C:\\Windows\\System32\\wsl.exe -d Ubuntu-24.04', '"C:\\Windows\\System32\\wsl.exe" ~', '& wsl.exe --distribution=Ubuntu']) assert.strictEqual(entersWsl(l), true, l);
+  for (const l of ['wsl ls', 'wsl -d Ubuntu -- ls', 'wsl --shutdown', 'cd ~/ai-gateway', 'echo wsl', 'mywsl -d x']) assert.strictEqual(entersWsl(l), false, l);
+});
+
+test('shellReady: a report, or output after the echo and then quiet; never during a silent start', () => {
+  const { shellReady } = require('../src/renderer/view-logic');
+  const sentAt = 10000;
+  // WSL reported in (its first prompt).
+  assert.strictEqual(shellReady({ reportAt: 14000, lastDataAt: 10050, sentAt, now: 14100 }), true);
+  // Booting silently: only the echo of the line so far, however long.
+  assert.strictEqual(shellReady({ reportAt: 9000, lastDataAt: 10050, sentAt, now: 18000 }), false);
+  // No report possible (tmux from ~/.bashrc, NAT): its screen came, then quiet.
+  assert.strictEqual(shellReady({ lastDataAt: 14000, sentAt, now: 14500 }), false, 'still drawing');
+  assert.strictEqual(shellReady({ lastDataAt: 14000, sentAt, now: 14900 }), true);
+  // A new terminal (lateMs 0): any output, then quiet.
+  assert.strictEqual(shellReady({ lastDataAt: 10200, sentAt, now: 11100, lateMs: 0 }), true);
 });

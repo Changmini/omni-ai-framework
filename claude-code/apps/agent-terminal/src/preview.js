@@ -52,7 +52,9 @@ const PAGE_CSP = [
 // - it gives the scrollbars' track (SCROLLBAR_STYLE) the page's background:
 //   the page's own background does not reach under a scrollbar, the
 //   frame's white would show there. A colour, else the first colour of a
-//   gradient, else (an image) dark or white by the text colour.
+//   gradient, else (an image) dark or white by the text colour; again when
+//   the page changes it (a class or style on <html>/<body>, the system's
+//   light or dark mode).
 // Messages carry numbers only.
 /* eslint-disable no-undef -- runs in the page */
 function pageHelper() {
@@ -74,10 +76,19 @@ function pageHelper() {
   const track = () => {
     const root = document.documentElement;
     const body = document.body;
-    root.style.setProperty('--omni-sb-bg', color(root) || color(body) || gradient(root) || gradient(body) || byText());
+    const bg = color(root) || color(body) || gradient(root) || gradient(body) || byText();
+    // Set only when it changed: setting it is itself a change of <html>'s style.
+    if (root.style.getPropertyValue('--omni-sb-bg') !== bg) root.style.setProperty('--omni-sb-bg', bg);
   };
   track();
   addEventListener('load', track);
+  let pending = 0;
+  const later = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(track); };
+  const watch = { attributes: true, attributeFilter: ['class', 'style'] };
+  const observer = new MutationObserver(later);
+  observer.observe(document.documentElement, watch);
+  if (document.body) observer.observe(document.body, watch);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', later);
   parent.postMessage({ omniPreview: 'ready' }, '*');
 }
 /* eslint-enable no-undef */
