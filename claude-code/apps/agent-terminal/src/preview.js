@@ -66,15 +66,30 @@ function pageHelper() {
   let resting = false;
   let restTimer = 0;
   let paused = [];
-  const waiting = []; // frame callbacks asked for while resting
+  // Frame callbacks asked for while resting, by an id of their own (below
+  // zero, never reused), each function once, at most WAITING_MAX: a page
+  // asking from a timer would pile them up. Past that, new ones are let go
+  // (not the first ones: an animation loop's one pending frame among them
+  // would end the loop). Run at the wake; an id from the rest still cancels
+  // its frame after that (realOf).
+  const WAITING_MAX = 200;
+  const waiting = new Map();
+  const realOf = new Map();
+  let nextId = 0;
   const raf = window.requestAnimationFrame.bind(window);
   const caf = window.cancelAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => {
     if (!resting) return raf(cb);
-    waiting.push(cb);
-    return -waiting.length;
+    for (const [id, f] of waiting) if (f === cb) return id;
+    const id = --nextId;
+    if (waiting.size < WAITING_MAX) waiting.set(id, cb);
+    return id;
   };
-  window.cancelAnimationFrame = (n) => { if (n < 0) waiting[-n - 1] = null; else caf(n); };
+  window.cancelAnimationFrame = (n) => {
+    if (n >= 0) { caf(n); return; }
+    waiting.delete(n);
+    if (realOf.has(n)) { caf(realOf.get(n)); realOf.delete(n); }
+  };
   const rest = () => {
     resting = true;
     paused = document.getAnimations().filter((a) => a.playState === 'running');
@@ -88,10 +103,14 @@ function pageHelper() {
     resting = false;
     for (const a of paused) { try { a.play(); } catch { /* gone */ } }
     paused = [];
-    for (const cb of waiting.splice(0)) if (cb) raf(cb);
+    for (const [id, cb] of waiting) realOf.set(id, raf((t) => { realOf.delete(id); cb(t); }));
+    waiting.clear();
     parent.postMessage({ omniPreview: 'rest', on: false }, '*');
   };
-  for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown']) addEventListener(type, wake, { passive: true, capture: true });
+  // The mouse or keys on the page; also a new size (the preview's border
+  // dragged, a narrow window): a chart redraws itself in a frame then.
+  for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'resize']) addEventListener(type, wake, { passive: true, capture: true });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
   wake();
 
   let timer;
