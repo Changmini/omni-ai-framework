@@ -333,16 +333,6 @@ npm test
 
 node-pty가 현재 Node 버전용으로 빌드돼 있지 않으면 실제 PTY 통합 테스트는 건너뜁니다.
 
-## 개발용 스킬
-
-이 앱을 고칠 때 Claude Code가 쓰는 스킬이 `.claude/skills/`에 있습니다(이 폴더에서 작업할 때 불러옴, 배포 플러그인 아님).
-
-| 스킬 | 하는 일 |
-|---|---|
-| `shipping` | 검사 6가지 → 스테이징 내용 재검토 → 커밋·push → 한국어 PR → 머지 → 브랜치 동기화. 부작용이 있어 `/shipping`으로만 실행 |
-| `verifying-app` | 예시 환경(`user@sample-host`, `/home/user/sample-app`)에서 실제 앱을 띄워 확인·재현·스크린샷·CPU/메모리 측정. `scripts/`에 환경 준비·실행·CDP 실행기·CPU 측정 스크립트 |
-| `reviewing` | 작업에 지장 주는 문제만 한국어로 짧게 보고하는 코드 검토. 이 앱에서 실제로 문제가 났던 곳부터 확인 |
-
 ## 한계와 다음 단계
 
 - 셸 연동은 PowerShell, bash, zsh만 지원합니다. 다른 셸에서는 Claude 상태와 현재 폴더가 표시되지 않습니다.
