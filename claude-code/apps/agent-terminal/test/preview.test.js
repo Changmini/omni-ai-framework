@@ -212,3 +212,72 @@ test("the app's scrollbars go first in the page, never before the doctype", () =
   assert.match(withScrollbars('<svg></svg>'), /^<style>::-webkit-scrollbar.*<svg><\/svg>$/);
   assert.ok(!withScrollbars('<header>x</header>').startsWith('<header><style>'), '<header> is not <head>');
 });
+
+// The page helper's animation rest, run with stand-ins for the page's window
+// and document (the script is the one put into every drawing).
+function fakePage() {
+  const timers = [];
+  const listeners = {};
+  const docListeners = {};
+  const frames = new Map(); // real frame id -> callback
+  let realId = 0;
+  const messages = [];
+  const animations = [{ playState: 'running', pause() { this.playState = 'paused'; }, play() { this.playState = 'running'; } }];
+  const el = { style: { values: {}, getPropertyValue(k) { return this.values[k] || ''; }, setProperty(k, v) { this.values[k] = v; } } };
+  const window = {
+    requestAnimationFrame: (cb) => { frames.set(++realId, cb); return realId; },
+    cancelAnimationFrame: (n) => { frames.delete(n); },
+  };
+  const g = {
+    window,
+    parent: { postMessage: (m) => messages.push(m) },
+    scrollX: 0, scrollY: 0, scrollTo() {},
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: (n) => { if (timers[n - 1]) timers[n - 1].fn = null; },
+    getComputedStyle: () => ({ backgroundColor: 'rgb(15, 17, 23)', backgroundImage: 'none', color: 'rgb(226, 229, 236)' }),
+    MutationObserver: class { observe() {} },
+    matchMedia: () => ({ addEventListener() {} }),
+    document: {
+      documentElement: el, body: el, hidden: false,
+      getAnimations: () => animations,
+      addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
+    },
+  };
+  const src = /<script>\(([\s\S]*)\)\(\);<\/script>/.exec(withScrollKeeper(''))[1];
+  // eslint-disable-next-line no-new-func
+  new Function(...Object.keys(g), `(${src})();`)(...Object.values(g));
+  const restNow = () => { const t = timers.filter((x) => x.fn && x.ms === 30000).pop(); t.fn(); };
+  const fire = (type) => (listeners[type] || []).forEach((fn) => fn({ isTrusted: true }));
+  const runFrames = () => { const cbs = [...frames.values()]; frames.clear(); cbs.forEach((cb) => cb(0)); };
+  return { window, frames, messages, animations, restNow, fire, runFrames };
+}
+
+test('a drawing rests after a while and plays again; a resize wakes it; its frame queue stays small', () => {
+  const p = fakePage();
+  const raf = p.window.requestAnimationFrame;
+  let drawn = 0;
+  const loop = () => { drawn++; raf(loop); };
+  raf(loop);
+  p.runFrames();
+  p.restNow();
+  assert.strictEqual(p.animations[0].playState, 'paused', 'CSS animations paused');
+  assert.deepStrictEqual(p.messages.filter((m) => m.omniPreview === 'rest').pop(), { omniPreview: 'rest', on: true });
+  p.runFrames(); // the loop's next frame was held
+  const before = drawn;
+  p.runFrames();
+  assert.strictEqual(drawn, before, 'no drawing while resting');
+  // A page asking for frames from a timer: the queue keeps the newest only.
+  for (let i = 0; i < 1000; i++) raf(() => {});
+  // An id from the rest still cancels its frame after the wake.
+  let cancelled = true;
+  const id = raf(() => { cancelled = false; });
+  assert.ok(id < 0);
+  p.fire('resize'); // the preview's border dragged: wakes
+  assert.strictEqual(p.animations[0].playState, 'running');
+  assert.ok(p.frames.size <= 201, `queue kept small (${p.frames.size})`);
+  p.window.cancelAnimationFrame(id);
+  p.runFrames();
+  assert.ok(cancelled, 'cancelled across the rest');
+  assert.ok(drawn > before, 'the loop runs again');
+});

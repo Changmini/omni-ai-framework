@@ -1348,6 +1348,7 @@ function openViewer({ path, views, key, line = null, find = null, actions = {} }
   clearTimeout(vfind.timer);
   clearFindMarks();
   vfind.ranges = [];
+  if (!vfind.bar.hidden) vfind.count.textContent = '…'; // not the previous file's count while this one loads
   viewing = { path, views, actions, line, find, token: null };
   setViewerPath(path);
   viewer.tabs.replaceChildren(...views.map((v) => {
@@ -1594,11 +1595,19 @@ function runViewerFind(fromY = viewer.body.getBoundingClientRect().top) {
   CSS.highlights.set('viewer-find', new Highlight(...vfind.ranges));
   // The matches run down the page in order: the first below `fromY` by
   // halving (not a measure of each).
+  // A match with no box (in something hidden) breaks the order: then one
+  // by one.
+  const below = (r) => {
+    const rect = r.getBoundingClientRect();
+    return rect.width || rect.height ? rect.bottom > fromY + 1 : null;
+  };
   let lo = 0;
   let hi = vfind.ranges.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (vfind.ranges[mid].getBoundingClientRect().bottom > fromY + 1) hi = mid; else lo = mid + 1;
+    const b = below(vfind.ranges[mid]);
+    if (b === null) { lo = vfind.ranges.findIndex((r) => below(r) === true); if (lo === -1) lo = vfind.ranges.length; break; }
+    if (b) hi = mid; else lo = mid + 1;
   }
   vfind.index = lo < vfind.ranges.length ? lo : 0;
   showFindCurrent();
@@ -1688,12 +1697,14 @@ vfind.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter') findEnterAfterCompose = { back: e.shiftKey };
     return;
   }
+  findEnterAfterCompose = null; // a composition that ended without its compositionend
   if (e.key === 'Enter') {
     e.preventDefault();
     findEnter(e.shiftKey);
   }
   // Esc: the document's handler (escapeAction) closes the find bar.
 });
+vfind.input.addEventListener('blur', () => { findEnterAfterCompose = null; });
 vfind.input.addEventListener('compositionend', () => {
   const pending = findEnterAfterCompose;
   findEnterAfterCompose = null;

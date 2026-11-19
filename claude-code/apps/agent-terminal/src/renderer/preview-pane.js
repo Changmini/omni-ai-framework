@@ -100,12 +100,12 @@
       } else if (halted) {
         mark.textContent = '그림이 다른 페이지로 가려 해 멈췄습니다 · ⟳';
         mark.dataset.kind = 'error';
+      } else if (index > 0) {
+        mark.textContent = `이전 그림 · ${root.ViewLogic.historyLabel(state.history[index - 1], today())}${resting ? ' · ⏸' : ''}`;
+        mark.dataset.kind = 'old';
       } else if (resting) {
         mark.textContent = '⏸ 움직임 멈춤 · 마우스를 올리면 재생';
         mark.dataset.kind = '';
-      } else if (index > 0) {
-        mark.textContent = `이전 그림 · ${root.ViewLogic.historyLabel(state.history[index - 1], today())}`;
-        mark.dataset.kind = 'old';
       } else if (state && !state.exists) {
         mark.textContent = '그림 없음';
         mark.dataset.kind = '';
