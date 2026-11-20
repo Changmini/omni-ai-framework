@@ -72,10 +72,10 @@ description: Use in this repository whenever something is easier to grasp as a p
 </section>
 ```
 
-- `id` 는 영문 소문자-하이픈, 주제가 같으면 늘 같은 id. 상태는 `current`(현재) · `stale`(낡음 — 다시 확인 전) · `removed`(지운 기능 — 기록용). 목차 딱지는 상태와 맞춘다(`pill ok` 현재 · `pill warn` 낡음 · `pill bad` 지움).
+- `id` 는 영문 소문자-하이픈, 주제가 같으면 늘 같은 id. 상태는 `current`(현재) · `stale`(낡음 — 다시 확인 전) · `removed`(지운 기능 — 기록용). 목차 딱지는 상태와 맞춘다(`pill st-current` 현재 · `pill st-stale` 낡음 · `pill st-removed` 지움).
 - 절 안의 묶음은 `<div class="block">` — 절 안에 절을 두지 않는다.
-- 그리는 부품(`assets/skeleton.html` 의 CSS 에 있음): `.lane`(세로 흐름, 왼쪽에 「누가」) · `.flow`(짧은 가로 흐름) · `.branch`(갈래 둘, `.if` 로 조건) · `.two`(나란히 — 전·후 견주기) · `table` · `pre`(요청·응답 꼴) · `.pill` · `.verdict`(결론 상자). 더 필요하면 인라인 SVG.
-- 색은 뜻으로만 쓴다: 초록(`.ok`) = 정상·저장됨, 주황(`.warn`) = 주의·추정, 빨강(`.bad`) = 없음·막힘, 파랑(`.ext`) = 바깥 시스템.
+- 그리는 부품(쓰는 법은 `assets/skeleton.html` 의 `<style>` 맨 위 주석): `.lane`(세로 흐름, 왼쪽에 「누가」, 상자는 `.node`, 사이는 `.down`) · `.flow`(짧은 가로 흐름, 사이는 `.arrow`) · `.branch`(갈래 둘, `.if` 로 조건) · `.two`(나란히 — 전·후 견주기) · `table`(넓으면 `.scroll` 로 감싸기) · `pre`(요청·응답 꼴) · `.pill` · `.verdict`(결론 상자) · `.note-fact`/`.note-guess`(사실·추정). 더 필요하면 인라인 SVG.
+- 색은 뜻으로만 쓴다: 초록(`.ok`) = 정상·저장됨, 주황(`.warn`) = 주의·추정, 빨강(`.bad`) = 막힘, 빨강 점선(`.none`) = 없음, 파랑(`.ext`) = 바깥 시스템. 밝은·어두운 화면 모두 뼈대가 맞춘다.
 - 바깥 스크립트·폰트·이미지(CDN)를 불러오지 않는다 — 미리보기는 네트워크 없이도 그려져야 한다.
 - 말투는 사용자 보고와 같다: 쉬운 말, 짧게, 동그라미 번호(①)·내부 기호·섹션 번호로 설명하지 않는다.
 

@@ -42,7 +42,9 @@ except Exception:  # no tz database: fixed +09:00
 SKILL_DIR = Path(__file__).resolve().parent.parent
 SKELETON = SKILL_DIR / "assets" / "skeleton.html"
 BACKUPS_KEPT = 15
-STATUS = {"current": ("현재", "ok"), "stale": ("낡음", "warn"), "removed": ("지움", "bad")}
+STATUS = {"current": ("현재", "st-current"), "stale": ("낡음", "st-stale"), "removed": ("지움", "st-removed")}
+# Contents-line pill classes that mean each status (st-* from the template; ok/warn/bad also read).
+PILLS = {"current": {"st-current", "ok"}, "stale": {"st-stale", "warn"}, "removed": {"st-removed", "bad"}}
 TOC = ("<!-- toc:start -->", "<!-- toc:end -->")
 SECTIONS = ("<!-- sections:start -->", "<!-- sections:end -->")
 HISTORY = ("<!-- history:start -->", "<!-- history:end -->")
@@ -121,11 +123,22 @@ def strip(s: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
+def edition_attrs(text: str) -> dict:
+    m = re.search(r"<main\b([^>]*)>", text)
+    return dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1))) if m else {}
+
+
 def edition_of(text: str) -> tuple[str, str]:
-    """(slug, title). An old file without the edition mark: its <h1> or <title>."""
+    """(slug, title): <main data-edition="…" data-edition-title="…">. Also read: the
+    earlier <meta name="edition">, and for an old file without a mark its <h1> or <title>."""
+    a = edition_attrs(text)
     m = re.search(r'<meta name="edition" content="([^"]*)"', text)
-    t = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S) or re.search(r"<title[^>]*>(.*?)</title>", text, re.S)
-    return (m.group(1) if m else ""), (strip(t.group(1)) if t else "")
+    slug = a.get("data-edition") or (m.group(1) if m else "")
+    title = html.unescape(a.get("data-edition-title", ""))
+    if not title:
+        t = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S) or re.search(r"<title[^>]*>(.*?)</title>", text, re.S)
+        title = strip(t.group(1)) if t else ""
+    return slug, title
 
 
 def section_hash(block: str) -> str:
@@ -155,9 +168,11 @@ def toc_of(text: str) -> list[dict]:
     if inner is None:
         return []
     out = []
-    for m in re.finditer(r'<li\b[^>]*data-id="([^"]*)"[^>]*>(.*?)</li>', inner, re.S):
-        pill = re.search(r'class="pill (\w+)"', m.group(2))
-        out.append({"id": m.group(1), "pill": pill.group(1) if pill else ""})
+    for m in re.finditer(r"<li\b([^>]*)>(.*?)</li>", inner, re.S):
+        sid = re.search(r'data-id="([^"]*)"', m.group(1)) or re.search(r'href="#([^"]*)"', m.group(2))
+        pill = re.search(r'class="pill ([\w-]+)"', m.group(2))
+        if sid:
+            out.append({"id": sid.group(1), "pill": pill.group(1) if pill else ""})
     return out
 
 
@@ -221,7 +236,7 @@ def history_list_html() -> str:
         names = [s["title"] or s["id"] for s in sections_of(text)]
         more = f" 외 {len(names) - 5}개" if len(names) > 5 else ""
         secs = f' <span class="meta">— {html.escape(" · ".join(names[:5]))}{more}</span>' if names else ""
-        items.append(f'\n      <li><a href="history/{html.escape(p.name)}">{html.escape(title or p.stem)}</a> <span class="when">{when_of(p)}</span>{secs}</li>')
+        items.append(f'\n      <li><a href="history/{html.escape(p.name)}">{html.escape(title or p.stem)}</a> <span class="dim">{when_of(p)}</span>{secs}</li>')
     if not items:
         return '\n      <li class="none">아직 없음</li>\n    '
     return "".join(items) + "\n    "
@@ -316,9 +331,10 @@ def cmd_template(a):
     d = today()
     more = "(+ 커밋 안 한 변경 있음)" if dirty else ""
     print("== 목차 한 줄 (<!-- toc:start --> 바로 아래, 맨 위에) ==")
-    print(f'<li data-id="{sid}"><a href="#{sid}">{title}</a> <span class="pill ok">현재</span> <span class="when">{d}</span></li>')
+    print(f'<li><a href="#{sid}">{title}</a> <span class="pill st-current">현재</span> <span class="dim">{d}</span></li>')
     print("\n== 절 (<!-- sections:start --> 바로 아래, 맨 위에) ==")
     print(f"""<section id="{sid}" data-updated="{d}" data-basis="{sha}" data-status="current">
+  <a class="top-link" href="#toc">목차 ↑</a>
   <h2>{title}</h2>
   <p class="meta">고침 {d} · 기준 커밋 {sha}{more} · 상태 현재</p>
   <p class="verdict">한 줄 요약 — 이 그림이 답하는 질문과 그 답</p>
@@ -445,8 +461,8 @@ def cmd_check(a):
             (notes if marks is HISTORY else problems).append(f"{what} 표시({marks[0]} … {marks[1]})가 없음")
     problems += [f"태그 짝: {e}" for e in unbalanced(text)]
     slug, title = edition_of(text)
-    if not re.search(r'<meta name="edition" content="[^"]+"', text):
-        problems.append('판 표시(<meta name="edition" …>)가 없음')
+    if not slug:
+        problems.append('판 표시(<main data-edition="…">)가 없음')
     secs = sections_of(text)
     toc = toc_of(text)
     ids = [s["id"] for s in secs]
@@ -480,8 +496,8 @@ def cmd_check(a):
         notes.append("목차 순서가 절 순서와 다름 (최근 것이 위)")
     for t in toc:
         s = next((x for x in secs if x["id"] == t["id"]), None)
-        if s and STATUS.get(s["attrs"].get("data-status", ""), ("", ""))[1] != t["pill"]:
-            notes.append(f"#{t['id']}: 목차 딱지가 절 상태와 다름 (현재=ok, 낡음=warn, 지움=bad)")
+        if s and t["pill"] not in PILLS.get(s["attrs"].get("data-status", ""), set()):
+            notes.append(f"#{t['id']}: 목차 딱지가 절 상태와 다름 (현재=st-current, 낡음=st-stale, 지움=st-removed)")
     hist_inner = between(text, HISTORY)
     if hist_inner is not None:
         linked = re.findall(r'href="history/([^"]+)"', hist_inner)
