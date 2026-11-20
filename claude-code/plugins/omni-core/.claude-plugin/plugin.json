@@ -1,7 +1,7 @@
 {
   "name": "omni-core",
   "displayName": "Omni Core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Explore-plan-implement-verify workflow skills, spec interviews, skill authoring, and an adversarial review subagent",
   "author": {
     "name": "changmini"
