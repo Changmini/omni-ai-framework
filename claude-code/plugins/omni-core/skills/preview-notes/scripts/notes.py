@@ -123,6 +123,11 @@ def strip(s: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
+def visible(s: str) -> str:
+    """The text shown on the page: without <style>/<script> (the skeleton's usage notes) and comments."""
+    return strip(re.sub(r"<(style|script)\b.*?</\1\s*>|<!--.*?-->", " ", s, flags=re.S | re.I))
+
+
 def edition_attrs(text: str) -> dict:
     m = re.search(r"<main\b([^>]*)>", text)
     return dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1))) if m else {}
@@ -385,8 +390,8 @@ def cmd_history(a):
         text = read(p)
         secs = sections_of(text)
         if word:
-            hits = [s for s in secs if word in strip(s["body"]).lower() or word in s["title"].lower() or word in s["id"]]
-            if not hits and word not in strip(text).lower():
+            hits = [s for s in secs if word in visible(s["body"]).lower() or word in s["title"].lower() or word in s["id"]]
+            if not hits and word not in visible(text).lower():
                 continue
         else:
             hits = secs
@@ -510,7 +515,7 @@ def cmd_check(a):
     for m in re.finditer(r'(?:\bsrc\s*=\s*["\']\s*(?:https?:)?//|<link\b[^>]*href\s*=\s*["\']\s*(?:https?:)?//|url\(\s*["\']?\s*(?:https?:)?//|@import\s+["\']?(?:url\()?\s*["\']?(?:https?:)?//)', text, re.I):
         line = text.count("\n", 0, m.start()) + 1
         problems.append(f"바깥 자원을 불러옴 ({line}줄) — 미리보기는 네트워크 없이 그려져야 함")
-    plain = strip(text)
+    plain = visible(text)
     seen = set()
     for label, rx, keep in SENSITIVE:
         for m in rx.finditer(plain):
