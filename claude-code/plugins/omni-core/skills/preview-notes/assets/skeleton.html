@@ -3,57 +3,146 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="edition" content="__SLUG__">
-<title>__TITLE__</title>
+<title>__TITLE__ · 작업 참고 그림</title>
 <style>
-  :root { --bg:#0f1117; --card:#171a23; --line:#2a2f3d; --text:#e2e5ec; --muted:#8a91a3; --accent:#d97757;
-          --ok:#4fc08d; --warn:#e6b450; --bad:#f0616d; --ext:#6ea8fe; }
-  html, body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.6 system-ui, sans-serif; }
-  main { max-width:1100px; margin:0 auto; padding:24px; }
-  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 4px; } h3 { font-size:14px; margin:16px 0 6px; color:var(--muted); }
-  a { color:var(--ext); }
-  .sub, .meta, .when { color:var(--muted); font-size:12px; }
-  .toc { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; margin:12px 0; }
-  .toc ol, .toc ul { margin:6px 0; padding-left:20px; } .toc li.none { color:var(--muted); list-style:none; margin-left:-20px; }
-  .toc.history summary { cursor:pointer; color:var(--muted); }
-  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:16px 0; }
-  section[data-status="stale"] { border-color:var(--warn); } section[data-status="removed"] { opacity:.7; border-style:dashed; }
-  .verdict { border-left:3px solid var(--accent); background:#1d212c; padding:8px 12px; border-radius:6px; margin:8px 0 12px; }
-  .block { margin:12px 0; }
-  .pill { display:inline-block; font-size:11px; padding:0 8px; border-radius:999px; border:1px solid currentColor; }
-  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .ext { color:var(--ext); }
-  .mono, pre { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }
-  pre { background:#11141b; border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow:auto; }
-  table { border-collapse:collapse; width:100%; font-size:13px; } th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; } th { color:var(--muted); font-weight:600; }
-  /* .lane: <div class="lane"><div class="step"><span class="who">화면</span><div>무엇을</div></div>…</div> */
-  .lane .step { display:grid; grid-template-columns:6.5em 1fr; gap:10px; }
-  .lane .who { text-align:right; color:var(--muted); font-size:12px; padding-top:6px; }
-  .lane .step > div { border-left:2px solid var(--line); padding:6px 0 6px 12px; }
-  /* .flow: <div class="flow"><span>화면</span><span>API</span>…</div> */
-  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
-  .flow > * { background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:4px 10px; }
-  .flow > *:not(:last-child)::after { content:"→"; margin-left:10px; color:var(--muted); }
-  .branch, .two { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
-  .branch > div, .two > div { background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
-  .branch .if { font-size:12px; color:var(--warn); margin-bottom:4px; }
-  .files { margin:0; padding-left:18px; }
-  svg { max-width:100%; height:auto; }
+  /*
+    그리는 부품 — 절 안에서 이렇게 쓴다.
+    세로 흐름   <div class="lane">
+                  <div class="who">화면</div><div class="node"><b>무엇을</b><span class="where">파일:줄</span></div>
+                  <div class="down">↓</div>
+                  <div class="who">바깥</div><div class="node ext"><b>결제 API</b></div>
+                </div>
+    가로 흐름   <div class="flow"><div class="node">입력</div><span class="arrow">→</span><div class="node ok">저장</div></div>
+    갈래        <div class="branch"><div class="node ok"><span class="if">이름이 있으면</span>저장</div>
+                                   <div class="node bad"><span class="if">비었으면</span>거절</div></div>
+    나란히      <div class="two"><div class="block">전</div><div class="block">후</div></div>
+    넓은 표     <div class="scroll"><table>…</table></div>
+    딱지        <span class="pill ok">쓰임</span>
+    사실·추정   <span class="note-fact">확인</span> · <span class="note-guess">추정</span>
+    색의 뜻: ok 초록 = 정상·저장됨 · warn 주황 = 주의·추정 · bad 빨강 = 막힘 · none 빨강 점선 = 없음 · ext 파랑 = 바깥 시스템
+  */
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d2330; --dim: #6b7383; --line: #dfe3ea;
+    --brand: #0f766e; --brand-soft: #d9f2ef; --warn: #b45309; --warn-soft: #fdf0dc;
+    --err: #c0392b; --err-soft: #fbe3e0; --ok: #15803d; --ok-soft: #dcf3e3; --blue: #1d4ed8; --blue-soft: #e0e8fb;
+    --code-bg: #f1f3f6; --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --ink: #e8ebf1; --dim: #9aa3b2; --line: #2c3340;
+      --brand: #3cc2b3; --brand-soft: #173a37; --warn: #f0a648; --warn-soft: #3a2c17;
+      --err: #f07a6c; --err-soft: #3b1f1c; --ok: #5fd08a; --ok-soft: #173322; --blue: #8fb0ff; --blue-soft: #1c2742;
+      --code-bg: #232a35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 10px; }
+  h3 { font-size: 15px; margin: 16px 0 8px; }
+  p { margin: 6px 0; }
+  a { color: var(--blue); }
+  .sub { color: var(--dim); margin: 0 0 22px; }
+  .dim { color: var(--dim); font-size: 13px; }
+  .mono { font-family: var(--mono); font-size: 13px; }
+  svg, img { max-width: 100%; height: auto; }
+
+  /* 참고서 틀: 머리·목차·지난 판·절 */
+  header.top { margin-bottom: 18px; }
+  .edition { margin: 0 0 6px; }
+  nav.toc, details.history { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 22px; }
+  nav.toc { padding: 16px 20px; }
+  nav.toc h2 { font-size: 16px; margin: 0 0 8px; }
+  nav.toc ol, details.history ol { margin: 0; padding-left: 20px; }
+  nav.toc li, details.history li { margin: 3px 0; }
+  nav.toc a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover { color: var(--brand); text-decoration: underline; }
+  details.history { padding: 12px 20px; }
+  details.history summary { cursor: pointer; font-weight: 600; }
+  details.history ol { margin-top: 8px; }
+  details.history li.none { color: var(--dim); list-style: none; margin-left: -20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 18px; scroll-margin-top: 12px; }
+  section:target { outline: 2px solid var(--brand); outline-offset: 2px; }
+  section[data-status="stale"] { border-color: var(--warn); }
+  section[data-status="removed"] { opacity: .78; border-style: dashed; }
+  .meta { color: var(--dim); font-size: 13px; margin: 0 0 12px; }
+  .top-link { float: right; font-size: 12px; color: var(--dim); text-decoration: none; }
+  .verdict { background: var(--warn-soft); border-left: 4px solid var(--warn); padding: 10px 14px; border-radius: 8px; }
+  .block { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  ul.files { margin: 4px 0; padding-left: 18px; }
+  ul.files li { margin: 2px 0; }
+  .note-fact { color: var(--ok); font-weight: 600; } .note-guess { color: var(--warn); font-weight: 600; }
+
+  /* 상자와 색 */
+  .node { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; }
+  .node b { display: block; }
+  .node .where { display: block; font-family: var(--mono); font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+  .node.ok { background: var(--ok-soft); border-color: transparent; }
+  .node.warn { background: var(--warn-soft); border-color: transparent; }
+  .node.bad { background: var(--err-soft); border-color: transparent; }
+  .node.none { background: var(--err-soft); border: 1px dashed var(--err); }
+  .node.ext { background: var(--blue-soft); border-color: transparent; }
+  .if { display: block; font-size: 12px; font-weight: 600; color: var(--warn); margin-bottom: 2px; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 99px; }
+  .pill.ok, .st-current, .p-use { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn, .st-stale { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad, .st-removed, .p-no { background: var(--err-soft); color: var(--err); }
+  .pill.ext { background: var(--blue-soft); color: var(--blue); }
+
+  /* 흐름·갈래·나란히 */
+  .lane { display: grid; grid-template-columns: 160px 1fr; gap: 0 14px; }
+  .lane > .who { grid-column: 1; text-align: right; color: var(--dim); font-size: 13px; padding-top: 12px; }
+  .lane > :not(.who) { grid-column: 2; } /* 「누가」 없이 이어지는 상자·화살표·갈래도 오른쪽 칸에 */
+  .down { color: var(--dim); text-align: center; font-size: 18px; line-height: 1.4; }
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+  .flow .node { flex: 1 1 150px; }
+  .flow .arrow { align-self: center; color: var(--dim); font-size: 18px; }
+  .branch, .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .lane > *, .branch > *, .two > *, .flow > * { min-width: 0; } /* 긴 pre·표가 칸을 밀어내지 않게 */
+  .lane, .flow, .branch, .two, .scroll { margin: 12px 0; } /* 그림끼리 붙지 않게 */
+  .lane > .branch, .two > .block { margin: 0; }
+
+  /* 코드·표 */
+  pre { background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 12.5px/1.55 var(--mono); margin: 6px 0; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 13px; }
+
+  @media (max-width: 720px) {
+    .lane { grid-template-columns: 1fr; }
+    .lane > .who, .lane > :not(.who) { grid-column: 1; }
+    .lane > .who { text-align: left; padding-top: 6px; }
+    .branch, .two { grid-template-columns: 1fr; }
+    .flow { flex-direction: column; }
+    .flow .node { flex: none; }
+    .flow .arrow { transform: rotate(90deg); }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>__TITLE__</h1>
-  <p class="sub">작업 참고 그림 · 판 시작 __DATE__ · 최근 것이 위</p>
-  <nav class="toc" aria-label="목차">
+<main data-edition="__SLUG__" data-edition-title="__TITLE__" data-edition-start="__DATE__">
+  <header class="top">
+    <h1>작업 참고 그림</h1>
+    <p class="edition">지금 판: <b id="edition-title">__TITLE__</b> <span class="dim" id="edition-start">시작 __DATE__</span></p>
+    <p class="sub">글로만 보기 어려운 흐름·구조·비교를 모아 둔 곳. 최근 것이 위. 절마다 고친 날·기준 커밋·근거 파일이 있다 — 기준 커밋 뒤에 근거 파일이 바뀌었으면 다시 확인한다.</p>
+  </header>
+
+  <nav class="toc" id="toc" aria-label="목차">
+    <h2>목차</h2>
     <ol>
-    <!-- toc:start -->
-    <!-- toc:end -->
+      <!-- toc:start -->
+      <!-- toc:end -->
     </ol>
   </nav>
-  <details class="toc history">
-    <summary>지난 판</summary>
-    <ul><!-- history:start -->__HISTORY__<!-- history:end --></ul>
+
+  <details class="toc history" id="history">
+    <summary>지난 판 <span class="dim">— 완전히 다른 주제로 넘어갈 때 옮겨 둔 판(history/)</span></summary>
+    <ol><!-- history:start -->__HISTORY__<!-- history:end --></ol>
   </details>
+
   <!-- sections:start -->
   <!-- sections:end -->
 </main>
