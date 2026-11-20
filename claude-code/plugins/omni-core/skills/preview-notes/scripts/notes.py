@@ -18,8 +18,10 @@ the command); its backups and past editions sit next to it, in
                                         resources, values that must not be there, changes
                                         since the last backup (or <file>)
 
-Standard library only. Exit status 1 when check finds a problem.
+Standard library only (Python 3.9+). Exit status 1 when check finds a problem.
 """
+from __future__ import annotations
+
 import argparse
 import datetime
 import hashlib
@@ -538,6 +540,11 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv) -> int:
+    # Always UTF-8 out (on Windows a pipe would otherwise get the locale's code page,
+    # which cannot write every character).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     a = parser().parse_args(argv)
     use_file(getattr(a, "file", None))
     return a.fn(a)
