@@ -27,7 +27,7 @@ omni-ai-framework/
     │   │   │   ├── verifying-changes/    # 프로젝트 자체 테스트/린트/빌드 탐색·실행, 증거 보고
     │   │   │   ├── writing-specs/        # 인터뷰 후 SPEC.md 작성 (수동 실행 전용)
     │   │   │   ├── authoring-skills/     # 공식 규칙에 맞는 새 스킬 작성 (template.md, checklist.md)
-    │   │   │   └── drawing-diagrams/     # 다이어그램·차트를 private/index.html에 HTML로 그림 (Omni Agent Terminal 미리보기)
+    │   │   │   └── preview-notes/        # private/index.html을 판·절로 쌓는 작업 참고 그림 (Omni Agent Terminal 미리보기, scripts/notes.py)
     │   │   ├── agents/
     │   │   │   └── adversarial-reviewer.md   # 새 컨텍스트에서 diff를 반박 검토 (읽기 전용)
     │   │   ├── hooks/hooks.json          # SessionStart: git 상태를 컨텍스트에 주입
@@ -64,7 +64,7 @@ omni-ai-framework/
 
 | 플러그인 | 출처 · 라이선스 | 고정 버전 | 제공하는 것 |
 | --- | --- | --- | --- |
-| `omni-core` | 이 저장소 | `plugins/omni-core` | 계획·검증·스펙·스킬 작성·다이어그램 스킬 5개, `adversarial-reviewer` 에이전트, git 상태 SessionStart 훅 |
+| `omni-core` | 이 저장소 | `plugins/omni-core` | 계획·검증·스펙·스킬 작성·작업 참고 그림 스킬 5개, `adversarial-reviewer` 에이전트, git 상태 SessionStart 훅 |
 | `omni-guardrails` | 이 저장소 | `plugins/omni-guardrails` | 위험 Bash 명령 차단·확인 PreToolUse 훅 |
 | `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 목표·시작·종료 정의 스킬, 개발·플랜 파이프라인 스킬, 에이전트 5개(planner, rationale-critic, builder, reviewer, spec-writer) |
 | `omni-jira` (**기본 꺼짐**) | 이 저장소 | `plugins/omni-jira` | 설정한 담당자의 이슈만 고치는 `jira-manager` 에이전트 + 담당자 확인 훅 |
@@ -205,7 +205,7 @@ done
 | 검증 | `/omni-core:verifying-changes` (작업 후 자동 사용) |
 | 스펙 인터뷰 | `/omni-core:writing-specs <기능>` (수동 전용) |
 | 새 스킬 만들기 | `/omni-core:authoring-skills <설명>` |
-| 다이어그램·차트 그리기 | "결제 흐름을 다이어그램으로 그려줘" (Claude가 자동 사용, `/omni-core:drawing-diagrams`로도 호출) |
+| 작업 참고 그림 | "결제 흐름을 그림으로 보여줘", "이 워크플로우 한눈에" (Claude가 자동 사용, `/omni-core:preview-notes`로도 호출) |
 | 반박 리뷰 | "adversarial-reviewer 서브에이전트로 리뷰해줘" |
 | 작업 목표·시작·종료 정의 | `/omni-pipeline:defining-work-goal` 또는 "목표와 시작·종료를 정리해봐" |
 | 개발 파이프라인 | `/omni-pipeline:running-dev-pipeline` |
