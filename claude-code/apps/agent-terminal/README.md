@@ -221,6 +221,33 @@ claude.ai `사용량` 화면의 `현재 세션`(5시간 한도)과 같은 값입
 
 Claude에게 "결제 흐름을 다이어그램으로 그려줘", "응답 시간을 차트로 보여줘"처럼 그림을 부탁하면, Claude가 프로젝트의 `private/index.html`에 HTML·SVG·canvas로 그리고 앱이 그것을 **터미널 옆에** 바로 보여 줍니다. 대화를 이어 가며("DB 부분을 더 자세히") 그림이 바뀌는 것을 같이 봅니다. Claude는 omni-core 플러그인의 `preview-notes` 스킬로 이 파일을 **쌓아 가는 참고서**로 씁니다: 한 판(지금 다루는 개념)에 절을 더하거나 그 절만 고치고, 완전히 다른 주제로 넘어가면 지금 판을 `private/history/`로 옮기고 새 판을 엽니다(새 판 머리의 「지난 판」 목록에서 열어 봄). 앱이 바뀔 때마다 남기는 `private/.history/`(◀ ▶)와는 따로입니다.
 
+### 그림 스킬 설치 (omni-core 플러그인의 `preview-notes`)
+
+앱은 `private/index.html`을 보여 주기만 합니다. Claude가 이 파일에 그리는 법은 **그림을 볼 프로젝트에** omni-core 플러그인을 켜야 압니다. 컴퓨터마다 1~2단계는 한 번, 3단계는 프로젝트마다 합니다.
+
+1. 저장소 받기
+   ```bash
+   git clone https://github.com/changmini/omni-ai-framework ~/omni-ai-framework
+   ```
+2. 마켓플레이스 등록 (`claude-code/` 폴더 경로로. 저장소 루트나 GitHub `owner/repo`로는 등록되지 않음)
+   ```bash
+   claude plugin marketplace add ~/omni-ai-framework/claude-code
+   ```
+3. 그림을 볼 프로젝트에 omni-core 켜기 (프로젝트 폴더에서)
+   ```bash
+   claude plugin install omni-core@omni-ai-framework --scope project
+   ```
+   프로젝트의 `.claude/settings.json`에 `"omni-core@omni-ai-framework": true`가 들어갑니다. 모든 프로젝트에서 쓰려면 `--scope user`로 설치합니다. 팀 기본 구성(CLAUDE.md, 다른 플러그인 포함)까지 한 번에 하려면 `~/omni-ai-framework/claude-code/scripts/bootstrap-project.sh <프로젝트>`를 씁니다.
+4. 그림이 커밋에 섞이지 않게
+   ```bash
+   echo 'private/' >> .gitignore
+   ```
+5. 확인: `claude plugin details omni-core@omni-ai-framework`의 스킬 목록에 `preview-notes`가 있으면 됩니다. Claude 세션 안에서는 `/omni-core:preview-notes`로 직접 부를 수 있습니다.
+
+- **클라우드 세션(claude.ai/code 등)**: 원격 세션은 플러그인을 설치하지 않습니다. 스킬을 프로젝트에 복사해 커밋하면 됩니다: `~/omni-ai-framework/claude-code/scripts/vendor-plugins.py <프로젝트> omni-core` → `<프로젝트>/.claude/skills/preview-notes/`가 생깁니다(세션 안에서는 `/preview-notes`).
+- **업데이트**: 로컬 폴더로 등록한 마켓플레이스는 그 폴더를 바로 읽습니다. `git -C ~/omni-ai-framework pull` 후 Claude 세션을 새로 열거나 세션 안에서 `/reload-plugins`. (`claude plugin update`는 "업데이트할 것 없음"이라고 알려 줍니다.) 클라우드용 복사본은 `vendor-plugins.py`를 다시 실행해 커밋합니다.
+- 설치하지 않아도 앱의 미리보기는 동작합니다. 그때는 Claude에게 "private/index.html에 그려줘"라고 직접 말해야 하고, 판·절로 쌓는 규칙은 적용되지 않습니다.
+
 - **위치:** 프로젝트(파일 탭과 같은 기준: git 저장소, 없으면 터미널 폴더)의 `private/index.html`. 아직 없으면 안내 페이지가 보입니다. `private/`를 `.gitignore`에 넣어 두기를 권장합니다(그림과 이전 그림이 커밋에 섞이지 않게).
 - **나란히 보기:** 터미널 오른쪽에 붙습니다. 경계를 끌어 비율 조절(더블클릭: 반반), `⇥`나 상단 바 버튼·`Ctrl+Shift+P`로 접기/펴기. 비율과 열림 상태는 기억합니다. 창이 좁아 둘이 나란히 들어가지 않으면 오른쪽 상세 패널의 `미리보기` 탭으로 옮겨 갑니다.
 - **입력은 터미널에:** 그림이 열리거나 바뀌어도, 그림의 스크립트가 포커스를 가져가려 해도 키보드는 터미널에 남습니다(그림을 직접 누르면 그림에 입력할 수 있음). 다시 그린 그림은 보던 스크롤 위치를 유지합니다.

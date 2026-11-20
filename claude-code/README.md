@@ -176,6 +176,13 @@ done
 - 실측: 플러그인이 하나도 없는 환경에서 스킬 55개가 인식되고, superpowers와 omni-core의 SessionStart 훅이 모두 정상 출력됐습니다.
 - omni-jira를 vendoring하면 플러그인 설정(`userConfig`)이 없습니다. 그래서 에이전트 지침의 표시 이름이 치환되지 않고, 훅은 모든 쓰기를 막습니다. 클라우드에서 쓰려면 환경의 환경변수에 `CLAUDE_PLUGIN_OPTION_ASSIGNEE_ACCOUNT_ID`를 지정하세요. 필요 없으면 `vendor-plugins.py <프로젝트> omni-core omni-guardrails omni-pipeline superpowers playwright-cli`처럼 골라서 복사합니다.
 
+### 설치 확인·업데이트
+
+- 확인: `claude plugin list`(설치된 플러그인, 범위, 버전), `claude plugin details omni-core@omni-ai-framework`(스킬 목록과 토큰 비용). 세션 안에서는 `/plugin`.
+- 한 플러그인만 이 프로젝트에 켜기: 프로젝트 폴더에서 `claude plugin install omni-core@omni-ai-framework --scope project`(모든 프로젝트는 `--scope user`).
+- 업데이트: `git -C ~/omni-ai-framework pull` 후 새 세션 또는 `/reload-plugins`. 로컬 폴더 마켓플레이스는 원본 폴더를 바로 읽으므로 `claude plugin update`는 "nothing to update"라고 답합니다. 클라우드용 복사본(C)은 `vendor-plugins.py`를 다시 실행해 커밋합니다.
+- Omni Agent Terminal의 HTML 미리보기에 쓰는 `preview-notes` 스킬 설치는 [앱 README](apps/agent-terminal/README.md#그림-스킬-설치-omni-core-플러그인의-preview-notes)에 단계별로 있습니다.
+
 ### D. 조직 전체 강제 적용
 
 관리자가 각 머신의 같은 경로에 저장소를 배포하고, managed settings(claude.ai 관리 콘솔, MDM, `managed-settings.json`)에 다음을 넣으면 모든 머신에 강제 적용됩니다.
