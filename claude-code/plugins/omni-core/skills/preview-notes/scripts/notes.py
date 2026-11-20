@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """Keeps private/index.html, the project's accumulating visual reference.
 
-Run from the project (the root is the git top level, else the current folder):
+Run from the project. The file is <git top level>/private/index.html (the
+current folder outside git), or the one given with --file (before or after
+the command); its backups and past editions sit next to it, in
+.index-backup/ and history/.
 
   notes.py init [<slug> "<title>"]      create the skeleton if there is no file
   notes.py toc                          the current edition and its sections
-  notes.py backup                       copy the file to private/.index-backup/ (newest 15 kept)
+  notes.py backup                       copy the file to .index-backup/ (newest 15 kept)
   notes.py template <id> "<title>"      print a contents line and a section to paste
-  notes.py edition <slug> "<title>"     move the current edition to private/history/, start a new one
+  notes.py edition <slug> "<title>"     move the current edition to history/, start a new one
   notes.py history [<word>]             list past editions (those mentioning <word>)
-  notes.py history --sync               rewrite the "지난 판" list from private/history/
-  notes.py check [--allow-remove]       structure, contents, links, outside resources,
-                                        values that must not be there, changes since the last backup
+  notes.py history --sync               rewrite the "지난 판" list from history/
+  notes.py check [--allow-remove] [--against <file>]
+                                        structure, unclosed tags, contents, links, outside
+                                        resources, values that must not be there, changes
+                                        since the last backup (or <file>)
 
 Standard library only. Exit status 1 when check finds a problem.
 """
+import argparse
 import datetime
 import hashlib
 import html
@@ -22,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 try:
@@ -30,14 +37,17 @@ try:
 except Exception:  # no tz database: fixed +09:00
     KST = datetime.timezone(datetime.timedelta(hours=9))
 
+SKILL_DIR = Path(__file__).resolve().parent.parent
+SKELETON = SKILL_DIR / "assets" / "skeleton.html"
 BACKUPS_KEPT = 15
 STATUS = {"current": ("현재", "ok"), "stale": ("낡음", "warn"), "removed": ("지움", "bad")}
 TOC = ("<!-- toc:start -->", "<!-- toc:end -->")
 SECTIONS = ("<!-- sections:start -->", "<!-- sections:end -->")
 HISTORY = ("<!-- history:start -->", "<!-- history:end -->")
+SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
-def root() -> Path:
+def git_root() -> Path:
     try:
         top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True).stdout.strip()
         return Path(top)
@@ -45,11 +55,26 @@ def root() -> Path:
         return Path.cwd()
 
 
-ROOT = root()
-PRIVATE = ROOT / "private"
-INDEX = PRIVATE / "index.html"
-BACKUP_DIR = PRIVATE / ".index-backup"
-HISTORY_DIR = PRIVATE / "history"
+# The project (its commit is the "기준"); the file and the folders next to it
+# are set from --file in main().
+ROOT = git_root()
+INDEX = ROOT / "private" / "index.html"
+BACKUP_DIR = INDEX.parent / ".index-backup"
+HISTORY_DIR = INDEX.parent / "history"
+
+
+def use_file(path) -> None:
+    global INDEX, BACKUP_DIR, HISTORY_DIR
+    INDEX = Path(path).expanduser().resolve() if path else ROOT / "private" / "index.html"
+    BACKUP_DIR = INDEX.parent / ".index-backup"
+    HISTORY_DIR = INDEX.parent / "history"
+
+
+def shown(p: Path) -> str:
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
 
 
 def now() -> datetime.datetime:
@@ -65,13 +90,17 @@ def today() -> str:
 
 
 def basis() -> tuple[str, bool]:
-    """The current commit (short) and whether there are uncommitted changes."""
+    """The project's current commit (short) and whether there are uncommitted changes."""
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
         dirty = bool(subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout.strip())
         return sha, dirty
     except Exception:
         return "none", False
+
+
+def read(p: Path) -> str:
+    return p.read_text(encoding="utf-8", errors="replace")
 
 
 def between(text: str, marks: tuple[str, str]):
@@ -86,21 +115,27 @@ def replace_between(text: str, marks: tuple[str, str], inner: str) -> str:
     return text[:a + len(marks[0])] + inner + text[b:]
 
 
-def edition_of(text: str) -> tuple[str, str]:
-    m = re.search(r'<meta name="edition" content="([^"]*)"', text)
-    t = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S)
-    return (m.group(1) if m else ""), (strip(t.group(1)) if t else "")
-
-
 def strip(s: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
+def edition_of(text: str) -> tuple[str, str]:
+    """(slug, title). An old file without the edition mark: its <h1> or <title>."""
+    m = re.search(r'<meta name="edition" content="([^"]*)"', text)
+    t = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S) or re.search(r"<title[^>]*>(.*?)</title>", text, re.S)
+    return (m.group(1) if m else ""), (strip(t.group(1)) if t else "")
+
+
+def section_hash(block: str) -> str:
+    # Whitespace does not count: re-indenting a section is not a change.
+    return hashlib.sha1(re.sub(r"\s+", " ", block).strip().encode()).hexdigest()
+
+
 def sections_of(text: str) -> list[dict]:
-    """Top-level sections between the section markers, in order."""
+    """Top-level sections between the section markers (the whole file for an old one), in order."""
     inner = between(text, SECTIONS)
     if inner is None:
-        return []
+        inner = text
     out = []
     for m in re.finditer(r"<section\b([^>]*)>(.*?)</section>", inner, re.S):
         attrs = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
@@ -108,8 +143,7 @@ def sections_of(text: str) -> list[dict]:
         h2 = re.search(r"<h2[^>]*>(.*?)</h2>", body, re.S)
         out.append({
             "id": attrs.get("id", ""), "attrs": attrs, "body": body,
-            "title": strip(h2.group(1)) if h2 else "",
-            "hash": hashlib.sha1(m.group(0).encode()).hexdigest(),
+            "title": strip(h2.group(1)) if h2 else "", "hash": section_hash(m.group(0)),
         })
     return out
 
@@ -125,6 +159,42 @@ def toc_of(text: str) -> list[dict]:
     return out
 
 
+class Balance(HTMLParser):
+    """Block tags opened and closed in order; what is left open or closed twice."""
+    TAGS = {"section", "div", "table", "pre", "ul", "ol", "nav", "main", "header", "details", "svg"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack, self.errors = [], []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.TAGS:
+            self.stack.append((tag, self.getpos()[0]))
+
+    def handle_endtag(self, tag):
+        if tag not in self.TAGS:
+            return
+        line = self.getpos()[0]
+        if not any(t == tag for t, _ in self.stack):
+            self.errors.append(f"{line}줄: 열지 않은 </{tag}>")
+            return
+        while self.stack:
+            t, at = self.stack.pop()
+            if t == tag:
+                break
+            self.errors.append(f"{at}줄: <{t}> 가 닫히지 않은 채 {line}줄 </{tag}>")
+
+    def result(self) -> list[str]:
+        return self.errors + [f"{at}줄: <{t}> 가 닫히지 않음" for t, at in self.stack]
+
+
+def unbalanced(text: str) -> list[str]:
+    b = Balance()
+    b.feed(text)
+    b.close()
+    return b.result()
+
+
 def newest_first(p: Path):
     # By the time written (two in one second get "-2": the name alone would sort them wrong).
     return (-p.stat().st_mtime_ns, p.name)
@@ -136,134 +206,91 @@ def history_files() -> list[Path]:
     return sorted(HISTORY_DIR.glob("*.html"), key=newest_first)
 
 
-def history_title(p: Path) -> str:
-    _, title = edition_of(p.read_text(encoding="utf-8", errors="replace"))
-    return title or p.stem
+def when_of(p: Path) -> str:
+    m = re.match(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})", p.name)
+    return f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}" if m else ""
 
 
 def history_list_html() -> str:
-    items = [f'\n      <li><a href="history/{html.escape(p.name)}">{html.escape(history_title(p))}</a> <span class="when">{p.name[:8]}</span></li>' for p in history_files()]
+    items = []
+    for p in history_files():
+        text = read(p)
+        _, title = edition_of(text)
+        names = [s["title"] or s["id"] for s in sections_of(text)]
+        more = f" 외 {len(names) - 5}개" if len(names) > 5 else ""
+        secs = f' <span class="meta">— {html.escape(" · ".join(names[:5]))}{more}</span>' if names else ""
+        items.append(f'\n      <li><a href="history/{html.escape(p.name)}">{html.escape(title or p.stem)}</a> <span class="when">{when_of(p)}</span>{secs}</li>')
     if not items:
         return '\n      <li class="none">아직 없음</li>\n    '
     return "".join(items) + "\n    "
 
 
-SKELETON = """<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="edition" content="{slug}">
-<title>{title}</title>
-<style>
-  :root {{ --bg:#0f1117; --card:#171a23; --line:#2a2f3d; --text:#e2e5ec; --muted:#8a91a3; --accent:#d97757;
-          --ok:#4fc08d; --warn:#e6b450; --bad:#f0616d; --ext:#6ea8fe; }}
-  html, body {{ margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.6 system-ui, sans-serif; }}
-  main {{ max-width:1100px; margin:0 auto; padding:24px; }}
-  h1 {{ font-size:20px; margin:0 0 4px; }} h2 {{ font-size:17px; margin:0 0 4px; }} h3 {{ font-size:14px; margin:16px 0 6px; color:var(--muted); }}
-  a {{ color:var(--ext); }}
-  .sub, .meta, .when {{ color:var(--muted); font-size:12px; }}
-  .toc {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; margin:12px 0; }}
-  .toc ol, .toc ul {{ margin:6px 0; padding-left:20px; }} .toc li.none {{ color:var(--muted); list-style:none; margin-left:-20px; }}
-  .toc.history summary {{ cursor:pointer; color:var(--muted); }}
-  section {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:16px 0; }}
-  section[data-status="stale"] {{ border-color:var(--warn); }} section[data-status="removed"] {{ opacity:.7; border-style:dashed; }}
-  .verdict {{ border-left:3px solid var(--accent); background:#1d212c; padding:8px 12px; border-radius:6px; margin:8px 0 12px; }}
-  .block {{ margin:12px 0; }}
-  .pill {{ display:inline-block; font-size:11px; padding:0 8px; border-radius:999px; border:1px solid currentColor; }}
-  .ok {{ color:var(--ok); }} .warn {{ color:var(--warn); }} .bad {{ color:var(--bad); }} .ext {{ color:var(--ext); }}
-  .mono, pre {{ font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }}
-  pre {{ background:#11141b; border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow:auto; }}
-  table {{ border-collapse:collapse; width:100%; font-size:13px; }} th, td {{ border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }} th {{ color:var(--muted); font-weight:600; }}
-  /* .lane: <div class="lane"><div class="step"><span class="who">화면</span><div>무엇을</div></div>…</div> */
-  .lane .step {{ display:grid; grid-template-columns:6.5em 1fr; gap:10px; }}
-  .lane .who {{ text-align:right; color:var(--muted); font-size:12px; padding-top:6px; }}
-  .lane .step > div {{ border-left:2px solid var(--line); padding:6px 0 6px 12px; }}
-  /* .flow: <div class="flow"><span>화면</span><span>API</span>…</div> */
-  .flow {{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }}
-  .flow > * {{ background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:4px 10px; }}
-  .flow > *:not(:last-child)::after {{ content:"→"; margin-left:10px; color:var(--muted); }}
-  .branch, .two {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }}
-  .branch > div, .two > div {{ background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }}
-  .branch .if {{ font-size:12px; color:var(--warn); margin-bottom:4px; }}
-  .files {{ margin:0; padding-left:18px; }}
-  svg {{ max-width:100%; height:auto; }}
-</style>
-</head>
-<body>
-<main>
-  <h1>{title}</h1>
-  <p class="sub">작업 참고 그림 · 판 시작 {date} · 최근 것이 위</p>
-  <nav class="toc" aria-label="목차">
-    <ol>
-    {toc_start}
-    {toc_end}
-    </ol>
-  </nav>
-  <details class="toc history">
-    <summary>지난 판</summary>
-    <ul>{history_start}{history}{history_end}</ul>
-  </details>
-  {sections_start}
-  {sections_end}
-</main>
-</body>
-</html>
-"""
-
-
 def skeleton(slug: str, title: str) -> str:
-    return SKELETON.format(
-        slug=html.escape(slug), title=html.escape(title), date=today(),
-        toc_start=TOC[0], toc_end=TOC[1], sections_start=SECTIONS[0], sections_end=SECTIONS[1],
-        history_start=HISTORY[0], history_end=HISTORY[1], history=history_list_html(),
-    )
+    out = SKELETON.read_text(encoding="utf-8")
+    for k, v in (("__SLUG__", html.escape(slug)), ("__TITLE__", html.escape(title)),
+                 ("__DATE__", today()), ("__HISTORY__", history_list_html())):
+        out = out.replace(k, v)
+    return out
 
 
 def write_index(text: str) -> None:
-    PRIVATE.mkdir(parents=True, exist_ok=True)
+    INDEX.parent.mkdir(parents=True, exist_ok=True)
     INDEX.write_text(text, encoding="utf-8")
+
+
+def unique(path: Path) -> Path:
+    n = 2
+    out = path
+    while out.exists():
+        out = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        n += 1
+    return out
 
 
 def do_backup(quiet=False) -> Path | None:
     if not INDEX.exists():
         return None
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    dest = BACKUP_DIR / f"{stamp()}.html"
-    n = 2
-    while dest.exists():
-        dest = BACKUP_DIR / f"{stamp()}-{n}.html"
-        n += 1
+    dest = unique(BACKUP_DIR / f"{stamp()}.html")
     shutil.copyfile(INDEX, dest)  # its own time: backups are ordered by it
     for old in sorted(BACKUP_DIR.glob("*.html"), key=newest_first)[BACKUPS_KEPT:]:
         old.unlink()
     if not quiet:
-        print(f"백업: {dest.relative_to(ROOT)}")
+        print(f"백업: {shown(dest)}")
     return dest
 
 
-def cmd_init(args):
+def no_file() -> int:
+    print(f"{shown(INDEX)} 없음 — init 으로 만드세요")
+    return 1
+
+
+def cmd_init(a):
     if INDEX.exists():
-        print(f"이미 있음: {INDEX.relative_to(ROOT)} (toc 로 보세요)")
+        print(f"이미 있음: {shown(INDEX)} (toc 로 보세요)")
         return 0
-    slug = args[0] if args else "start"
-    title = args[1] if len(args) > 1 else "작업 참고 그림"
+    slug, title = a.slug or "start", a.title or "작업 참고 그림"
+    if not SLUG.fullmatch(slug):
+        print("판 slug 는 영문 소문자-하이픈", file=sys.stderr)
+        return 2
     write_index(skeleton(slug, title))
-    print(f"만듦: {INDEX.relative_to(ROOT)} (판 {slug})")
+    print(f"만듦: {shown(INDEX)} (판 {slug})")
     return 0
 
 
-def cmd_toc(_args):
+def cmd_toc(_a):
     if not INDEX.exists():
-        print("private/index.html 없음 — init 으로 만드세요")
-        return 0
-    text = INDEX.read_text(encoding="utf-8")
+        return no_file()
+    text = read(INDEX)
     slug, title = edition_of(text)
+    size = f"{INDEX.stat().st_size / 1024:.1f}KB"
     if between(text, TOC) is None or between(text, SECTIONS) is None:
-        print("옛 꼴(목차·절 표시 없음) — edition 으로 history/ 에 옮기고 새 판을 여세요")
+        print(f"옛 꼴(목차·절 표시 없음) · {title or '(제목 없음)'} · {size} — edition 으로 history/ 에 옮기고 새 판을 여세요")
         return 0
-    print(f"지금 판: {title or '(제목 없음)'} [{slug or '-'}]")
     secs = sections_of(text)
+    counts = " · ".join(f"{label} {n}" for k, (label, _) in STATUS.items()
+                        if (n := sum(s["attrs"].get("data-status") == k for s in secs)))
+    print(f"지금 판: {title or '(제목 없음)'} [{slug or '-'}] · 절 {len(secs)}개{' (' + counts + ')' if counts else ''} · {size}")
     for s in secs:
         a = s["attrs"]
         print(f"  #{s['id']}  {s['title']}  · {STATUS.get(a.get('data-status', ''), ('?', ''))[0]} · 고침 {a.get('data-updated', '?')} · 기준 {a.get('data-basis', '?')}")
@@ -274,17 +301,15 @@ def cmd_toc(_args):
     return 0
 
 
-def cmd_backup(_args):
-    if not do_backup():
-        print("private/index.html 없음")
-    return 0
+def cmd_backup(_a):
+    return 0 if do_backup() else no_file()
 
 
-def cmd_template(args):
-    if len(args) < 2 or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", args[0]):
+def cmd_template(a):
+    if not SLUG.fullmatch(a.id):
         print('사용: template <id: 영문 소문자-하이픈> "<제목>"', file=sys.stderr)
         return 2
-    sid, title = args[0], html.escape(args[1])
+    sid, title = a.id, html.escape(a.title)
     sha, dirty = basis()
     d = today()
     more = "(+ 커밋 안 한 변경 있음)" if dirty else ""
@@ -304,23 +329,13 @@ def cmd_template(args):
     return 0
 
 
-def unique(path: Path) -> Path:
-    n = 2
-    out = path
-    while out.exists():
-        out = path.with_name(f"{path.stem}-{n}{path.suffix}")
-        n += 1
-    return out
-
-
-def cmd_edition(args):
-    if len(args) < 2 or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", args[0]):
+def cmd_edition(a):
+    if not SLUG.fullmatch(a.slug):
         print('사용: edition <판 slug: 영문 소문자-하이픈> "<판 제목>"', file=sys.stderr)
         return 2
-    slug, title = args[0], args[1]
     if INDEX.exists():
         do_backup()
-        old = INDEX.read_text(encoding="utf-8")
+        old = read(INDEX)
         old_slug, _ = edition_of(old)
         if between(old, TOC) is None:
             old_slug = old_slug or "legacy"
@@ -328,31 +343,28 @@ def cmd_edition(args):
         dest = unique(HISTORY_DIR / f"{stamp()}-{old_slug or 'edition'}.html")
         shutil.move(str(INDEX), dest)
         # The past edition's own "지난 판" links point to history/…; from inside history/ they are siblings.
-        moved = dest.read_text(encoding="utf-8")
-        moved = re.sub(r'href="history/', 'href="', moved)
-        dest.write_text(moved, encoding="utf-8")
-        print(f"지난 판으로 옮김: {dest.relative_to(ROOT)}")
-    write_index(skeleton(slug, title))
-    print(f"새 판: {title} [{slug}] — template 으로 첫 절을 넣으세요")
+        dest.write_text(re.sub(r'href="history/', 'href="', read(dest)), encoding="utf-8")
+        print(f"지난 판으로 옮김: {shown(dest)}")
+    write_index(skeleton(a.slug, a.title))
+    print(f"새 판: {a.title} [{a.slug}] — template 으로 첫 절을 넣으세요")
     return 0
 
 
-def cmd_history(args):
-    if args and args[0] == "--sync":
+def cmd_history(a):
+    if a.word == "--sync" or a.sync:
         if not INDEX.exists():
-            print("private/index.html 없음")
-            return 1
-        text = INDEX.read_text(encoding="utf-8")
+            return no_file()
+        text = read(INDEX)
         if between(text, HISTORY) is None:
-            print("지금 판에 「지난 판」 목록 표시가 없습니다 — 뼈대의 <details class=\"toc history\"> 부분을 목차 아래에 넣은 뒤 다시 하세요")
+            print("지금 판에 「지난 판」 목록 표시가 없습니다 — 뼈대(assets/skeleton.html)의 <details class=\"toc history\"> 부분을 목차 아래에 넣은 뒤 다시 하세요")
             return 1
         write_index(replace_between(text, HISTORY, history_list_html()))
         print(f"「지난 판」 목록을 history/ 와 맞춤 ({len(history_files())}개)")
         return 0
-    word = args[0].lower() if args else None
+    word = a.word.lower() if a.word else None
     found = 0
     for p in history_files():
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = read(p)
         secs = sections_of(text)
         if word:
             hits = [s for s in secs if word in strip(s["body"]).lower() or word in s["title"].lower() or word in s["id"]]
@@ -361,54 +373,95 @@ def cmd_history(args):
         else:
             hits = secs
         found += 1
-        print(f"{p.relative_to(ROOT)} — {history_title(p)}")
+        _, title = edition_of(text)
+        print(f"{shown(p)} — {title or p.stem} ({when_of(p) or '?'})")
         for s in hits:
             print(f"    #{s['id']}  {s['title']}  (기준 {s['attrs'].get('data-basis', '?')})")
     if not found:
-        print("지난 판 없음" if not word else f"「{args[0]}」이 나오는 지난 판 없음")
+        print("지난 판 없음" if not word else f"「{a.word}」이 나오는 지난 판 없음")
     return 0
 
 
+def mixed_key(v: str) -> bool:
+    # A long run of letters and digits that looks generated: upper and lower case and at least 4 digits.
+    return sum(c.isdigit() for c in v) >= 4 and any(c.isupper() for c in v) and any(c.islower() for c in v)
+
+
 SENSITIVE = [
-    ("이메일", re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")),
-    ("전화번호", re.compile(r"\b01[016789]-?\d{3,4}-?\d{4}\b")),
-    ("API 키·토큰", re.compile(r"\b(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})")),
-    ("긴 숫자(계좌·식별자?)", re.compile(r"\b\d{3,6}-\d{2,6}-\d{4,8}\b|\b\d{12,}\b")),
-    ("접속 정보", re.compile(r"(password|passwd|secret|token)\s*[:=]\s*\S+", re.I)),
+    ("이메일", re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), None),
+    ("전화번호", re.compile(r"\b01[016789]-?\d{3,4}-?\d{4}\b"), None),
+    ("API 키·토큰", re.compile(r"\b(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"), None),
+    ("Bearer 토큰", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*", re.I), None),
+    ("긴 16진수(키?)", re.compile(r"\b[0-9a-fA-F]{32,}\b"), lambda v: len(v) != 40),  # 40: a git commit id
+    ("키 같은 문자열", re.compile(r"(?<![\w/+=-])[A-Za-z0-9+/_-]{32,}={0,2}(?![\w/+=-])"), mixed_key),
+    ("긴 숫자(계좌·식별자?)", re.compile(r"\b\d{3,6}-\d{2,6}-\d{4,8}\b|\b\d{12,}\b"), None),
+    ("접속 정보", re.compile(r"(password|passwd|secret|token)\s*[:=]\s*\S+", re.I), None),
 ]
 PLACEHOLDER_MAIL = re.compile(r"@(example\.(com|org|net)|sample\.\w+)$", re.I)
 
 
-def cmd_check(args):
-    allow_remove = "--allow-remove" in args
+def compare(prev_text: str, label: str, text: str, slug: str, secs: list[dict], allow_remove: bool, problems: list[str]) -> None:
+    """Sections added, changed and gone since `prev_text`; on an edition change, whether the
+    previous edition's sections are in history/ unchanged."""
+    prev_slug, _ = edition_of(prev_text)
+    prev = sections_of(prev_text)
+    before = {s["id"]: s["hash"] for s in prev}
+    now_ = {s["id"]: s["hash"] for s in secs}
+    added = [i for i in now_ if i not in before]
+    changed = [i for i in now_ if i in before and before[i] != now_[i]]
+    removed = [i for i in before if i not in now_]
+    print(f"{label} 대비 — 더한 절: {', '.join(added) or '없음'} / 고친 절: {', '.join(changed) or '없음'} / 없어진 절: {', '.join(removed) or '없음'}")
+    if prev_slug != slug:  # an old file without the mark counts as another edition
+        kept = {}  # hash -> past edition file
+        ids = set()
+        for p in history_files():
+            for s in sections_of(read(p)):
+                kept.setdefault(s["hash"], p.name)
+                ids.add(s["id"])
+        moved = [s["id"] for s in prev if s["hash"] in kept]
+        stayed = [s["id"] for s in prev if s["hash"] not in kept and s["id"] in now_]
+        lost = [s["id"] for s in prev if s["hash"] not in kept and s["id"] not in now_]
+        print(f"판이 바뀜({prev_slug} → {slug}): history/ 에 그대로 {len(moved)}개 · 이번 판에 남음 {len(stayed)}개 · 잃음 {len(lost)}개")
+        if lost and not allow_remove:
+            changed_ = [i for i in lost if i in ids]
+            gone = [i for i in lost if i not in ids]
+            if gone:
+                problems.append(f"판을 바꿨는데 지난 판 절이 history/ 에도 이번 판에도 없음: {', '.join(gone)}")
+            if changed_:
+                problems.append(f"판을 바꿨는데 history/ 의 절이 지난 판과 내용이 다름: {', '.join(changed_)}")
+    elif removed and not allow_remove:
+        problems.append(f"같은 판에서 절이 없어짐: {', '.join(removed)} — 의도했다면 사용자에게 물은 뒤 check --allow-remove (지운 기능이면 data-status=\"removed\" 로 남기기)")
+
+
+def cmd_check(a):
     if not INDEX.exists():
-        print("private/index.html 없음 — init 으로 만드세요")
-        return 1
-    text = INDEX.read_text(encoding="utf-8")
+        return no_file()
+    text = read(INDEX)
     problems, notes = [], []
     for marks, what in ((TOC, "목차"), (SECTIONS, "절"), (HISTORY, "지난 판 목록")):
         if between(text, marks) is None:
             (notes if marks is HISTORY else problems).append(f"{what} 표시({marks[0]} … {marks[1]})가 없음")
+    problems += [f"태그 짝: {e}" for e in unbalanced(text)]
     slug, title = edition_of(text)
-    if not slug:
+    if not re.search(r'<meta name="edition" content="[^"]+"', text):
         problems.append('판 표시(<meta name="edition" …>)가 없음')
     secs = sections_of(text)
     toc = toc_of(text)
     ids = [s["id"] for s in secs]
-    for dup in {i for i in ids if ids.count(i) > 1}:
+    for dup in sorted({i for i in ids if ids.count(i) > 1}):
         problems.append(f"같은 id 의 절이 둘 이상: #{dup}")
     inner = between(text, SECTIONS) or ""
     if inner.count("<section") != len(secs) or any("<section" in s["body"] for s in secs):
         problems.append("절 안에 절이 있거나 닫히지 않은 절이 있음 (묶음은 <div class=\"block\">)")
     for s in secs:
-        a, sid = s["attrs"], s["id"]
-        if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", sid or ""):
+        at, sid = s["attrs"], s["id"]
+        if not SLUG.fullmatch(sid or ""):
             problems.append(f"절 id 꼴이 아님(영문 소문자-하이픈): '{sid}'")
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.get("data-updated", "")):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", at.get("data-updated", "")):
             problems.append(f"#{sid}: data-updated 가 YYYY-MM-DD 가 아님")
-        if not a.get("data-basis"):
+        if not at.get("data-basis"):
             problems.append(f"#{sid}: data-basis(기준 커밋)가 없음")
-        if a.get("data-status") not in STATUS:
+        if at.get("data-status") not in STATUS:
             problems.append(f"#{sid}: data-status 는 current / stale / removed 중 하나")
         if not s["title"]:
             problems.append(f"#{sid}: <h2> 제목이 없음")
@@ -440,34 +493,26 @@ def cmd_check(args):
         line = text.count("\n", 0, m.start()) + 1
         problems.append(f"바깥 자원을 불러옴 ({line}줄) — 미리보기는 네트워크 없이 그려져야 함")
     plain = strip(text)
-    for label, rx in SENSITIVE:
+    seen = set()
+    for label, rx, keep in SENSITIVE:
         for m in rx.finditer(plain):
             v = m.group(0)
-            if label == "이메일" and PLACEHOLDER_MAIL.search(v):
+            if (label == "이메일" and PLACEHOLDER_MAIL.search(v)) or (keep and not keep(v)) or v in seen:
                 continue
+            seen.add(v)
             notes.append(f"넣으면 안 되는 값 꼴? [{label}] {v[:40]} — 지어낸·공개된 값인지 확인")
-    # Changes since the last backup.
-    last = sorted(BACKUP_DIR.glob("*.html"), key=newest_first)[:1] if BACKUP_DIR.is_dir() else []
-    if last:
-        prev = last[0].read_text(encoding="utf-8", errors="replace")
-        prev_slug, _ = edition_of(prev)
-        before = {s["id"]: s["hash"] for s in sections_of(prev)}
-        now_ = {s["id"]: s["hash"] for s in secs}
-        added = [i for i in now_ if i not in before]
-        changed = [i for i in now_ if i in before and before[i] != now_[i]]
-        removed = [i for i in before if i not in now_]
-        print(f"마지막 백업({last[0].name}) 대비 — 더한 절: {', '.join(added) or '없음'} / 고친 절: {', '.join(changed) or '없음'} / 없어진 절: {', '.join(removed) or '없음'}")
-        if removed and prev_slug and prev_slug != slug:
-            kept = [i for i in removed if any(f'id="{i}"' in p.read_text(encoding="utf-8", errors="replace") for p in history_files())]
-            lost = [i for i in removed if i not in kept]
-            if lost:
-                problems.append(f"판을 바꿨는데 지난 판 절이 history/ 에 없음: {', '.join(lost)}")
-            else:
-                print(f"판이 바뀜({prev_slug} → {slug}): 지난 판 절 {len(kept)}개가 history/ 에 있음")
-        elif removed and not allow_remove:
-            problems.append(f"같은 판에서 절이 없어짐: {', '.join(removed)} — 의도했다면 사용자에게 물은 뒤 check --allow-remove (지운 기능이면 data-status=\"removed\" 로 남기기)")
+    if a.against:
+        other = Path(a.against).expanduser()
+        if not other.is_file():
+            problems.append(f"--against 파일이 없음: {a.against}")
+        else:
+            compare(read(other), other.name, text, slug, secs, a.allow_remove, problems)
     else:
-        print("백업 없음 — 고치기 전에 backup 을 먼저")
+        last = sorted(BACKUP_DIR.glob("*.html"), key=newest_first)[:1] if BACKUP_DIR.is_dir() else []
+        if last:
+            compare(read(last[0]), f"마지막 백업({last[0].name})", text, slug, secs, a.allow_remove, problems)
+        else:
+            print("백업 없음 — 고치기 전에 backup 을 먼저")
     for n in notes:
         print(f"  확인: {n}")
     for p in problems:
@@ -476,15 +521,26 @@ def cmd_check(args):
     return 1 if problems else 0
 
 
-COMMANDS = {"init": cmd_init, "toc": cmd_toc, "backup": cmd_backup, "template": cmd_template,
-            "edition": cmd_edition, "history": cmd_history, "check": cmd_check}
+def parser() -> argparse.ArgumentParser:
+    common = argparse.ArgumentParser(add_help=False)
+    # SUPPRESS: given after the command it does not overwrite one given before.
+    common.add_argument("--file", default=argparse.SUPPRESS, help="private/index.html 대신 쓸 파일")
+    ap = argparse.ArgumentParser(prog="notes.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, parents=[common])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("init", parents=[common]); p.add_argument("slug", nargs="?"); p.add_argument("title", nargs="?"); p.set_defaults(fn=cmd_init)
+    sub.add_parser("toc", parents=[common]).set_defaults(fn=cmd_toc)
+    sub.add_parser("backup", parents=[common]).set_defaults(fn=cmd_backup)
+    p = sub.add_parser("template", parents=[common]); p.add_argument("id"); p.add_argument("title"); p.set_defaults(fn=cmd_template)
+    p = sub.add_parser("edition", parents=[common]); p.add_argument("slug"); p.add_argument("title"); p.set_defaults(fn=cmd_edition)
+    p = sub.add_parser("history", parents=[common]); p.add_argument("word", nargs="?"); p.add_argument("--sync", action="store_true"); p.set_defaults(fn=cmd_history)
+    p = sub.add_parser("check", parents=[common]); p.add_argument("--allow-remove", action="store_true"); p.add_argument("--against"); p.set_defaults(fn=cmd_check)
+    return ap
 
 
-def main(argv):
-    if not argv or argv[0] not in COMMANDS:
-        print(__doc__)
-        return 2
-    return COMMANDS[argv[0]](argv[1:])
+def main(argv) -> int:
+    a = parser().parse_args(argv)
+    use_file(getattr(a, "file", None))
+    return a.fn(a)
 
 
 if __name__ == "__main__":

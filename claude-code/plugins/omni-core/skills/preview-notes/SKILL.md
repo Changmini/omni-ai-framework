@@ -50,14 +50,14 @@ description: Use in this repository whenever something is easier to grasp as a p
 
 ## 고치는 차례
 
-도구: `python3 <이 스킬 폴더>/scripts/notes.py <명령>` (프로젝트 루트에서; 이 스킬 폴더는 스킬을 불러올 때 보이는 base directory).
+도구: `python3 <이 스킬 폴더>/scripts/notes.py <명령>` (프로젝트 루트에서; 이 스킬 폴더는 스킬을 불러올 때 보이는 base directory). 다른 파일을 다루려면 `--file <경로>` — 백업·지난 판은 그 파일 옆 `.index-backup/`·`history/` 에 둔다. 뼈대는 `assets/skeleton.html`.
 
 1. `toc` — 지금 판과 절 목록. 같은 주제가 있으면 새로 만들지 않고 그 절을 고친다. 지금 판과 관련 없는 개념이면 위 「같은 판인가, 새 판인가」대로 `edition` 부터.
 2. `backup` — 고치기 전에 한 번. `private/.index-backup/` 에 최근 15개를 남긴다.
 3. 근거를 모은다 — 파일을 열어 파일:줄을 확인한다. 기억·대화 문장으로 그리지 않는다. 사실과 추정은 따로 표시한다.
 4. 새 절이면 `template <id> "<제목>"` 이 목차 한 줄과 절 틀을 찍어 준다. 목차 줄은 `<!-- toc:start -->` 아래 **맨 위**에, 절은 `<!-- sections:start -->` 아래 **맨 위**에 넣는다(최근 것이 위). 고치는 절이면 그 절을 위로 옮기고 `data-updated`·`data-basis`·머리 줄을 갱신한다.
 5. Edit 로 **그 절과 목차 한 줄만** 바꾼다. 파일 전체를 Write 로 다시 쓰지 않는다 — 다른 절이 실수로 바뀌거나 사라진다.
-6. `check` — 구조·목차 일치·지난 판 링크·바깥 자원·넣으면 안 되는 값 꼴을 보고, 마지막 백업과 견줘 「더한 절·고친 절·없어진 절」을 찍는다(판을 바꿨으면 지난 판 절이 `history/` 에 그대로 있는지 본다). 문제 0, 그리고 바뀐 절이 의도한 것뿐인지 본다.
+6. `check` — 구조·닫히지 않은 태그·목차 일치·지난 판 링크·바깥 자원·넣으면 안 되는 값 꼴을 보고, 마지막 백업과 견줘 「더한 절·고친 절·없어진 절」을 찍는다(판을 바꿨으면 지난 판 절이 `history/` 에 내용 그대로 있는지 본다). 다른 파일과 견주려면 `check --against <파일>`. 문제 0, 그리고 바뀐 절이 의도한 것뿐인지 본다.
 
 ## 절의 꼴
 
@@ -74,7 +74,7 @@ description: Use in this repository whenever something is easier to grasp as a p
 
 - `id` 는 영문 소문자-하이픈, 주제가 같으면 늘 같은 id. 상태는 `current`(현재) · `stale`(낡음 — 다시 확인 전) · `removed`(지운 기능 — 기록용). 목차 딱지는 상태와 맞춘다(`pill ok` 현재 · `pill warn` 낡음 · `pill bad` 지움).
 - 절 안의 묶음은 `<div class="block">` — 절 안에 절을 두지 않는다.
-- 그리는 부품(뼈대 CSS 에 있음): `.lane`(세로 흐름, 왼쪽에 「누가」) · `.flow`(짧은 가로 흐름) · `.branch`(갈래 둘, `.if` 로 조건) · `.two`(나란히 — 전·후 견주기) · `table` · `pre`(요청·응답 꼴) · `.pill` · `.verdict`(결론 상자). 더 필요하면 인라인 SVG.
+- 그리는 부품(`assets/skeleton.html` 의 CSS 에 있음): `.lane`(세로 흐름, 왼쪽에 「누가」) · `.flow`(짧은 가로 흐름) · `.branch`(갈래 둘, `.if` 로 조건) · `.two`(나란히 — 전·후 견주기) · `table` · `pre`(요청·응답 꼴) · `.pill` · `.verdict`(결론 상자). 더 필요하면 인라인 SVG.
 - 색은 뜻으로만 쓴다: 초록(`.ok`) = 정상·저장됨, 주황(`.warn`) = 주의·추정, 빨강(`.bad`) = 없음·막힘, 파랑(`.ext`) = 바깥 시스템.
 - 바깥 스크립트·폰트·이미지(CDN)를 불러오지 않는다 — 미리보기는 네트워크 없이도 그려져야 한다.
 - 말투는 사용자 보고와 같다: 쉬운 말, 짧게, 동그라미 번호(①)·내부 기호·섹션 번호로 설명하지 않는다.
@@ -108,4 +108,4 @@ git log --oneline <data-basis>..HEAD -- <근거 파일들>; git status --short -
 
 - 파일이 없으면 `init [<판 slug> "<판 제목>"]` 이 뼈대를 만든다.
 - 옛 꼴(목차·절 표시가 없는 한 장짜리)이면 그 파일은 지난 판으로 보고 `edition` 으로 `history/` 에 옮긴 뒤 새 판을 연다.
-- 뼈대가 바뀌어 지금 판에 「지난 판」 목록 표시가 없다는 경고가 나오면, 새 뼈대의 그 부분(`<details class="toc history">`)을 목차 아래에 넣고 `history --sync`.
+- 뼈대가 바뀌어 지금 판에 「지난 판」 목록 표시가 없다는 경고가 나오면, `assets/skeleton.html` 의 그 부분(`<details class="toc history">`)을 목차 아래에 넣고 `history --sync`.

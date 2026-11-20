@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="edition" content="__SLUG__">
+<title>__TITLE__</title>
+<style>
+  :root { --bg:#0f1117; --card:#171a23; --line:#2a2f3d; --text:#e2e5ec; --muted:#8a91a3; --accent:#d97757;
+          --ok:#4fc08d; --warn:#e6b450; --bad:#f0616d; --ext:#6ea8fe; }
+  html, body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.6 system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 4px; } h3 { font-size:14px; margin:16px 0 6px; color:var(--muted); }
+  a { color:var(--ext); }
+  .sub, .meta, .when { color:var(--muted); font-size:12px; }
+  .toc { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; margin:12px 0; }
+  .toc ol, .toc ul { margin:6px 0; padding-left:20px; } .toc li.none { color:var(--muted); list-style:none; margin-left:-20px; }
+  .toc.history summary { cursor:pointer; color:var(--muted); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:16px 0; }
+  section[data-status="stale"] { border-color:var(--warn); } section[data-status="removed"] { opacity:.7; border-style:dashed; }
+  .verdict { border-left:3px solid var(--accent); background:#1d212c; padding:8px 12px; border-radius:6px; margin:8px 0 12px; }
+  .block { margin:12px 0; }
+  .pill { display:inline-block; font-size:11px; padding:0 8px; border-radius:999px; border:1px solid currentColor; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .ext { color:var(--ext); }
+  .mono, pre { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }
+  pre { background:#11141b; border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; } th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; } th { color:var(--muted); font-weight:600; }
+  /* .lane: <div class="lane"><div class="step"><span class="who">화면</span><div>무엇을</div></div>…</div> */
+  .lane .step { display:grid; grid-template-columns:6.5em 1fr; gap:10px; }
+  .lane .who { text-align:right; color:var(--muted); font-size:12px; padding-top:6px; }
+  .lane .step > div { border-left:2px solid var(--line); padding:6px 0 6px 12px; }
+  /* .flow: <div class="flow"><span>화면</span><span>API</span>…</div> */
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  .flow > * { background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:4px 10px; }
+  .flow > *:not(:last-child)::after { content:"→"; margin-left:10px; color:var(--muted); }
+  .branch, .two { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+  .branch > div, .two > div { background:#1d212c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .branch .if { font-size:12px; color:var(--warn); margin-bottom:4px; }
+  .files { margin:0; padding-left:18px; }
+  svg { max-width:100%; height:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>__TITLE__</h1>
+  <p class="sub">작업 참고 그림 · 판 시작 __DATE__ · 최근 것이 위</p>
+  <nav class="toc" aria-label="목차">
+    <ol>
+    <!-- toc:start -->
+    <!-- toc:end -->
+    </ol>
+  </nav>
+  <details class="toc history">
+    <summary>지난 판</summary>
+    <ul><!-- history:start -->__HISTORY__<!-- history:end --></ul>
+  </details>
+  <!-- sections:start -->
+  <!-- sections:end -->
+</main>
+</body>
+</html>
