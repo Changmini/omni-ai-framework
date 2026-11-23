@@ -96,6 +96,12 @@ function reduce(prev, ev, now = Date.now()) {
         touchAgent({ status: 'idle', tool: null });
       }
       break;
+    // Made by the app, not a hook: the user interrupted Claude (Esc / Ctrl+C,
+    // then Claude printed "Interrupted"). No hook tells: Stop "does not run if
+    // the stoppage occurred due to a user interrupt".
+    case 'omni:interrupted':
+      if (!agentId) touchMain({ status: 'idle', tool: null, message: null });
+      break;
     case 'StopFailure':
       touch({ status: 'error', tool: null, ...(agentId ? {} : { message: `API 오류: ${ev.error || 'unknown'}` }) });
       break;
