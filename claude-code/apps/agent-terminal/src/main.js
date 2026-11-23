@@ -18,6 +18,11 @@ const { PlanUsage } = require('./plan-usage');
 const { readTextFile } = require('./files');
 const preview = require('./preview');
 const reap = require('./reap');
+const { Journal } = require('./journal');
+const journalLogic = require('./journal-logic');
+const allowRules = require('./allow-rules');
+const { wslToWindows } = require('./wsl');
+const gitView = require('./git-view');
 
 let win = null;
 let manager = null;
@@ -25,6 +30,7 @@ let plan = null;
 let previewWin = null; // the preview in its own window, when detached
 let previewActive = null; // the terminal the main window shows (the detached preview follows it)
 let previewWatch = null;
+let journal = null; // the "돌아보기" records
 
 const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -147,6 +153,21 @@ function openPreviewWindow() {
 const str = (v, max = 100000) => (typeof v === 'string' && v.length <= max ? v : null);
 const int = (v) => (Number.isInteger(v) && v > 0 && v < 10000 ? v : null);
 
+// One day of "돌아보기" (today when `day` is null), for one project or all.
+async function reviewSummary(day, project) {
+  const today = journalLogic.dayOf(Date.now());
+  const d = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
+  const entries = journal.read(d);
+  const hosts = new Map();
+  for (const e of entries) if (e.project && !hosts.has(e.project)) hosts.set(e.project, e.host || e.project);
+  const allowed = new Map();
+  await Promise.all([...hosts].map(async ([p, host]) => {
+    allowed.set(p, await allowRules.allowedIn(host).catch(() => new Set()));
+  }));
+  const s = journalLogic.summarize(entries, { project: project || null, others: journal.otherPrompts(d), allowed });
+  return { day: d, today, days: journal.days(), enabled: journal.enabled, keepDays: journalLogic.KEEP_DAYS, ...s };
+}
+
 function registerIpc() {
   ipcMain.handle('session:create', (_e, opts = {}) =>
     manager.create({
@@ -240,6 +261,31 @@ function registerIpc() {
       manager.shellReported(str(id, 20));
     }
   });
+  // "돌아보기": the day's records summarized; allow rules added only from
+  // what the summary offers for that project (not any rule the page sends).
+  ipcMain.handle('review:summary', (_e, day, project) => reviewSummary(str(day, 10), str(project, 4000)));
+  ipcMain.handle('review:clear', (_e, day) => journal.clear(day === null ? null : str(day, 10) || '-'));
+  ipcMain.handle('review:enable', (_e, on) => journal.setEnabled(on === true));
+  ipcMain.handle('review:allow', async (_e, day, project, rules, write) => {
+    const p = str(project, 4000);
+    const offered = p ? await reviewSummary(str(day, 10), p) : null;
+    const g = offered && offered.approvals.filter((x) => x.project === p);
+    if (!g || !g.length || !Array.isArray(rules)) return { error: '추가할 규칙이 없습니다' };
+    const pick = g.filter((x) => rules.includes(x.rule)).map((x) => x.rule);
+    if (!pick.length) return { error: '추가할 규칙이 없습니다' };
+    const { host, distro } = g[0];
+    const req = {
+      project: p, host: host || p, rules: pick,
+      target: { cwd: p, distro, platform: process.platform },
+      runGit: gitView.runGit,
+      toHost: distro ? (x) => wslToWindows(x, distro) : (x) => x,
+    };
+    try {
+      return write === true ? await allowRules.addAllow(req) : await allowRules.previewAllow(req);
+    } catch (err) {
+      return { error: `설정 파일을 쓰지 못했습니다: ${err.message}` };
+    }
+  });
   ipcMain.handle('dialog:pickFolder', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0];
@@ -330,7 +376,9 @@ if (primaryInstance) app.whenReady().then(async () => {
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
   fs.writeFileSync(settingsFile, JSON.stringify(buildClaudeSettings(hooks.port), null, 2));
 
+  journal = new Journal({ dir: path.join(app.getPath('userData'), 'journal') });
   manager = new SessionManager({
+    journal,
     spawn: pty.spawn,
     emit: send,
     shell: shellLaunch(),

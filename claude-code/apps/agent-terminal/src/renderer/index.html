@@ -137,11 +137,12 @@
          title="끌어서 상세 패널 너비 조절 · 더블클릭: 기본 너비"></div>
     <aside class="inspector" id="inspector" aria-label="상세 패널">
       <div class="inspector-head" role="tablist">
-        <button class="tab" role="tab" data-tab="activity">활동</button>
-        <button class="tab" role="tab" data-tab="files">파일</button>
-        <button class="tab" role="tab" data-tab="git">git</button>
-        <button class="tab" role="tab" data-tab="config">Claude 구성</button>
-        <button class="tab" role="tab" data-tab="preview" hidden>미리보기</button>
+        <button class="tab" role="tab" data-tab="activity" title="활동">활동</button>
+        <button class="tab" role="tab" data-tab="files" title="파일">파일</button>
+        <button class="tab" role="tab" data-tab="git" title="git">git</button>
+        <button class="tab" role="tab" data-tab="config" title="Claude 구성">Claude 구성</button>
+        <button class="tab" role="tab" data-tab="review" title="돌아보기 — 승인한 명령·반복한 요청">돌아보기</button>
+        <button class="tab" role="tab" data-tab="preview" title="미리보기" hidden>미리보기</button>
         <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
       </div>
       <section class="tab-body" data-tab="activity">
@@ -174,9 +175,40 @@
         <div id="config-project" class="hint ellipsis"></div>
         <div id="config-body"></div>
       </section>
+      <section class="tab-body review" data-tab="review">
+        <div class="rv-nav">
+          <button id="rv-prev" class="rv-step" type="button" title="이전 날" aria-label="이전 날">‹</button>
+          <div id="rv-day" class="rv-day"></div>
+          <button id="rv-next" class="rv-step" type="button" title="다음 날" aria-label="다음 날">›</button>
+        </div>
+        <div class="rv-bar">
+          <select id="rv-project" class="rv-select" aria-label="프로젝트"></select>
+          <label class="check rv-rec" title="끄면 프롬프트·승인 요청을 기록하지 않습니다"><input type="checkbox" id="rv-enabled"> 기록</label>
+        </div>
+        <div id="rv-stats" class="rv-stats"></div>
+        <p id="rv-msg" class="rv-msg" role="status" hidden></p>
+        <div id="rv-body"></div>
+        <div class="rv-foot">
+          <p id="rv-where" class="hint">기록은 이 PC의 앱 데이터 폴더에만 저장됩니다.</p>
+          <div class="rv-foot-btns">
+            <button id="rv-clear-day" class="btn" type="button">이 날 기록 지우기</button>
+            <button id="rv-clear-all" class="btn" type="button">전부 지우기</button>
+          </div>
+        </div>
+      </section>
     </aside>
   </div>
 
+  <div id="rv-dialog" class="rv-overlay" hidden>
+    <div class="rv-dialog" role="dialog" aria-modal="true" aria-labelledby="rv-dialog-title">
+      <h3 id="rv-dialog-title">허용 목록에 추가할까요?</h3>
+      <div id="rv-dialog-body"></div>
+      <div class="rv-dialog-btns">
+        <button id="rv-dialog-cancel" class="btn" type="button">취소</button>
+        <button id="rv-dialog-ok" class="btn primary" type="button">추가</button>
+      </div>
+    </div>
+  </div>
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
