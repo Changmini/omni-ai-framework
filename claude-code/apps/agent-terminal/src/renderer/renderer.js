@@ -2669,6 +2669,7 @@ const rv = {
   data: null,
   open: new Set(), // expanded items
   picked: new Set(), // "project\nrule" checked for the bulk add
+  pickedFix: new Set(), // keys of the corrections checked
   seq: 0,
   els: {
     prev: $('#rv-prev'), next: $('#rv-next'), day: $('#rv-day'), project: $('#rv-project'), enabled: $('#rv-enabled'),
@@ -2736,7 +2737,7 @@ function renderReview() {
   if (!c.prompts && !c.permissions) {
     body.push(h('p', 'hint rv-empty', d.enabled ? '아직 모인 게 없어요. Claude와 일하면 승인한 명령과 반복한 요청이 여기 모입니다.' : '이 날 기록이 없어요.'));
   } else {
-    body.push(...renderApprovals(d), ...renderRepeats(d));
+    body.push(...renderApprovals(d), ...renderRepeats(d), ...renderCorrections(d));
   }
   els.body.replaceChildren(...body);
 }
@@ -2830,6 +2831,65 @@ function renderRepeats(d) {
   return [head, list, h('p', 'hint', '같은 말·거의 같은 말(띄어쓰기·문장부호 차이, 뒤에 덧붙인 말)을 묶습니다.')];
 }
 
+// Sentences that corrected how Claude works. The picked ones go to Claude
+// as a request to turn them into what lives in the project's .claude/
+// folder; CLAUDE.md is left to the user (a file the team shares).
+function renderCorrections(d) {
+  const head = h('h4', 'rv-h', '고쳐 준 말 ');
+  head.append(h('span', null, '— .claude/ 요소 후보'));
+  if (!d.corrections.length) return [head, h('p', 'hint', "「~하지 마」, 「앞으로는」 같은 말이 없어요.")];
+  const list = h('ul', 'rv-list');
+  for (const g of d.corrections) {
+    const key = `fix\n${g.key}`;
+    const li = h('li', 'rv-item');
+    const row = h('div', 'rv-row');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = rv.pickedFix.has(g.key);
+    box.setAttribute('aria-label', `${g.text} 선택`);
+    box.addEventListener('change', () => { if (box.checked) rv.pickedFix.add(g.key); else rv.pickedFix.delete(g.key); renderReview(); });
+    const main = h('span', 'rv-main', g.text);
+    main.title = g.text;
+    main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
+    row.append(box, main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? ` · ${g.days}일` : ''}`));
+    const sub = h('div', 'rv-sub');
+    const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
+    proj.title = g.project || '';
+    sub.append(proj);
+    li.append(row, sub);
+    if (rv.open.has(key)) {
+      const more = h('div', 'rv-more', '보낸 말 전체');
+      for (const x of g.examples) {
+        const ex = h('div', 'rv-ex');
+        ex.append(h('time', null, rvTime(x.t)), x.text);
+        more.append(ex);
+      }
+      li.append(more);
+    }
+    list.append(li);
+  }
+  const out = [head, list];
+  const picked = d.corrections.filter((g) => rv.pickedFix.has(g.key));
+  const bulk = h('div', 'rv-bulk');
+  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `선택한 ${picked.length}개로 Claude에게 부탁` : '고른 말로 Claude에게 부탁');
+  b.type = 'button';
+  b.disabled = !picked.length;
+  b.addEventListener('click', () => askClaudeDir(picked));
+  bulk.append(b);
+  out.push(bulk, h('p', 'hint', 'CLAUDE.md 는 고치지 않고, 이 프로젝트의 .claude/ 안의 요소(스킬·서브에이전트 등)로만 만들어 달라고 부탁합니다. 무엇을 만들지 먼저 보여 주고 확인을 받게 합니다.'));
+  return out;
+}
+
+async function askClaudeDir(picked) {
+  const projects = [...new Set(picked.map((g) => g.project).filter(Boolean))];
+  if (projects.length > 1) { rvMessage('프로젝트가 다른 말이 섞여 있어요. 위에서 프로젝트를 하나 고른 뒤 다시 눌러 주세요.', 'err'); return; }
+  const text = await api.reviewPrompt(picked.map((g) => ({ text: g.text, count: g.count, days: g.days })));
+  if (!text) return;
+  await sendToClaude(projects[0] || null, text);
+  rv.pickedFix.clear();
+  renderReview();
+}
+
 // The confirmation for adding allow rules: what the file will hold. -> added?
 function confirmAllow(project, rules) {
   return new Promise((resolve) => {
@@ -2889,12 +2949,15 @@ function claudeTerminalFor(project) {
 
 // The request to turn the repeated prompts into a skill, put in the input of
 // that project's Claude (not sent: the user reads it and presses Enter).
-async function makeSkill(g) {
-  const text = g.prompt;
-  const a = claudeTerminalFor(g.project);
+function makeSkill(g) {
+  return sendToClaude(g.project, g.prompt);
+}
+
+async function sendToClaude(project, text) {
+  const a = claudeTerminalFor(project);
   if (!a) {
     await api.clipboardWrite(text);
-    rvMessage(`${g.project ? rvBase(g.project) : '이 프로젝트'}에서 Claude가 열린 터미널이 없어 요청을 클립보드에 복사했습니다. Claude를 열고 붙여 넣으세요.`);
+    rvMessage(`${project ? rvBase(project) : '이 프로젝트'}에서 Claude가 열린 터미널이 없어 요청을 클립보드에 복사했습니다. Claude를 열고 붙여 넣으세요.`);
     return;
   }
   select(a.info.id);
@@ -2920,6 +2983,7 @@ function stepReviewDay(delta) {
   rv.day = next === d.today ? null : next;
   rv.open.clear();
   rv.picked.clear();
+  rv.pickedFix.clear();
   rvMessage('');
   loadReview();
 }
@@ -2931,6 +2995,7 @@ rv.els.project.addEventListener('change', () => {
   writePref('reviewProject', rv.project || '');
   rv.open.clear();
   rv.picked.clear();
+  rv.pickedFix.clear();
   loadReview();
 });
 rv.els.enabled.addEventListener('change', () => setReviewEnabled(rv.els.enabled.checked));

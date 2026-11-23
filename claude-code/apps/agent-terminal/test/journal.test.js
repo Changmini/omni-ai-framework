@@ -109,3 +109,24 @@ test('journal: records by day, pairs approvals, deletes a day or all, keeps 30 d
   assert.deepStrictEqual(j.read('../config'), []); // not a day: nothing read
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('corrections: sentences that correct how Claude works, grouped, asked to go into .claude/ only', () => {
+  const p = (text, t = at(2026, 11, 23)) => ({ k: 'prompt', text, t, project: P, host: P });
+  assert.deepStrictEqual(L.correctionSentences('코드 검토 진행해줘. 사소한 건 개선 항목으로 두지마. 너무 자주 반복한다'),
+    ['사소한 건 개선 항목으로 두지마.', '너무 자주 반복한다']);
+  assert.deepStrictEqual(L.correctionSentences('한글 답변 언제까지 말 안 들을거야?'), ['한글 답변 언제까지 말 안 들을거야?']);
+  assert.deepStrictEqual(L.correctionSentences('로그인 화면 버그 고쳐줘'), []);
+  assert.deepStrictEqual(L.correctionSentences('지마켓 검색 결과 정리해줘'), []);
+  assert.deepStrictEqual(L.correctionSentences(`하지 마 ${'x'.repeat(500)}`), []); // a long task, not a correction
+  const g = L.groupCorrections(
+    [p('정신차려 한글로 답해야지.'), p('정신차려, 한글로 답해야지!'), p('레포에서는 빼줘')],
+    [p('정신차려 한글로 답해야지', at(2026, 11, 20))],
+  );
+  assert.deepStrictEqual(g.map((x) => [x.count, x.days, x.project]), [[2, 2, P]]);
+  const q = L.claudeDirPrompt(g);
+  assert.ok(!/[\x00-\x1f]/.test(q));
+  assert.match(q, /\.claude\/ 폴더 안에/);
+  assert.match(q, /CLAUDE\.md 와 \.claude\/ 밖의 파일은 고치지 마/);
+  assert.match(q, /먼저 보여 주고 내 확인을 받아/);
+  assert.strictEqual(L.summarize([p('항상 테스트부터 돌려줘')]).corrections.length, 1);
+});
