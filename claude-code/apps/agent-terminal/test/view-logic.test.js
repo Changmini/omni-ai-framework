@@ -251,3 +251,13 @@ test('promptInput: a prompt shortcut is one message', () => {
   assert.strictEqual(promptInput('첫 줄\n\n  둘째 줄', false), '첫 줄 둘째 줄');
   assert.strictEqual(promptInput('a\x1b[201~\tb\x03', true), 'a[201~b'); // no key or paste-end escape gets through
 });
+
+test('promptBlock: a prompt goes only to a Claude ready for input', () => {
+  const { promptBlock } = require('../src/renderer/view-logic');
+  assert.strictEqual(promptBlock({ status: 'running', claude: { status: 'idle' } }), null);
+  assert.strictEqual(promptBlock({ status: 'running', claude: { status: 'working' } }), null);
+  assert.strictEqual(promptBlock({ status: 'running', claude: { status: 'waiting' } }), 'waiting'); // Enter would answer the dialog
+  assert.strictEqual(promptBlock({ status: 'running', claude: { status: null } }), 'no-claude');
+  assert.strictEqual(promptBlock({ status: 'running' }), 'no-claude');
+  assert.strictEqual(promptBlock({ status: 'exited', claude: { status: 'idle' } }), 'no-claude');
+});

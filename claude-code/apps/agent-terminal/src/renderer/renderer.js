@@ -762,16 +762,17 @@ async function runShortcut(sc) {
   }
 }
 
-// A prompt goes only to a terminal where Claude runs: in a plain shell its
-// words would run as a command. ViewLogic.promptInput makes it one message
+// A prompt goes only to a Claude ready for input (ViewLogic.promptBlock: not
+// a plain shell, not an open approval dialog). ViewLogic.promptInput makes it one message
 // (pasted when the program has bracketed paste on, as Claude's input does).
 // Enter follows separately, as sendLine does: text and Enter in one write
 // can be taken as a paste and not sent.
 async function sendPrompt(sc) {
   const id = activeId;
   const a = agents.get(id);
-  if (!a || !(a.info.claude && a.info.claude.status) || a.info.status === 'exited') {
-    shortcutNotice(sc.id, '이 터미널에 Claude가 없어 보내지 않음');
+  const block = a ? ViewLogic.promptBlock(a.info) : 'no-claude';
+  if (block) {
+    shortcutNotice(sc.id, block === 'waiting' ? 'Claude가 승인을 기다리는 중이라 보내지 않음' : '이 터미널에 Claude가 없어 보내지 않음');
     return;
   }
   api.write(id, ViewLogic.promptInput(sc.command, a.term.modes.bracketedPasteMode));

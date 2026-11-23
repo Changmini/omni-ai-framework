@@ -448,6 +448,17 @@
     return m[1] === today ? time : `${m[1].slice(5)} ${time}`;
   }
 
+  // Why a prompt shortcut must not be sent to a terminal (`info`: its
+  // claude state and status), or null. No Claude: a shell would run the
+  // words as a command. Waiting: the keys would answer the open dialog, and
+  // Enter picks its highlighted choice (e.g. approves a tool call).
+  function promptBlock(info) {
+    const status = info && info.claude && info.claude.status;
+    if (!status || info.status === 'exited') return 'no-claude';
+    if (status === 'waiting') return 'waiting';
+    return null;
+  }
+
   // What a prompt shortcut types before its Enter: one message. Control
   // characters other than line breaks are dropped (they would act as keys).
   // Several lines are pasted when the program has bracketed paste on (a
@@ -461,6 +472,6 @@
 
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
-    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptInput, PREVIEW_MIN, TERMINAL_MIN,
+    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));
