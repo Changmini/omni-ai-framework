@@ -1,12 +1,15 @@
-/* One background and one font family for sidebar and terminal, so the two
-   read as a single surface. --bg must match TERMINAL_THEME.background in
-   renderer.js and backgroundColor in main.js. */
+/* One background for sidebar and terminal, so the two read as a single
+   surface. --bg must match TERMINAL_THEME.background in renderer.js and
+   backgroundColor in main.js. Words of the interface (names, labels,
+   messages) are set in the system's sans font; what is code (paths,
+   commands, hashes, times, counts) keeps the coding font, so the two kinds
+   of text tell themselves apart at a glance. */
 :root {
   --bg: #14161c;
   --panel: #1b1e26;
   --line: #2a2e3a;
   --text: #d7dae0;
-  --muted: #7d8494;
+  --muted: #8e95a5; /* 6.0:1 on --bg, 5.6:1 on --panel (was #7d8494: 4.8 / 4.4): small labels stay readable */
   --accent: #d97757;
   --ok: #4fc08d;
   --busy: #e6b450;
@@ -16,6 +19,9 @@
   /* Installed coding fonts first; the bundled Nanum Gothic Coding covers Hangul
      (and everything, on systems without the others, e.g. Linux/WSL). */
   --mono: "D2Coding", "Cascadia Code", "Fira Code", Consolas, "Nanum Gothic Coding", "DejaVu Sans Mono", monospace;
+  /* The bundled Nanum Gothic Coding last before the generic family: Hangul
+     always has a face, also on Linux/WSL without a Korean sans font. */
+  --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", "Noto Sans KR", "Noto Sans CJK KR", system-ui, "Nanum Gothic Coding", sans-serif;
   --radius: 6px;
 }
 
@@ -32,8 +38,29 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 var(--mono);
+  font: 13px/1.45 var(--sans);
   overflow: hidden;
+}
+
+/* code-like text: the coding font */
+.brand, .agent-sub, #active-cwd, .count, .ctx, .act-time,
+.act[data-kind="tool"] .act-text, .act[data-kind="fail"] .act-text,
+.shortcut-cmd, .tree-head, .tree-name, .git-name, .git-root, .git-when, .git-sync,
+.cfg-name, #config-project, .viewer-path, .viewer-info, .search-count, .text-count, .plan-reset {
+  font-family: var(--mono);
+}
+
+/* keyboard focus is always visible (the terminal draws its own cursor) */
+:where(button, select, summary, a, input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea)):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* The terminal's search-mark strip draws a white 1px border on its left
+   edge (a canvas): cut off, the marks stay. */
+.xterm-decoration-overview-ruler { clip-path: inset(0 0 0 1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
 .app { display: flex; height: 100vh; }
@@ -61,8 +88,7 @@ body {
 .panel { padding: 10px 16px 14px; border-top: 1px solid var(--line); }
 .panel h2 {
   margin: 0 0 8px;
-  font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .08em;
+  font-size: 12px; font-weight: 600;
   color: var(--muted);
   display: flex; gap: 6px; align-items: baseline;
 }
@@ -265,7 +291,7 @@ body.resizing .terminals { pointer-events: none; }
 .dock-head {
   flex: none; display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 9px 16px; background: none; border: 0; cursor: pointer; text-align: left;
-  font: inherit; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
 }
 .dock-head:hover { color: var(--text); }
 .dock-head:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -488,7 +514,7 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .git-root { width: 100%; color: var(--muted); font-size: 11px; }
 .git-list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 /* sections fold like the config groups; the summary keeps the panel's head style */
-.git-group > summary { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--muted); margin-top: 6px; }
+.git-group > summary { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 6px; }
 .git-group > summary:hover { color: var(--text); }
 .git-group > .git-list { margin-left: 4px; }
 .git-file, .git-commit {
@@ -569,8 +595,7 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .tab-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
 .tab-body[hidden] { display: none; }
 .inspector-h {
-  margin: 14px 0 6px; font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted);
 }
 
 /* context detail */
@@ -595,14 +620,16 @@ body.resizing-v { cursor: row-resize; user-select: none; }
   font-size: 11.5px; padding: 3px 4px; border-radius: 4px;
 }
 .act:hover { background: var(--panel); }
-.act-time { color: var(--muted); font-size: 10.5px; }
+.act-time { color: var(--muted); font-size: 11px; }
 .act-tool { color: var(--accent); font-weight: 600; }
 .act-who { color: var(--muted); }
 .act-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .act-file { color: #8fbcff; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(143, 188, 255, .35); text-underline-offset: 2px; }
 .act-file:hover { text-decoration-color: #8fbcff; }
 .act[data-kind="prompt"] .act-tool { color: var(--text); }
-.act[data-kind="prompt"] .act-text { color: var(--text); font-style: italic; }
+/* A prompt starts a turn: marked by a faint band, upright (slanted Hangul reads poorly). */
+.act[data-kind="prompt"] { background: rgba(217, 119, 87, .07); }
+.act[data-kind="prompt"] .act-text { color: var(--text); }
 .act[data-kind="done"] .act-tool { color: var(--ok); }
 .act[data-kind="wait"] .act-tool { color: var(--wait); }
 .act[data-kind="fail"] .act-tool, .act[data-kind="error"] .act-tool { color: var(--err); }

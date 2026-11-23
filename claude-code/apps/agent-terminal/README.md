@@ -7,7 +7,7 @@
 
 | 분류 | 기능 |
 |---|---|
-| 🖥️ **터미널** | 앱을 켜면 PowerShell이 바로 열림 · 여러 터미널을 탭처럼 추가·전환·닫기 · 사이드바와 터미널이 같은 배경색·폰트로 한 화면처럼 보임 |
+| 🖥️ **터미널** | 앱을 켜면 PowerShell이 바로 열림 · 여러 터미널을 탭처럼 추가·전환·닫기 · 사이드바와 터미널이 같은 배경색으로 한 화면처럼 보임 |
 | ⏩ **빠른 전환** | `Ctrl+1`~`Ctrl+9`로 n번째 터미널, `Ctrl+Tab` / `Ctrl+Shift+Tab`으로 다음·이전 터미널. 카드 왼쪽 위에 번호 표시 |
 | 📋 **복사·붙여넣기·검색·링크** | 선택 후 `Ctrl+Shift+C`·우클릭·`Ctrl+C`(선택이 있을 때만)로 복사, `Ctrl+Shift+V`·우클릭으로 붙여넣기, `Ctrl+Shift+F`로 출력 검색(일치 개수 표시), URL은 `Ctrl+클릭`으로 브라우저에서 열기 |
 | 📁 **위치 표시** | 터미널 이름이 현재 폴더 이름으로 자동 변경 · git 브랜치(`⎇`) 표시 · `cd`하면 즉시 반영 |
@@ -364,7 +364,7 @@ test/                  # node --test
 ```
 
 - 보안: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, CSP `script-src 'self'`를 적용했습니다. 앱 창은 다른 페이지로 이동하거나 새 창을 열지 않습니다.
-- 디자인: 사이드바, 터미널, 창 배경을 같은 색(`#14161c`)으로 맞추고, 같은 코딩 폰트(D2Coding → Cascadia Code → Fira Code → Consolas 순)를 씁니다. 이 색을 바꿀 때는 `styles.css`의 `--bg`, `renderer.js`의 `TERMINAL_THEME.background`, `main.js`의 `backgroundColor` 세 곳을 함께 수정하세요.
+- 디자인: 사이드바, 터미널, 창 배경을 같은 색(`#14161c`)으로 맞춥니다. 화면의 말(이름·제목·안내)은 시스템 한글 글꼴(Pretendard → Apple SD Gothic Neo → 맑은 고딕 → Noto Sans KR 순, 없으면 내장 나눔고딕코딩)로, 코드 성격의 글(경로·명령·해시·시간·숫자)과 터미널은 코딩 폰트(D2Coding → Cascadia Code → Fira Code → Consolas 순)로 씁니다. 키보드로 옮겨 간 곳은 테두리로 보이고, 시스템의 '동작 줄이기' 설정을 따릅니다. 이 색을 바꿀 때는 `styles.css`의 `--bg`, `renderer.js`의 `TERMINAL_THEME.background`, `main.js`의 `backgroundColor` 세 곳을 함께 수정하세요.
 
 ## 테스트
 
