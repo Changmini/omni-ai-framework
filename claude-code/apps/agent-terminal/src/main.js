@@ -266,6 +266,12 @@ function registerIpc() {
   ipcMain.handle('review:summary', (_e, day, project) => reviewSummary(str(day, 10), str(project, 4000)));
   ipcMain.handle('review:clear', (_e, day) => journal.clear(day === null ? null : str(day, 10) || '-'));
   ipcMain.handle('review:enable', (_e, on) => journal.setEnabled(on === true));
+  ipcMain.handle('review:prompt', (_e, items) => {
+    const list = (Array.isArray(items) ? items.slice(0, 10) : [])
+      .map((x) => ({ text: str(x && x.text, 300), count: Number(x && x.count) || 1, days: Number(x && x.days) || 1 }))
+      .filter((x) => x.text);
+    return list.length ? journalLogic.claudeDirPrompt(list) : null;
+  });
   ipcMain.handle('review:allow', async (_e, day, project, rules, write) => {
     const p = str(project, 4000);
     const offered = p ? await reviewSummary(str(day, 10), p) : null;

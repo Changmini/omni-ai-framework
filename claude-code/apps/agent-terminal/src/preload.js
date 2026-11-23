@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('agentApi', {
   reviewClear: (day) => ipcRenderer.invoke('review:clear', day),
   reviewEnable: (on) => ipcRenderer.invoke('review:enable', on),
   reviewAllow: (day, project, rules, write) => ipcRenderer.invoke('review:allow', day, project, rules, write),
+  reviewPrompt: (items) => ipcRenderer.invoke('review:prompt', items),
   onData: on('session:data'),
   onExit: on('session:exit'),
   onShell: on('session:shell'),

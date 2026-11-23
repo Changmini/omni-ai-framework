@@ -167,6 +167,71 @@ function groupApprovals(entries, allowed = new Map()) {
     .sort((a, b) => b.count - a.count || a.rule.localeCompare(b.rule));
 }
 
+// ---------- corrections ----------
+
+// Words of a sentence that corrects how Claude works ("…하지 마", "언제까지
+// …", "앞으로는 …", "don't …"). Found here without AI, so some are not
+// corrections ("항상 보이게 해줘"): the user picks, and Claude is asked to
+// leave out what is not about how it works.
+const CORRECTION = /(하지\s?마|지\s?마(?![가-힣])|지\s?말(고|아|라|자)|말아\s?(줘|요)?(?![가-힣])|그게\s?아니|아니라고|언제까지|말\s?(을\s?)?안\s?들|정신\s?차려|앞으로(는)?|다음부터|항상|절대|반드시|자꾸|매번|함부로|기억해|까먹|잊지\s?마|너무\s?자주|몇\s?번(을|이나|째)|\bdon'?t\b|\bdo not\b|\bnever\b|\balways\b|\bstop\b)/i;
+const CORRECTION_PROMPT_MAX = 400; // longer prompts are tasks with pasted text, not corrections
+const CORRECTION_SENTENCE_MAX = 160;
+const CORRECTIONS_MAX = 20;
+
+// The sentences of a prompt that correct how Claude works.
+function correctionSentences(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > CORRECTION_PROMPT_MAX || t.startsWith('/')) return [];
+  return t.split(/(?<=[.!?。？！])\s+|\n+/).map((x) => x.trim()).filter((x) => x && CORRECTION.test(x))
+    .map((x) => (x.length > CORRECTION_SENTENCE_MAX ? `${x.slice(0, CORRECTION_SENTENCE_MAX)}…` : x));
+}
+
+// Correction sentences of the day, the same ones counted together (same key
+// as repeated requests). -> [{ key, text, count, days, project, host, examples: [{ t, text }] }]
+function groupCorrections(prompts, others = []) {
+  const groups = new Map();
+  for (const p of [...prompts].sort((a, b) => a.t - b.t)) {
+    for (const sentence of correctionSentences(p.text)) {
+      const key = promptKey(sentence);
+      if (!key) continue;
+      const g = groups.get(key) || { key, text: sentence, count: 0, projects: new Set(), host: null, examples: [], first: p.t };
+      g.count++;
+      if (p.project) { g.projects.add(p.project); g.host = g.host || p.host || null; }
+      g.examples.push({ t: p.t, text: String(p.text).trim().slice(0, 300) });
+      groups.set(key, g);
+    }
+  }
+  const otherDays = new Map();
+  for (const p of others) {
+    for (const sentence of correctionSentences(p.text)) {
+      const key = promptKey(sentence);
+      if (!otherDays.has(key)) otherDays.set(key, new Set());
+      otherDays.get(key).add(dayOf(p.t));
+    }
+  }
+  return [...groups.values()].map((g) => ({
+    key: g.key,
+    text: g.text,
+    count: g.count,
+    days: 1 + (otherDays.has(g.key) ? [...otherDays.get(g.key)].filter((d) => d !== dayOf(g.first)).length : 0),
+    project: g.projects.size === 1 ? [...g.projects][0] : null,
+    host: g.projects.size === 1 ? g.host : null,
+    examples: g.examples.sort((a, b) => b.t - a.t).slice(0, EXAMPLES),
+  })).sort((a, b) => b.days - a.days || b.count - a.count || b.examples[0].t - a.examples[0].t).slice(0, CORRECTIONS_MAX);
+}
+
+// The request put in Claude's input for the picked corrections: turn them
+// into what goes in the project's .claude/ folder, never CLAUDE.md (a file
+// the team shares: changed only when the user asks for it themselves).
+// One line, no control characters.
+function claudeDirPrompt(items) {
+  const clean = (s) => String(s).replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const texts = items.slice(0, 10).map((g) => `「${clean(g.text)}」${g.count > 1 || g.days > 1 ? `(${g.count}회${g.days > 1 ? `, ${g.days}일` : ''})` : ''}`);
+  return clean(`내가 Claude 에게 일하는 방식을 고쳐 달라고 한 말이야: ${texts.join(', ')}. `
+    + '이 중 Claude 의 작업 방식에 대한 지시만 골라서, 이 프로젝트의 .claude/ 폴더 안에 들어가는 요소(스킬·서브에이전트 등)로 만들어줘. '
+    + 'CLAUDE.md 와 .claude/ 밖의 파일은 고치지 마. 만들기 전에 무엇을 어디에 만들지 먼저 보여 주고 내 확인을 받아.');
+}
+
 // Everything the tab shows for one day (and one project, or all).
 function summarize(entries, { project = null, others = [], allowed = new Map() } = {}) {
   const projects = [...new Set(entries.map((e) => e.project).filter(Boolean))].sort();
@@ -178,6 +243,7 @@ function summarize(entries, { project = null, others = [], allowed = new Map() }
     approvals: groupApprovals(mine, allowed),
     repeats: groupRepeats(mine.filter((e) => e.k === 'prompt'), project ? others.filter((e) => e.project === project) : others)
       .map((g) => ({ ...g, prompt: skillPrompt(g) })),
+    corrections: groupCorrections(mine.filter((e) => e.k === 'prompt'), project ? others.filter((e) => e.project === project) : others),
   };
 }
 
@@ -191,5 +257,5 @@ function skillPrompt(group) {
 
 module.exports = {
   KEEP_DAYS, dayOf, keptDays, promptKey, groupRepeats, isDangerous, prefixOf, bashRules, suggestedRules, rulesFor,
-  groupApprovals, summarize, skillPrompt,
+  groupApprovals, summarize, skillPrompt, correctionSentences, groupCorrections, claudeDirPrompt,
 };
