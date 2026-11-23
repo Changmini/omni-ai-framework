@@ -6,8 +6,8 @@ const api = window.agentApi;
 
 const TERMINAL_THEME = {
   background: '#14161c', // = --bg in styles.css
-  foreground: '#d7dae0',
-  cursor: '#d97757',
+  foreground: '#e3e6ec',
+  cursor: '#e3e6ec', // = --text: colour is kept for the states
   cursorAccent: '#14161c',
   selectionBackground: '#3a3f4f',
   black: '#1b1e26', red: '#f0616d', green: '#4fc08d', yellow: '#e6b450',
@@ -16,11 +16,11 @@ const TERMINAL_THEME = {
   brightBlue: '#8fbcff', brightMagenta: '#dcaaf5', brightCyan: '#80e6e6', brightWhite: '#ffffff',
   scrollbarSliderBackground: 'rgba(125, 132, 148, 0.28)',
   scrollbarSliderHoverBackground: 'rgba(125, 132, 148, 0.5)',
-  scrollbarSliderActiveBackground: 'rgba(217, 119, 87, 0.7)',
+  scrollbarSliderActiveBackground: 'rgba(227, 230, 236, 0.6)',
   overviewRulerBorder: 'transparent',
 };
 const FONT_FAMILY = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
-const CLAUDE_LABEL = { working: '작업 중', waiting: '승인 대기', idle: '대기', error: '오류' };
+const CLAUDE_LABEL = { working: '작업 중', waiting: '승인 대기', idle: '끝남', error: '오류' };
 const SHELL_LABEL = { error: '오류 감지', exited: '종료됨' };
 
 const $ = (sel) => document.querySelector(sel);
@@ -333,14 +333,15 @@ function renderContext(box, ctx) {
   if (!ctx) return;
   box.dataset.level = contextLevel(ctx.pct);
   box.querySelector('.ctx-fill').style.width = `${ctx.pct}%`;
-  box.querySelector('.ctx-text').textContent = `${ctx.pct}% · ${kTokens(ctx.tokens)}`;
+  box.querySelector('.ctx-text').textContent = `${ctx.pct}% ${kTokens(ctx.tokens)}`;
   box.title = contextTitle(ctx);
 }
 
 function claudeSummary(c) {
   if (!c || !c.status) return '';
-  if (c.status === 'working' && c.tool) return `Claude · ${c.tool} 실행 중`;
-  return `Claude · ${CLAUDE_LABEL[c.status] || ''}`;
+  // The state first (the sidebar colours it), then the tool it is about.
+  const label = CLAUDE_LABEL[c.status] || '';
+  return c.tool && (c.status === 'working' || c.status === 'waiting') ? `${label} ${c.tool}` : label;
 }
 
 function h(tag, cls, text) {
@@ -398,7 +399,7 @@ function renderItem(id) {
   if (t) {
     const now = t.inProgress && t.inProgress[0];
     const head = `${c.team ? '팀 작업' : '작업'} ${t.done}/${t.total}`;
-    tasks.textContent = now ? `${head} · ${now.owner ? `${now.owner}: ` : ''}${now.subject}` : head;
+    tasks.textContent = now ? `${head}, ${now.owner ? `${now.owner}: ` : ''}${now.subject}` : head;
   }
   if (id === activeId) renderActive();
 }
@@ -895,9 +896,9 @@ const SEARCH_LOOK = {
     // Distinct from the selection colour (#3a3f4f), which also marks the active match.
     matchBackground: '#2b4a6b',
     matchOverviewRuler: '#6ea8fe',
-    activeMatchBackground: '#7a3d26',
-    activeMatchBorder: '#d97757',
-    activeMatchColorOverviewRuler: '#d97757',
+    activeMatchBackground: '#8a5a12', // as the file viewer's current match
+    activeMatchBorder: '#e9b44c',
+    activeMatchColorOverviewRuler: '#e9b44c',
   },
 };
 
@@ -954,7 +955,7 @@ const cfgEls = { body: $('#config-body'), project: $('#config-project'), refresh
 const CFG_GROUPS = [
   ['skills', '스킬', (x) => [x.name, x.source, x.description]],
   ['plugins', '플러그인', (x) => [`${x.name}${x.version ? ` ${x.version}` : ''}`, x.missing ? '미설치' : x.enabled ? (x.marketplace || '') : '꺼짐', `${x.id}${x.scope ? ` (${x.scope})` : ''}`]],
-  ['hooks', '훅', (x) => [`${x.event}${x.matcher ? ` · ${x.matcher}` : ''}`, x.omni ? 'Omni' : x.source, `${x.type}: ${x.target}`]],
+  ['hooks', '훅', (x) => [`${x.event}${x.matcher ? ` (${x.matcher})` : ''}`, x.omni ? 'Omni' : x.source, `${x.type}: ${x.target}`]],
   ['agents', '서브에이전트', (x) => [x.name, x.source, x.description]],
   ['mcp', 'MCP 서버', (x) => [x.name, x.source, `${x.type}: ${x.description}`]],
 ];
@@ -1120,7 +1121,7 @@ function renderCtxDetail() {
       fill.style.width = '0'; // an empty bar, not a full one
     }
     row.append(h('span', 'ctx-who ellipsis', who), bar,
-      h('span', 'ctx-num', ctx ? `${ctx.pct}% · ${kTokens(ctx.tokens)}/${kTokens(ctx.window)}` : '—'));
+      h('span', 'ctx-num', ctx ? `${ctx.pct}% ${kTokens(ctx.tokens)}/${kTokens(ctx.window)}` : '—'));
     return row;
   }));
 }
@@ -1144,7 +1145,7 @@ function activityRow(id, e) {
   li.dataset.n = String(e.n);
   const label = e.tool || ACT_LABEL[e.kind] || e.kind;
   const text = h('span', 'act-text');
-  if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who} · ` : e.who));
+  if (e.who) text.append(h('span', 'act-who', e.file || e.text ? `${e.who}: ` : e.who));
   if (e.file) {
     text.append(fileLink(id, e.file, shortPath(e.file, agents.get(id)?.info.cwd), e));
   } else {
@@ -1247,7 +1248,7 @@ function cardBody(id, e) {
       const range = [i.offset && `${i.offset}행부터`, i.limit && `${i.limit}행`].filter(Boolean).join(' ');
       const f = r && r.file && typeof r.file === 'object' ? r.file : null;
       const got = f && f.numLines != null ? `${f.numLines}행 읽음${f.totalLines ? ` (전체 ${f.totalLines}행)` : ''}` : '';
-      if (range || got) out.push(h('div', 'card-note', [range, got].filter(Boolean).join(' · ')));
+      if (range || got) out.push(h('div', 'card-note', [range, got].filter(Boolean).join(', ')));
     } else if (tool === 'Grep' || tool === 'Glob') {
       const cond = ['pattern', 'path', 'glob', 'type', 'output_mode'].filter((k) => i[k] != null).map((k) => `${k}: ${asText(i[k])}`);
       out.push(cardSec('조건', cond.join('\n')));
@@ -1528,7 +1529,7 @@ async function showView(key) {
   } else {
     const { box, count } = codeView(r.text || '');
     viewer.body.replaceChildren(box);
-    viewer.info.textContent = `${count}줄 · ${sizeText(r.size || 0)}${r.truncated ? ' · 앞부분만 표시' : ''}`;
+    viewer.info.textContent = `${count}줄, ${sizeText(r.size || 0)}${r.truncated ? ', 앞부분만 표시' : ''}`;
     if (viewing.line && viewing.line <= count) markLine(box, viewing.line);
   }
   afterViewShown();
@@ -1982,7 +1983,7 @@ function renderGit(id, r, fresh = true) {
     return;
   }
   gitEls.head.append(h('span', 'git-branch', r.branch ? `⎇ ${r.branch}` : '⎇ (브랜치 없음)'));
-  gitEls.head.append(h('span', 'git-sync', r.upstream ? `↑${r.ahead} ↓${r.behind} · ${r.upstream}` : '원격 브랜치 없음'));
+  gitEls.head.append(h('span', 'git-sync', r.upstream ? `${r.upstream} ↑${r.ahead} ↓${r.behind}` : '원격 브랜치 없음'));
   gitEls.head.append(h('span', 'git-root ellipsis', r.root || '/'));
   gitEls.head.lastChild.title = r.root || '/';
   const groups = [
@@ -2761,7 +2762,7 @@ function renderApprovals(d) {
     main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
     row.append(box, main, h('span', 'rv-count', `${g.count}회`));
     const sub = h('div', 'rv-sub');
-    const proj = h('span', 'rv-proj', `${rvBase(g.project)} · ${/^(\w+)/.exec(g.rule)[1]}`);
+    const proj = h('span', 'rv-proj', rvBase(g.project));
     proj.title = g.project || '';
     const add = h('button', 'btn rv-act', g.added ? '추가됨' : '허용에 추가');
     add.type = 'button';
@@ -2806,7 +2807,7 @@ function renderRepeats(d) {
     const main = h('span', 'rv-main', `「${g.text}」`);
     main.title = g.text;
     main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
-    row.append(main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? ` · ${g.days}일` : ''}`));
+    row.append(main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? `, ${g.days}일` : ''}`));
     const sub = h('div', 'rv-sub');
     const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
     proj.title = g.project || '';
@@ -2848,7 +2849,7 @@ function renderCorrections(d) {
     const main = h('span', 'rv-main', g.text);
     main.title = g.text;
     main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
-    row.append(box, main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? ` · ${g.days}일` : ''}`));
+    row.append(box, main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? `, ${g.days}일` : ''}`));
     const sub = h('div', 'rv-sub');
     const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
     proj.title = g.project || '';
