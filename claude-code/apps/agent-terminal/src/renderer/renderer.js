@@ -2673,7 +2673,7 @@ const rv = {
   seq: 0,
   els: {
     prev: $('#rv-prev'), next: $('#rv-next'), day: $('#rv-day'), project: $('#rv-project'), enabled: $('#rv-enabled'),
-    stats: $('#rv-stats'), msg: $('#rv-msg'), body: $('#rv-body'), where: $('#rv-where'),
+    stats: $('#rv-stats'), msg: $('#rv-msg'), body: $('#rv-body'),
     clearDay: $('#rv-clear-day'), clearAll: $('#rv-clear-all'),
     dialog: $('#rv-dialog'), dialogBody: $('#rv-dialog-body'), dialogOk: $('#rv-dialog-ok'), dialogCancel: $('#rv-dialog-cancel'),
   },
@@ -2718,7 +2718,7 @@ function renderReview() {
   els.project.firstChild.value = '';
   els.project.value = rv.project || '';
   els.enabled.checked = d.enabled;
-  els.where.textContent = `기록은 이 PC의 앱 데이터 폴더에만 저장됩니다 · ${d.keepDays}일 보관`;
+  els.clearAll.title = `최근 ${d.keepDays}일 기록 전부 (이 PC에만 저장)`;
   const c = d.counts;
   els.stats.replaceChildren(...[['프롬프트', c.prompts], ['승인 요청', c.permissions], ['중단', c.interrupts], ['오류', c.errors]]
     .map(([k, n]) => { const s = h('span', null, `${k} `); s.append(h('b', null, String(n))); return s; }));
@@ -2727,7 +2727,7 @@ function renderReview() {
 
   const body = [];
   if (!d.enabled) {
-    const p = h('p', 'hint rv-empty', '기록이 꺼져 있어요. ');
+    const p = h('p', 'hint rv-empty', '기록 꺼짐 ');
     const on = h('button', 'btn rv-act', '켜기');
     on.type = 'button';
     on.addEventListener('click', () => setReviewEnabled(true));
@@ -2735,7 +2735,7 @@ function renderReview() {
     body.push(p);
   }
   if (!c.prompts && !c.permissions) {
-    body.push(h('p', 'hint rv-empty', d.enabled ? '아직 모인 게 없어요. Claude와 일하면 승인한 명령과 반복한 요청이 여기 모입니다.' : '이 날 기록이 없어요.'));
+    body.push(h('p', 'hint rv-empty', '기록 없음'));
   } else {
     body.push(...renderApprovals(d), ...renderRepeats(d), ...renderCorrections(d));
   }
@@ -2743,9 +2743,8 @@ function renderReview() {
 }
 
 function renderApprovals(d) {
-  const head = h('h4', 'rv-h', '자주 승인한 명령 ');
-  head.append(h('span', null, '— 허용 목록 후보'));
-  if (!d.approvals.length) return [head, h('p', 'hint', '승인한 명령이 없어요. (지우기·push 처럼 위험한 명령은 후보에서 뺍니다)')];
+  const head = h('h4', 'rv-h', '자주 승인한 명령');
+  if (!d.approvals.length) return [head, h('p', 'hint', '없음')];
   const list = h('ul', 'rv-list');
   for (const g of d.approvals) {
     const key = `${g.project}\n${g.rule}`;
@@ -2797,9 +2796,8 @@ function renderApprovals(d) {
 }
 
 function renderRepeats(d) {
-  const head = h('h4', 'rv-h', '반복한 요청 ');
-  head.append(h('span', null, '— 스킬 후보'));
-  if (!d.repeats.length) return [head, h('p', 'hint', '두 번 넘게 한 요청이 없어요.')];
+  const head = h('h4', 'rv-h', '반복한 요청');
+  if (!d.repeats.length) return [head, h('p', 'hint', '없음')];
   const list = h('ul', 'rv-list');
   for (const g of d.repeats) {
     const key = `repeat\n${g.key}`;
@@ -2828,16 +2826,15 @@ function renderRepeats(d) {
     }
     list.append(li);
   }
-  return [head, list, h('p', 'hint', '같은 말·거의 같은 말(띄어쓰기·문장부호 차이, 뒤에 덧붙인 말)을 묶습니다.')];
+  return [head, list];
 }
 
 // Sentences that corrected how Claude works. The picked ones go to Claude
 // as a request to turn them into what lives in the project's .claude/
 // folder; CLAUDE.md is left to the user (a file the team shares).
 function renderCorrections(d) {
-  const head = h('h4', 'rv-h', '고쳐 준 말 ');
-  head.append(h('span', null, '— .claude/ 요소 후보'));
-  if (!d.corrections.length) return [head, h('p', 'hint', "「~하지 마」, 「앞으로는」 같은 말이 없어요.")];
+  const head = h('h4', 'rv-h', '고쳐 준 말');
+  if (!d.corrections.length) return [head, h('p', 'hint', '없음')];
   const list = h('ul', 'rv-list');
   for (const g of d.corrections) {
     const key = `fix\n${g.key}`;
@@ -2871,18 +2868,19 @@ function renderCorrections(d) {
   const out = [head, list];
   const picked = d.corrections.filter((g) => rv.pickedFix.has(g.key));
   const bulk = h('div', 'rv-bulk');
-  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `선택한 ${picked.length}개로 Claude에게 부탁` : '고른 말로 Claude에게 부탁');
+  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `선택한 ${picked.length}개 .claude/에 만들기` : '.claude/에 만들기');
+  b.title = 'Claude 입력칸에 요청을 채움 (CLAUDE.md 는 고치지 않음)';
   b.type = 'button';
   b.disabled = !picked.length;
   b.addEventListener('click', () => askClaudeDir(picked));
   bulk.append(b);
-  out.push(bulk, h('p', 'hint', 'CLAUDE.md 는 고치지 않고, 이 프로젝트의 .claude/ 안의 요소(스킬·서브에이전트 등)로만 만들어 달라고 부탁합니다. 무엇을 만들지 먼저 보여 주고 확인을 받게 합니다.'));
+  out.push(bulk);
   return out;
 }
 
 async function askClaudeDir(picked) {
   const projects = [...new Set(picked.map((g) => g.project).filter(Boolean))];
-  if (projects.length > 1) { rvMessage('프로젝트가 다른 말이 섞여 있어요. 위에서 프로젝트를 하나 고른 뒤 다시 눌러 주세요.', 'err'); return; }
+  if (projects.length > 1) { rvMessage('한 프로젝트의 말만 골라 주세요', 'err'); return; }
   const text = await api.reviewPrompt(picked.map((g) => ({ text: g.text, count: g.count, days: g.days })));
   if (!text) return;
   await sendToClaude(projects[0] || null, text);
@@ -2916,13 +2914,10 @@ function confirmAllow(project, rules) {
       pre.append('{\n  "permissions": {\n    "allow": [\n');
       for (const l of lines) pre.append(l.startsWith('+') ? h('span', 'rv-add', `${l}\n`) : `${l}\n`);
       pre.append('    ]\n  }\n}');
-      const git = p.ignored === true ? 'git 에서 이미 제외된 파일입니다.'
-        : p.ignored === false ? '커밋되지 않게 .git/info/exclude(이 PC에만 있음)에도 함께 적습니다.'
-          : 'git 저장소가 아니거나 확인할 수 없습니다.';
       els.dialogBody.replaceChildren(
-        h('p', 'hint', `${p.file}${p.exists ? '' : ' (새로 만듦)'}`),
+        h('p', 'hint', `${p.file}${p.exists ? '' : ' (새 파일)'}`),
         pre,
-        h('p', 'hint', `다음부터 이 명령은 승인 없이 실행됩니다. 다른 설정은 그대로 둡니다. ${git}`),
+        ...(p.ignored === false ? [h('p', 'hint', '+ .git/info/exclude (커밋 안 됨)')] : []),
       );
       els.dialogOk.disabled = !p.add.length;
       els.dialogOk.onclick = async () => {
@@ -2930,7 +2925,7 @@ function confirmAllow(project, rules) {
         const r = await api.reviewAllow(rv.data.day, project, rules, true).catch((err) => ({ error: err.message }));
         close(Boolean(r && !r.error));
         if (!r || r.error) rvMessage((r && r.error) || '추가하지 못했습니다', 'err');
-        else rvMessage(`${r.added}개를 허용 목록에 추가했습니다 (${r.file})`, 'ok');
+        else rvMessage(`${r.added}개 추가함`, 'ok');
         for (const rule of rules) rv.picked.delete(`${project}\n${rule}`);
         loadReview();
       };
@@ -2957,20 +2952,20 @@ async function sendToClaude(project, text) {
   const a = claudeTerminalFor(project);
   if (!a) {
     await api.clipboardWrite(text);
-    rvMessage(`${project ? rvBase(project) : '이 프로젝트'}에서 Claude가 열린 터미널이 없어 요청을 클립보드에 복사했습니다. Claude를 열고 붙여 넣으세요.`);
+    rvMessage('Claude 터미널이 없어 클립보드에 복사함');
     return;
   }
   select(a.info.id);
   api.write(a.info.id, text);
   a.term.focus();
   rvMessage(a.info.claude.status === 'working'
-    ? 'Claude가 일하는 중이라 입력칸에 채워만 뒀습니다. 끝난 뒤 확인하고 Enter 를 누르세요.'
-    : 'Claude 입력칸에 채워 뒀습니다. 확인하고 Enter 를 누르면 시작합니다.');
+    ? 'Claude 입력칸에 채움 · 작업이 끝난 뒤 Enter'
+    : 'Claude 입력칸에 채움 · Enter로 보내기');
 }
 
 async function setReviewEnabled(on) {
   await api.reviewEnable(on);
-  rvMessage(on ? '기록을 켰습니다.' : '기록을 껐습니다. 이미 모인 기록은 지우기 전까지 남아 있습니다.', 'ok');
+  rvMessage(on ? '기록 켜짐' : '기록 꺼짐', 'ok');
   loadReview();
 }
 
@@ -3004,14 +2999,14 @@ rv.els.clearDay.addEventListener('click', async () => {
   if (!d || !window.confirm(`${rvDayLabel(d.day)} 기록을 지울까요? 되돌릴 수 없습니다.`)) return;
   await api.reviewClear(d.day);
   rv.day = null;
-  rvMessage(`${rvDayLabel(d.day)} 기록을 지웠습니다.`, 'ok');
+  rvMessage(`${rvDayLabel(d.day)} 기록 지움`, 'ok');
   loadReview();
 });
 rv.els.clearAll.addEventListener('click', async () => {
   if (!rv.data || !window.confirm(`모아 둔 기록(최근 ${rv.data.keepDays}일)을 전부 지울까요? 되돌릴 수 없습니다.`)) return;
   await api.reviewClear(null);
   rv.day = null;
-  rvMessage('기록을 전부 지웠습니다.', 'ok');
+  rvMessage('기록 전부 지움', 'ok');
   loadReview();
 });
 rv.els.dialog.addEventListener('click', (e) => { if (e.target === rv.els.dialog) rv.els.dialogCancel.click(); });
