@@ -1,5 +1,7 @@
 # claude-code/ — Claude Code-only distribution
 
+The repository-wide rules in [../AGENTS.md](../AGENTS.md) apply here; this file adds the rules for this folder.
+
 Everything in this folder works only with Claude Code: a plugin marketplace plus a per-project template. Tool-neutral work belongs in `../universal/`. Paths below are relative to this folder. Everything here follows the official docs at code.claude.com/docs and platform.claude.com/docs; see ARCHITECTURE.md for the source of each convention.
 
 ## Commands
