@@ -26,7 +26,7 @@
 ## 2. 계층 모델
 
 ```text
-  항상 로드 ─┐  L0  AGENTS.md (루트)              진입점: 작업 절차 + 스킬·역할 목록 + 문서·안전 규칙 + Project   ✅
+  항상 로드 ─┐  L0  AGENTS.md (루트)              진입점: 작업 원칙 + 작업 절차 + 스킬·역할 목록 + 문서·안전 규칙 + Project   ✅
              │  L1  <dir>/AGENTS.md (하위)        범위 규칙 — "가장 가까운 파일이 우선"                          ✅ (표준 규칙)
   필요 시 ───┤  L2  .agents/skills/<name>/        절차 지식 (Agent Skills 표준)                                  ✅
              │      .agents/agents/<role>.md      서브 에이전트 역할 (자체 완결 프롬프트)                         ✅
@@ -64,7 +64,7 @@
 
 ```text
 <project>/
-├── AGENTS.md                         # [관리 블록] 절차·목록·문서·안전 + [Project] 프로젝트가 채움
+├── AGENTS.md                         # [관리 블록] 원칙·절차·목록·문서·안전 + [Project] 프로젝트가 채움
 ├── <subdir>/AGENTS.md                # 범위 규칙 (선택)
 └── .agents/
     ├── skills/<name>/                # SKILL.md + references/ assets/ scripts/ + evals/evals.json
@@ -87,7 +87,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
 #### 여러 모델이 같은 의미로 읽게 하는 프롬프트 규칙
 | 규칙 | 적용 위치 |
 | --- | --- |
-| 프롬프트 본문은 영어. 응답 언어는 "Respond in the language the user writes in"으로 분리 | 관리 블록, 스킬, 역할 |
+| 프롬프트 본문은 영어. 응답 언어는 관리 블록 첫머리의 "Reply in Korean"으로 분리 | 관리 블록 |
 | 번호 매긴 절차와 짧은 명령문. 한 문장에 한 지시 | 전부 |
 | 용어 고정: skill / role / template / verify command | 전부 |
 | 참조는 저장소 루트 기준 상대경로 문자열. 도구 고유 import 문법 미사용 | 관리 블록 |
