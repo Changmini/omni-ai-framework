@@ -24,9 +24,10 @@ const TEAM_TOOL = /^(TaskCreate|TaskUpdate|TeamCreate|TeamDelete|Agent|Task)$/;
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
 const EARLY_MS = 10000; // how long a result that came before its call waits for it
 // After Esc or Ctrl+C while Claude works: how long its "Interrupted" is looked
-// for in the output, and how much of the output is kept to find it.
+// for in the output, and how much of a chunk is kept for a word split between
+// two chunks (each chunk is searched whole).
 const INTERRUPT_WAIT_MS = 5000;
-const INTERRUPT_TAIL = 2000;
+const INTERRUPT_TAIL = 200;
 const ANSI = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g;
 const PANE_CHECK_EVERY = 10; // status polls between checks that tmux panes still exist
 const PANE_CHECK_ACTIVE_MS = 5000; // ...while a listed session was heard from in the last minute
@@ -193,8 +194,8 @@ class SessionManager {
   watchInterrupt(s, data) {
     const w = s.interrupt;
     if (this.now() - w.at > INTERRUPT_WAIT_MS) { s.interrupt = null; return; }
-    w.tail = (w.tail + data).slice(-INTERRUPT_TAIL);
-    if (!w.tail.replace(ANSI, '').includes('Interrupted')) return;
+    const text = w.tail + data;
+    if (!text.replace(ANSI, '').includes('Interrupted')) { w.tail = text.slice(-INTERRUPT_TAIL); return; }
     s.interrupt = null;
     if (!['working', 'waiting'].includes(s.claude.status)) return; // a hook came first
     s.claude = reduce(s.claude, { hook_event_name: 'omni:interrupted' }, this.now());

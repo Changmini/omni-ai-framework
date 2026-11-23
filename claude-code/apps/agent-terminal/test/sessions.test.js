@@ -399,4 +399,9 @@ test('Esc then Claude\'s "Interrupted" sets a working Claude idle (no hook comes
   m.write(id, '\x03');
   ptys[0].emitData('Interrupted');
   assert.strictEqual(status(), 'idle');
+  // One large chunk: the word first, then a long redraw of the screen.
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A' });
+  m.write(id, '\x1b');
+  ptys[0].emitData(`⎿  Interrupted\r\n${'\x1b[2K\x1b[38;5;246m─\x1b[39m'.repeat(400)}`);
+  assert.strictEqual(status(), 'idle');
 });
