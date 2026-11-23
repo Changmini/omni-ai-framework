@@ -368,3 +368,35 @@ test('a kept tmux server is looked at again until none is kept', async () => {
   m.watchKeptTmux(10);
   assert.strictEqual(m.tmuxTimer, null, 'not after the app quits');
 });
+
+test('Esc then Claude\'s "Interrupted" sets a working Claude idle (no hook comes on an interrupt)', () => {
+  let t = 1000;
+  const events = [];
+  const ptys = [];
+  const m = new SessionManager({ spawn: () => { const p = fakePty(); ptys.push(p); return p; }, emit: (c, p) => events.push([c, p]), shell: { file: 'sh', args: [] }, pollMs: 0, now: () => t });
+  const { id } = m.create({});
+  const status = () => events.filter(([c]) => c === 'session:agent').at(-1)[1].claude.status;
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A' });
+  m.onHookEvent(id, { hook_event_name: 'PreToolUse', session_id: 'A', tool_name: 'Bash' });
+  // Not armed: the word without Esc / Ctrl+C before it, or after an arrow key.
+  ptys[0].emitData('Interrupted');
+  m.write(id, '\x1b[A');
+  ptys[0].emitData('Interrupted');
+  assert.strictEqual(status(), 'working');
+  // Esc, then the word split over two chunks with colours in between.
+  m.write(id, '\x1b');
+  ptys[0].emitData('\x1b[2K  \x1b[31m⎿  Inter');
+  assert.strictEqual(status(), 'working');
+  ptys[0].emitData('rupted\x1b[39m · What should Claude do instead?');
+  assert.strictEqual(status(), 'idle');
+  assert.deepStrictEqual(ptys[0].written.slice(-1), ['\x1b']); // the key still reaches Claude
+  // Ctrl+C works too; the word too late (after the wait) changes nothing.
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A' });
+  m.write(id, '\x03');
+  t += 6000;
+  ptys[0].emitData('Interrupted');
+  assert.strictEqual(status(), 'working');
+  m.write(id, '\x03');
+  ptys[0].emitData('Interrupted');
+  assert.strictEqual(status(), 'idle');
+});

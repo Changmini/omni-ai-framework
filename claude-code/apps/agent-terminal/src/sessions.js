@@ -23,6 +23,11 @@ const TEAM_IDLE_REREAD_MS = 10000; // re-read team/task files at least this ofte
 const TEAM_TOOL = /^(TaskCreate|TaskUpdate|TeamCreate|TeamDelete|Agent|Task)$/;
 const USAGE_MIN_MS = 3000; // transcript reads per session, at most this often
 const EARLY_MS = 10000; // how long a result that came before its call waits for it
+// After Esc or Ctrl+C while Claude works: how long its "Interrupted" is looked
+// for in the output, and how much of the output is kept to find it.
+const INTERRUPT_WAIT_MS = 5000;
+const INTERRUPT_TAIL = 2000;
+const ANSI = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g;
 const PANE_CHECK_EVERY = 10; // status polls between checks that tmux panes still exist
 const PANE_CHECK_ACTIVE_MS = 5000; // ...while a listed session was heard from in the last minute
 const PANE_CHECK_IDLE_MS = 30000; // ...otherwise
@@ -146,6 +151,7 @@ class SessionManager {
 
     pty.onData((data) => {
       session.tracker.onOutput(data);
+      if (session.interrupt) this.watchInterrupt(session, data);
       this.emit('session:data', { id, data });
     });
     pty.onExit(({ exitCode }) => {
@@ -172,8 +178,27 @@ class SessionManager {
     const s = this.sessions.get(id);
     if (!s || s.tracker.exited) return false;
     if (/[\r\n]/.test(data)) s.tracker.onInput();
+    // Esc or Ctrl+C may interrupt a working Claude, and no hook says so: its
+    // light would stay on "working". Claude's "Interrupted" in the output
+    // that follows sets it idle (watchInterrupt). The word is what Claude Code
+    // shows on screen, not a documented interface: if it changes, the light
+    // only stays as it was before this.
+    if ((data === '\x1b' || data === '\x03') && ['working', 'waiting'].includes(s.claude.status)) {
+      s.interrupt = { at: this.now(), tail: '' };
+    }
     s.pty.write(data);
     return true;
+  }
+
+  watchInterrupt(s, data) {
+    const w = s.interrupt;
+    if (this.now() - w.at > INTERRUPT_WAIT_MS) { s.interrupt = null; return; }
+    w.tail = (w.tail + data).slice(-INTERRUPT_TAIL);
+    if (!w.tail.replace(ANSI, '').includes('Interrupted')) return;
+    s.interrupt = null;
+    if (!['working', 'waiting'].includes(s.claude.status)) return; // a hook came first
+    s.claude = reduce(s.claude, { hook_event_name: 'omni:interrupted' }, this.now());
+    this.emitAgent(s);
   }
 
   sendLine(id, text) {
