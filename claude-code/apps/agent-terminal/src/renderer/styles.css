@@ -614,6 +614,17 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .inspector-head:has(.tab[data-tab="preview"]:not([hidden])) .tab { padding: 2px 6px 0; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+/* Tabs read as separate items ("git", "Claude 구성", not "git Claude 구성"):
+   a short rule between two tabs, and the selected one on the panel tone. */
+.inspector-head .tab { position: relative; }
+.inspector-head .tab + .tab::before {
+  content: ""; position: absolute; left: 0; top: 50%; width: 1px; height: 14px; margin-top: -6px;
+  background: #3d4350;
+}
+.inspector-head .tab[aria-selected="true"] { background: var(--panel); }
+.inspector-head .tab[aria-selected="true"]::before,
+.inspector-head .tab[aria-selected="true"] + .tab::before { background: transparent; }
+.inspector-head .tab:hover:not([aria-selected="true"]) { background: rgba(255, 255, 255, .03); }
 .inspector-head .mini-btn { align-self: center; margin-left: auto; }
 .inspector-head .mini-btn[hidden] { display: none; }
 .tab-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
