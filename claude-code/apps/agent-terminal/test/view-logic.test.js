@@ -243,3 +243,11 @@ test('findAll: every match in the shown text, smart case, capped', () => {
   assert.strictEqual(findAll('x'.repeat(100), 'x', 10).length, 10);
   assert.deepStrictEqual(findAll('abc', ''), []);
 });
+
+test('promptInput: a prompt shortcut is one message', () => {
+  const { promptInput } = require('../src/renderer/view-logic');
+  assert.strictEqual(promptInput('코드 검토 진행해줘  \n', true), '코드 검토 진행해줘');
+  assert.strictEqual(promptInput('첫 줄\r\n둘째 줄', true), '\x1b[200~첫 줄\r둘째 줄\x1b[201~');
+  assert.strictEqual(promptInput('첫 줄\n\n  둘째 줄', false), '첫 줄 둘째 줄');
+  assert.strictEqual(promptInput('a\x1b[201~\tb\x03', true), 'a[201~b'); // no key or paste-end escape gets through
+});

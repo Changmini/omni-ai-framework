@@ -692,13 +692,17 @@ sidebarToggle.addEventListener('click', () => {
 setSidebarCollapsed(readPref('sidebarCollapsed', 'false') === 'true');
 
 // ---------- shortcuts ----------
-// A saved list of commands. Clicking one types them into a terminal, one line
-// at a time: each line waits until the previous one's output has settled.
+// A saved list of two kinds. A command shortcut types its lines into a
+// terminal, one line at a time: each line waits until the previous one's
+// output has settled.
 // A line that enters WSL (`wsl -d Ubuntu`) waits longer: until the shell
 // inside reports in (its first prompt), since WSL may start silently for
 // seconds and a line typed before its shell exists is lost. A new terminal
 // likewise waits for its shell's first report. Works the same on Windows,
 // WSL and Linux because it is just typing.
+// A prompt shortcut sends its text as one message to the Claude running in
+// the shown terminal (see sendPrompt). Shortcuts saved before kinds existed
+// have no `kind` and are commands.
 const scEls = {
   list: $('#shortcut-list'), empty: $('#shortcut-empty'), add: $('#shortcut-add'),
   form: $('#shortcut-form'), cancel: $('#shortcut-cancel'),
@@ -751,11 +755,44 @@ async function runShortcut(sc) {
   if (!lines.length || runningShortcuts.has(sc.id)) return;
   runningShortcuts.add(sc.id);
   try {
-    await typeShortcut(sc, lines);
+    if (sc.kind === 'prompt') await sendPrompt(sc);
+    else await typeShortcut(sc, lines);
   } finally {
     runningShortcuts.delete(sc.id);
   }
 }
+
+// A prompt goes only to a terminal where Claude runs: in a plain shell its
+// words would run as a command. ViewLogic.promptInput makes it one message
+// (pasted when the program has bracketed paste on, as Claude's input does).
+// Enter follows separately, as sendLine does: text and Enter in one write
+// can be taken as a paste and not sent.
+async function sendPrompt(sc) {
+  const id = activeId;
+  const a = agents.get(id);
+  if (!a || !(a.info.claude && a.info.claude.status) || a.info.status === 'exited') {
+    shortcutNotice(sc.id, '이 터미널에 Claude가 없어 보내지 않음');
+    return;
+  }
+  api.write(id, ViewLogic.promptInput(sc.command, a.term.modes.bracketedPasteMode));
+  await sleep(120);
+  api.write(id, '\r');
+  a.term.focus();
+}
+
+// A short message in place of a shortcut's second line.
+const scNotices = new Map(); // id -> text
+function shortcutNotice(id, text) {
+  scNotices.set(id, text);
+  renderShortcuts();
+  setTimeout(() => { if (scNotices.get(id) === text) { scNotices.delete(id); renderShortcuts(); } }, 2500);
+}
+
+// Kind icons: a terminal for commands, a speech bubble for prompts.
+const SC_ICONS = {
+  command: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><path d="M4 6l2.5 2L4 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.5h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  prompt: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 11.5H7l-3.5 2.5v-2.5H3A1.5 1.5 0 0 1 1.5 10V4A1.5 1.5 0 0 1 3 2.5z" fill="currentColor"/><path d="M4.5 6h7M4.5 8.5h4.5" stroke="var(--bg)" stroke-width="1.3" stroke-linecap="round"/></svg>',
+};
 
 async function typeShortcut(sc, lines) {
   let id = activeId;
@@ -793,16 +830,21 @@ function renderShortcuts() {
     li.tabIndex = 0;
     const first = sc.command.split(/\r?\n/).find((l) => l.trim()) || '';
     const more = sc.command.split(/\r?\n/).filter((l) => l.trim()).length - 1;
+    const prompt = sc.kind === 'prompt';
+    const notice = scNotices.get(sc.id);
     const meta = h('span', 'shortcut-meta');
-    meta.append(h('div', 'shortcut-name ellipsis', sc.name), h('div', 'shortcut-cmd ellipsis', more > 0 ? `${first}  (+${more})` : first));
+    const sub = h('div', `shortcut-cmd ellipsis${prompt ? ' prompt' : ''}${notice ? ' notice' : ''}`, notice || (more > 0 ? `${first}  (+${more})` : first));
+    meta.append(h('div', 'shortcut-name ellipsis', sc.name), sub);
     const edit = h('button', 'shortcut-btn', '✎');
     edit.title = '편집';
     const del = h('button', 'shortcut-btn', '✕');
     del.title = '삭제';
-    const icon = h('span', 'shortcut-icon', sc.newTerminal ? '⧉' : '▶');
-    icon.title = sc.newTerminal ? '새 터미널에서 실행' : '현재 터미널에서 실행';
+    const icon = h('span', `shortcut-icon${!prompt && sc.newTerminal ? ' new' : ''}`);
+    icon.dataset.kind = prompt ? 'prompt' : 'command';
+    icon.innerHTML = SC_ICONS[icon.dataset.kind];
+    icon.title = prompt ? '프롬프트: 현재 터미널의 Claude에게 보냄' : sc.newTerminal ? '명령: 새 터미널에서 실행' : '명령: 현재 터미널에서 실행';
     li.append(icon, meta, edit, del);
-    li.title = `${sc.newTerminal ? '새 터미널에서' : '현재 터미널에서'} 실행:\n${sc.command}`;
+    li.title = `${icon.title}\n${sc.command}`;
     li.addEventListener('click', () => runShortcut(sc));
     li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) runShortcut(sc); });
     edit.addEventListener('click', (e) => { e.stopPropagation(); openShortcutForm(sc); });
@@ -830,6 +872,8 @@ function openShortcutForm(sc) {
   f.command.value = sc ? sc.command : '';
   fitCommandBox();
   f.newTerminal.checked = sc ? sc.newTerminal : true;
+  f.kind.value = sc && sc.kind === 'prompt' ? 'prompt' : 'command';
+  syncShortcutKind();
   scEls.form.hidden = false;
   renderShortcuts();
   f.name.focus({ preventScroll: true });
@@ -850,6 +894,17 @@ function fitCommandBox() {
 }
 scEls.form.elements.command.addEventListener('input', fitCommandBox);
 
+// The form follows the kind: a prompt always goes to the shown terminal.
+function syncShortcutKind() {
+  const f = scEls.form.elements;
+  const prompt = f.kind.value === 'prompt';
+  scEls.form.querySelector('.sc-new').hidden = prompt;
+  f.command.placeholder = prompt
+    ? 'Claude에게 보낼 프롬프트\n예) 코드 검토 진행해줘. 작업에 지장 있는 것만'
+    : '한 줄에 명령 하나\n예) wsl ~\n    cd sample-app\n    tmux attach -t sample';
+}
+for (const r of scEls.form.querySelectorAll('input[name="kind"]')) r.addEventListener('change', syncShortcutKind);
+
 scEls.add.addEventListener('click', () => openShortcutForm(null));
 scEls.cancel.addEventListener('click', () => closeShortcutForm());
 scEls.form.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeShortcutForm(); });
@@ -860,7 +915,8 @@ scEls.form.addEventListener('submit', (e) => {
     id: editingShortcut === 'new' ? `sc-${Date.now().toString(36)}` : editingShortcut,
     name: f.name.value.trim().slice(0, 80),
     command: f.command.value.replace(/\s+$/, ''),
-    newTerminal: f.newTerminal.checked,
+    kind: f.kind.value === 'prompt' ? 'prompt' : 'command',
+    newTerminal: f.kind.value !== 'prompt' && f.newTerminal.checked,
   };
   if (!item.name || !item.command.trim()) return;
   const i = shortcuts.findIndex((x) => x.id === item.id);

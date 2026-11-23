@@ -215,6 +215,24 @@ body.resizing .terminals { pointer-events: none; }
   border: 1px solid var(--line); color: var(--muted); font-size: 11px;
 }
 .shortcut:hover .shortcut-icon { border-color: var(--text); color: var(--text); }
+.shortcut-icon { position: relative; }
+/* a prompt: the bubble filled, no frame, so the two kinds differ at a glance */
+.shortcut-icon[data-kind="prompt"] { border-color: transparent; color: var(--text); }
+/* a command that opens its own terminal */
+.shortcut-icon.new::after {
+  content: "+"; position: absolute; right: -4px; top: -5px; font: 700 11px/1 var(--sans);
+  color: var(--text); background: var(--bg); border-radius: 50%; padding: 0 1px;
+}
+.shortcut-cmd.prompt { font-family: var(--sans); }
+.shortcut-cmd.notice { color: var(--err); font-family: var(--sans); }
+.sc-kind { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.sc-kind label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 0; font-size: 12px; color: var(--muted); cursor: pointer; }
+.sc-kind label + label { border-left: 1px solid var(--line); }
+.sc-kind input { position: absolute; opacity: 0; pointer-events: none; }
+.sc-kind label:has(input:checked) { background: var(--panel); color: var(--text); font-weight: 600; }
+.sc-kind label:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: -2px; }
+.check[hidden] { display: none; }
+.shortcut-form:has(input[value="prompt"]:checked) textarea { font-family: var(--sans); }
 .shortcut-name { font-size: 13px; font-weight: 600; }
 .shortcut-cmd { font-size: 11.5px; color: var(--muted); }
 .shortcut-btn {

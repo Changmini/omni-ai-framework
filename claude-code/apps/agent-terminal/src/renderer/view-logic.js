@@ -448,8 +448,19 @@
     return m[1] === today ? time : `${m[1].slice(5)} ${time}`;
   }
 
+  // What a prompt shortcut types before its Enter: one message. Control
+  // characters other than line breaks are dropped (they would act as keys).
+  // Several lines are pasted when the program has bracketed paste on (a
+  // line break inside a paste does not send), else joined into one line.
+  function promptInput(text, bracketedPaste) {
+    const t = String(text || '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').replace(/\s+$/, '');
+    if (!t.includes('\n')) return t;
+    if (bracketedPaste) return `\x1b[200~${t.replace(/\n/g, '\r')}\x1b[201~`;
+    return t.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+  }
+
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
-    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, PREVIEW_MIN, TERMINAL_MIN,
+    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptInput, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));
