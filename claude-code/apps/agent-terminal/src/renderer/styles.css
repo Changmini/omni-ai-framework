@@ -230,14 +230,16 @@ body.resizing .terminals { pointer-events: none; }
   background: var(--off); flex: none;
 }
 .led[data-status="idle"]    { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
-.led[data-status="working"] { background: var(--busy); box-shadow: 0 0 8px var(--busy); animation: pulse 1s ease-in-out infinite; }
+.led[data-status="working"] { background: var(--busy); box-shadow: 0 0 8px var(--busy); }
 .led[data-status="error"]   { background: var(--err); box-shadow: 0 0 10px var(--err); }
 .led[data-status="exited"]  { background: var(--off); }
-.led[data-status="waiting"] { background: var(--wait); box-shadow: 0 0 10px var(--wait); animation: pulse 1.6s ease-in-out infinite; }
+.led[data-status="waiting"] { background: var(--wait); box-shadow: 0 0 10px var(--wait); }
 .led[data-status="shell"]   { background: transparent; box-shadow: inset 0 0 0 2px var(--off); }
 .led.small { width: 7px; height: 7px; }
-@keyframes pulse { 50% { opacity: .45; } }
-@media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
+/* Blinking: renderer.js switches .dim once a second (an endless CSS animation
+   redraws the window every frame while Claude works). */
+.led.dim[data-status="working"], .led.dim[data-status="waiting"] { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .led.dim[data-status] { opacity: 1; } }
 
 /* buttons */
 .btn {

@@ -99,6 +99,17 @@ function navTarget(e) {
 
 const BLINK_REST_MS = 30000;
 
+// The lights of a working or waiting Claude blink by a class switched once a
+// second. An endless CSS animation would redraw the window every frame for as
+// long as Claude works: measured, about 10 times the app's idle CPU, this
+// about 2 times. Nothing is done while the window is hidden.
+let ledDim = false;
+setInterval(() => {
+  if (document.hidden) return;
+  ledDim = !ledDim;
+  for (const led of document.querySelectorAll('.led[data-status="working"], .led[data-status="waiting"]')) led.classList.toggle('dim', ledDim);
+}, 1000);
+
 function addAgent(info) {
   const el = document.createElement('div');
   el.className = 'term';
