@@ -9,7 +9,7 @@ Covers code, identifiers, log/error messages, comments, docs, examples, commit m
 - Write for a reader who has only the repo: what it is, its contract, how to run and maintain it, and the reason behind each value, exclusion, or exception.
 - Say what that reader needs once and briefly; link instead of repeating.
 - Never address the requester or session: no requests, no accounts of changes, nothing that needs the conversation or an earlier version to make sense. History belongs in VCS; change explanations in the reply or PR.
-- English, imperative or neutral third person.
+- English, imperative or neutral third person, except the Korean text listed under "This repository".
 
 ## Code and commits
 
@@ -86,6 +86,8 @@ Two areas with different rules:
 - `claude-code/` — Claude Code-only implementation. Its own rules and commands are in `claude-code/AGENTS.md`.
 
 No personal data anywhere — files, examples, tests, screenshots or commit messages: no real names, account or OS user names, home paths, emails, phone numbers, account ids, company project names, issue keys or business details. Use generic placeholders (`user`, `/home/user/sample-app`, `PROJ-123`). Screenshots must be taken in a clean sample environment; `.github/scripts/check-personal-data.py` runs in CI but cannot read images.
+
+Korean, for the Korean readers they serve: README files and `docs/` pages, skill and pipeline documents already written in Korean, and the app's UI strings. Everything else in "Repo text" (code, identifiers, comments, log/error messages, commit messages) is English.
 
 No tool-specific files outside `claude-code/` (and later `universal/adapters/`). `claude-code/` is itself the Claude Code marketplace root.
 
