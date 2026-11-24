@@ -909,10 +909,9 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-body[hidden] { display: none; }
 .pipe-world { position: relative; min-width: 100%; min-height: 100%; }
 .pipe-edges { position: absolute; left: 0; top: 0; overflow: visible; }
-.pipe-edge { fill: none; stroke: #59606e; stroke-width: 1.6; stroke-dasharray: 5 4; }
-.pipe-edge.done { stroke: var(--ok); stroke-dasharray: none; }
+.pipe-edge { fill: none; stroke: var(--muted); stroke-width: 1.6; }
 .pipe-edge.sel { stroke: var(--text); stroke-width: 2.2; }
-.pipe-edge.linking { stroke: var(--text); }
+.pipe-edge.linking { stroke: var(--text); stroke-dasharray: 5 4; }
 .pipe-edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
 .pipe-node {
   position: absolute; width: 168px; height: 66px; border: 1px solid var(--line); border-radius: 8px;
@@ -927,10 +926,8 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-node.s-waiting::before { background: var(--wait); } .pipe-node.s-waiting .pn-state { color: var(--wait); }
 .pipe-node.s-waiting { box-shadow: 0 0 0 1px rgba(242,127,178,.5), 0 0 16px rgba(242,127,178,.16); }
 .pipe-node.s-error::before { background: var(--err); } .pipe-node.s-error .pn-state { color: var(--err); }
-.pipe-node.s-done::before { background: var(--ok); } .pipe-node.s-done .pn-state { color: var(--ok); }
+.pipe-node.s-idle::before { background: var(--ok); } .pipe-node.s-idle .pn-state { color: var(--ok); }
 .pipe-node.s-none { opacity: .6; }
-.pipe-node.next { border-style: dashed; border-color: #59606e; }
-.pipe-node.next .pn-state { color: var(--text); }
 .pipe-node.on { outline: 2px solid var(--text); outline-offset: 2px; }
 .pipe-node:hover { border-color: var(--muted); }
 .pipeline.editing .pipe-node { cursor: grab; }
@@ -954,18 +951,16 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; }
 .pp-del { margin-top: 12px; }
 .pp-del:hover { color: var(--err); border-color: var(--err); }
-.pipe-empty { flex: 1; display: grid; place-content: center; justify-items: center; gap: 12px; }
+.pipe-empty { flex: 1; display: grid; place-content: center; }
 .pipe-empty[hidden] { display: none; }
-.pipe-empty h3 { margin: 0; font-size: 15px; }
-.pipe-templates { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.pipe-templates .vbtn { height: 30px; padding: 0 14px; font-size: 12.5px; color: var(--text); }
+.pipe-empty .vbtn { height: 32px; padding: 0 16px; font-size: 13px; color: var(--text); }
 /* the pipeline's steps over the terminal that is one of them */
 .pipe-strip {
-  flex: none; display: flex; align-items: center; gap: 0; padding: 5px 16px; border-bottom: 1px solid var(--line);
+  flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 16px; border-bottom: 1px solid var(--line);
   font-size: 12px; overflow-x: auto; scrollbar-width: none; white-space: nowrap;
 }
 .pipe-strip[hidden] { display: none; }
-.strip-title { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; margin-right: 10px; padding: 2px 0; cursor: pointer; }
+.strip-title { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; margin-right: 4px; padding: 2px 0; cursor: pointer; }
 .strip-title:hover { color: var(--text); }
 .strip-chip {
   flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 1px 10px; border-radius: 999px;
@@ -976,10 +971,8 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; }
 .strip-chip.s-working i { background: var(--busy); }
 .strip-chip.s-waiting i { background: var(--wait); }
 .strip-chip.s-error i { background: var(--err); }
-.strip-chip.s-done i { background: var(--ok); }
-.strip-chip.next { border-style: dashed; }
+.strip-chip.s-idle i { background: var(--ok); }
 .strip-chip.on { color: var(--text); border-color: var(--text); font-weight: 600; }
-.strip-arrow { color: #59606e; padding: 0 6px; }
 .agent-node {
   float: right; margin: 1px 0 0 6px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px;
