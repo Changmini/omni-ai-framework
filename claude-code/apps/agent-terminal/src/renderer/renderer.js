@@ -1693,7 +1693,12 @@ function renderShortcuts() {
     li.append(icon, meta, edit, del);
     li.title = `${icon.title}\n${sc.command}`;
     li.addEventListener('click', () => runShortcut(sc));
-    li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) runShortcut(sc); });
+    li.addEventListener('keydown', (e) => {
+      if (e.target !== li) return;
+      if (e.key === 'Enter') runShortcut(sc);
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); moveShortcut(sc.id, e.key === 'ArrowUp' ? -1 : 1); }
+    });
+    if (!editingThis) enableShortcutDrag(li, sc.id);
     edit.addEventListener('click', (e) => { e.stopPropagation(); openShortcutForm(sc); });
     del.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1710,6 +1715,51 @@ function renderShortcuts() {
   }));
   // Adding a new one (or nothing open): the form sits below the list.
   if (editingShortcut === null || editingShortcut === 'new') scEls.empty.after(scEls.form);
+}
+
+// Order: drag an item, or Alt+Up/Down on a focused one (as terminals).
+let scDragId = null;
+
+function moveShortcut(id, delta) {
+  const i = shortcuts.findIndex((x) => x.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= shortcuts.length) return;
+  [shortcuts[i], shortcuts[j]] = [shortcuts[j], shortcuts[i]];
+  saveShortcuts();
+  renderShortcuts();
+  scEls.list.querySelector(`li.shortcut[data-id="${CSS.escape(id)}"]`)?.focus();
+}
+
+function enableShortcutDrag(li, id) {
+  li.dataset.id = id;
+  li.draggable = true;
+  const clear = () => { for (const el of scEls.list.querySelectorAll('.drop-before, .drop-after')) el.classList.remove('drop-before', 'drop-after'); };
+  li.addEventListener('dragstart', (e) => {
+    scDragId = id;
+    li.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  });
+  li.addEventListener('dragend', () => { scDragId = null; li.classList.remove('dragging'); clear(); });
+  li.addEventListener('dragover', (e) => {
+    if (!scDragId || scDragId === id) return;
+    e.preventDefault();
+    const r = li.getBoundingClientRect();
+    clear();
+    li.classList.add(e.clientY > r.top + r.height / 2 ? 'drop-after' : 'drop-before');
+  });
+  li.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const after = li.classList.contains('drop-after');
+    clear();
+    const moving = shortcuts.find((x) => x.id === scDragId);
+    if (!moving || scDragId === id) return;
+    const rest = shortcuts.filter((x) => x !== moving);
+    rest.splice(rest.findIndex((x) => x.id === id) + (after ? 1 : 0), 0, moving);
+    shortcuts = rest;
+    saveShortcuts();
+    renderShortcuts();
+  });
 }
 
 function openShortcutForm(sc) {
