@@ -619,15 +619,18 @@ body.resizing-v { cursor: row-resize; user-select: none; }
   padding: 2px 10px 0; cursor: pointer; /* text centred like the top bar, underline on the border */
 }
 .inspector { container-type: inline-size; }
+/* No tab is narrower than a two-syllable Hangul label ("git" as wide as
+   "파일"): the label's 2em plus the tab's side padding. */
+.inspector-head .tab { min-width: calc(2em + 20px); }
 /* Narrow panels tighten the tabs in two steps: 8px still fits every label
    at the default 320px width; 6px only when narrower than that. */
 @container (max-width: 340px) {
   .inspector-head { gap: 0; }
-  .inspector-head .tab { padding: 2px 8px 0; }
+  .inspector-head .tab { padding: 2px 8px 0; min-width: calc(2em + 16px); }
 }
 @container (max-width: 280px) {
   .inspector-head { padding: 0 6px; }
-  .inspector-head .tab { padding: 2px 6px 0; }
+  .inspector-head .tab { padding: 2px 6px 0; min-width: calc(2em + 12px); }
 }
 .inspector-head .mini-btn { flex: none; }
 /* Short labels keep their width; the long ones give way, "Claude 구성" first. */
