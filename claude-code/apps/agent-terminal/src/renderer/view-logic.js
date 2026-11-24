@@ -459,11 +459,12 @@
   // its session. `sessionOf(nodeId)` -> null (no terminal bound), { claude:
   // null } (no Claude in it) or { claude: { id, name } }. Text for Claude,
   // in the user's language; '' for a node not in `p`. A node taken out for a
-  // while (`off`) gets nothing, and its neighbours see only its name.
-  function pipelineContext(p, nodeId, sessionOf) {
+  // while (`off`) gets nothing, unless `asked` (its session ran the pipeline
+  // skill); its neighbours see only its name.
+  function pipelineContext(p, nodeId, sessionOf, asked = false) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));
     const me = byId.get(nodeId);
-    if (!me || me.off) return '';
+    if (!me || (me.off && !asked)) return '';
     const memo = (n) => {
       const t = String(n.memo || '').trim().replace(/\s+/g, ' ');
       return t.length > MEMO_MAX ? `${t.slice(0, MEMO_MAX)}…` : t;

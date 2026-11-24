@@ -369,6 +369,7 @@ if (primaryInstance) app.whenReady().then(async () => {
   hooks = await startHookServer({
     onEvent: (id, ev, meta) => {
       if (manager) manager.onHookEvent(id, ev, meta);
+      if (ev && ev.hook_event_name === 'PostCompact' && !ev.agent_id) pipelineContext.compacted(String(id), String(ev.session_id || ''));
       // Claude wrote the preview: shown at once, not at the next look.
       const file = ev && ev.tool_input && ev.tool_input.file_path;
       if (manager && ev && ev.hook_event_name === 'PostToolUse' && /^(Write|Edit|MultiEdit)$/.test(ev.tool_name || '')
@@ -381,7 +382,7 @@ if (primaryInstance) app.whenReady().then(async () => {
       if (plan) plan.report(data);
       if (manager) manager.onStatusLine(id, data);
     },
-    onPrompt: (id, ev) => pipelineContext.forPrompt(id, String(ev.session_id || '')),
+    onReply: (id, ev) => pipelineContext.reply(id, ev),
   });
   plan = new PlanUsage({ emit: send });
   // Per process, so no other instance can ever overwrite the port in it.
@@ -397,6 +398,9 @@ if (primaryInstance) app.whenReady().then(async () => {
     shell: shellLaunch(),
     extraEnv: {
       OMNI_CLAUDE_SETTINGS: settingsFile,
+      // The app's own plugin (the pipeline skill), loaded with --plugin-dir by
+      // the claude wrapper for app terminals only: nothing is installed.
+      OMNI_CLAUDE_PLUGIN: path.join(__dirname, 'claude-plugin'),
       OMNI_HOOK_TOKEN: hooks.token,
       OMNI_CWD_URL: hooks.cwdUrl,
       // For `wsl` typed in an app PowerShell terminal (see shell-init/omni.ps1).
