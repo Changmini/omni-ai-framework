@@ -843,6 +843,7 @@ function syncPipelineContext() {
       const tid = boundTerminal(n.id);
       if (!tid) continue;
       const text = ViewLogic.pipelineContext(p, n.id, sessionOf);
+      if (!text) continue;
       map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text;
     }
   }
@@ -904,12 +905,12 @@ function renderPipeline() {
   els.nodes.replaceChildren(...p.nodes.map((n) => {
     const st = nodeState(n);
     const tid = boundTerminal(n.id);
-    const div = h('div', `pipe-node s-${st}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
+    const div = h('div', `pipe-node s-${st}${p.notify && n.off ? ' off' : ''}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
     div.dataset.id = n.id;
     div.style.left = `${n.x}px`;
     div.style.top = `${n.y}px`;
     const info = tid ? agents.get(tid).info : null;
-    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
+    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}${p.notify && n.off ? ' · 빠짐' : ''}`;
     // the session: its name, or its folder when it is named after the step
     const sessName = info ? displayName(info) : '';
     const sessText = !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
@@ -958,8 +959,10 @@ function openNode(n) {
 
 function nodeMenu(n) {
   const tid = boundTerminal(n.id);
+  const p = currentPipe();
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
+    ...(p && p.notify ? [{ label: n.off ? '알리기에 다시 넣기' : '알리기에서 잠시 빼기', action: () => setNodeOff(n, !n.off) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
   ];
@@ -1087,11 +1090,25 @@ function renderProps(p) {
   memo.rows = 4;
   memo.value = n.memo || '';
   memo.addEventListener('input', () => { n.memo = memo.value; savePipes(); });
+  const notify = h('label', 'pp-check');
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = !n.off;
+  box.addEventListener('change', () => setNodeOff(n, !box.checked));
+  notify.append(box, 'Claude에게 알리기');
+  notify.hidden = !p.notify;
   const del = h('button', 'btn pp-del', '노드 삭제');
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
   const field = (label, el) => { const l = h('label', 'pp-field'); l.append(h('span', null, label), el); return l; };
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('세션', sess), field('메모', memo), del);
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('세션', sess), field('메모', memo), notify, del);
+}
+
+// Takes a node out of "Claude에게 알리기" for a while, or puts it back.
+function setNodeOff(n, off) {
+  if (off) n.off = true; else delete n.off;
+  savePipes();
+  if (pipe.view === 'pipeline') renderPipeline();
 }
 
 function refreshNodeLabel(n) {
