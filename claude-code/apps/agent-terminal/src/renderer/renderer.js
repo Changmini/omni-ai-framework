@@ -750,20 +750,19 @@ $('#group-add').addEventListener('click', () => renameGroup(addGroup('새 그룹
 renderGroups();
 
 // ---------- pipelines ----------
-// A graph the user draws of their own way of working (waterfall, prototype
-// loops, parallel steps): each node is a step, optionally bound to a terminal
-// session whose state it shows live; clicking a node goes to that session.
-// It only shows the flow: nothing is started, written or enforced. Pipelines
-// (nodes, edges, prompts) are kept in localStorage; which terminal a node is
-// bound to, and done marks, only for this run (sessionStorage), as terminal
-// groups are. Logic: ViewLogic.pipelineStates / pipelineOrder.
+// A graph the user draws freely: nodes, each optionally bound to a terminal
+// session whose state it shows live, and arrows between them. It shows how
+// the user arranged their sessions and what each is doing; it implies no
+// order of work and starts, advances or enforces nothing. Pipelines (nodes,
+// arrows, prompts) are kept in localStorage; which terminal a node is bound
+// to only for this run (sessionStorage), as terminal groups are.
 const PIPE_KEY = 'pipelines';
 const PIPE_CUR_KEY = 'pipelineCurrent';
 const PIPE_BIND_KEY = 'pipelineBind';
-const PIPE_DONE_KEY = 'pipelineDone';
 const NODE_W = 168;
 const NODE_H = 66;
-const PIPE_STATE_LABEL = { none: '세션 없음', ready: '대기', working: '작업 중', waiting: '승인 대기', error: '오류', done: '끝남' };
+// By ledStatus, plus none (no session bound).
+const PIPE_STATE_LABEL = { none: '세션 없음', shell: '셸', working: '작업 중', waiting: '승인 대기', error: '오류', idle: '끝남', exited: '종료됨' };
 const readSession = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || '{}') || {}; } catch { return {}; } };
 const writeSession = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* this run only */ } };
 let pipelines = [];
@@ -771,7 +770,6 @@ try { pipelines = JSON.parse(readPref(PIPE_KEY, '[]')); } catch { pipelines = []
 if (!Array.isArray(pipelines)) pipelines = [];
 let pipeCur = readPref(PIPE_CUR_KEY, '');
 const pipeBind = readSession(PIPE_BIND_KEY); // node id -> terminal id
-const pipeDone = readSession(PIPE_DONE_KEY); // node id -> true
 const pipe = {
   view: 'terminal', editing: false, sel: null, selEdge: -1, notice: new Map(),
   els: {
@@ -786,14 +784,10 @@ const savePipes = () => writePref(PIPE_KEY, JSON.stringify(pipelines));
 const currentPipe = () => pipelines.find((p) => p.id === pipeCur) || pipelines[0] || null;
 const boundTerminal = (nodeId) => (agents.has(pipeBind[nodeId]) ? pipeBind[nodeId] : null);
 
-function pipeStates(p) {
-  const sessions = {};
-  for (const n of p.nodes) {
-    const tid = boundTerminal(n.id);
-    if (tid) sessions[n.id] = { status: ledStatus(agents.get(tid).info), done: Boolean(pipeDone[n.id]) };
-    else if (pipeDone[n.id]) sessions[n.id] = { status: null, done: true }; // a step done outside the app
-  }
-  return ViewLogic.pipelineStates(p, sessions);
+// The node's state: its session's light, or none.
+function nodeState(n) {
+  const tid = boundTerminal(n.id);
+  return tid ? ledStatus(agents.get(tid).info) : 'none';
 }
 
 function setView(view) {
@@ -825,7 +819,7 @@ function pipeRefresh() {
 function renderPipeline() {
   const p = currentPipe();
   const { els } = pipe;
-  els.title.textContent = p ? p.name : '파이프라인';
+  if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '파이프라인'; // not while renaming
   els.edit.hidden = !p || pipe.editing;
   els.editTools.hidden = !pipe.editing;
   els.done.hidden = !pipe.editing;
@@ -834,7 +828,6 @@ function renderPipeline() {
   els.empty.hidden = Boolean(p);
   els.canvas.parentElement.hidden = !p;
   if (!p) { els.props.hidden = true; return; }
-  const states = pipeStates(p);
   const activeNodes = new Set(p.nodes.filter((n) => boundTerminal(n.id) === activeId).map((n) => n.id));
   // world size: the drawing plus room to grow
   const maxX = Math.max(0, ...p.nodes.map((n) => n.x + NODE_W)) + 240;
@@ -848,7 +841,7 @@ function renderPipeline() {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
   const defs = svg('defs', {});
-  for (const [id, color] of [['pipe-arrow', '#59606e'], ['pipe-arrow-done', '#4fc08d'], ['pipe-arrow-sel', '#e3e6ec']]) {
+  for (const [id, color] of [['pipe-arrow', '#8e95a5'], ['pipe-arrow-sel', '#e3e6ec']]) {
     const m = svg('marker', { id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto' });
     m.append(svg('path', { d: 'M0 0L10 5L0 10z', fill: color }));
     defs.append(m);
@@ -859,10 +852,8 @@ function renderPipeline() {
     const b = byId.get(e.to);
     if (!a || !b) return;
     const d = edgePath(a, b);
-    const done = states[a.id] && states[a.id].state === 'done';
     const sel = i === pipe.selEdge;
-    const cls = `pipe-edge${done ? ' done' : ''}${sel ? ' sel' : ''}`;
-    paths.push(svg('path', { d, class: cls, 'marker-end': `url(#${sel ? 'pipe-arrow-sel' : done ? 'pipe-arrow-done' : 'pipe-arrow'})` }));
+    paths.push(svg('path', { d, class: `pipe-edge${sel ? ' sel' : ''}`, 'marker-end': `url(#${sel ? 'pipe-arrow-sel' : 'pipe-arrow'})` }));
     if (pipe.editing) {
       const hit = svg('path', { d, class: 'pipe-edge-hit' });
       hit.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); pipe.selEdge = i; pipe.sel = null; renderPipeline(); });
@@ -873,14 +864,14 @@ function renderPipeline() {
   els.edges.replaceChildren(...paths);
 
   els.nodes.replaceChildren(...p.nodes.map((n) => {
-    const st = states[n.id];
+    const st = nodeState(n);
     const tid = boundTerminal(n.id);
-    const div = h('div', `pipe-node s-${st.state}${st.next ? ' next' : ''}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
+    const div = h('div', `pipe-node s-${st}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
     div.dataset.id = n.id;
     div.style.left = `${n.x}px`;
     div.style.top = `${n.y}px`;
     const info = tid ? agents.get(tid).info : null;
-    const label = pipe.notice.get(n.id) || (st.next ? '다음 차례' : `${PIPE_STATE_LABEL[st.state]}${(st.state === 'working' || st.state === 'waiting') && info && info.claude && info.claude.tool ? ` ${info.claude.tool}` : ''}`);
+    const label = pipe.notice.get(n.id) || `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
     // the session: its name, or its folder when it is named after the step
     const sessName = info ? displayName(info) : '';
     const sessText = !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
@@ -946,10 +937,8 @@ function fillNodePrompt(n) {
 
 function nodeMenu(n) {
   const tid = boundTerminal(n.id);
-  const done = Boolean(pipeDone[n.id]);
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
-    { label: done ? '완료 표시 해제' : '완료로 표시', action: () => { if (done) delete pipeDone[n.id]; else pipeDone[n.id] = true; writeSession(PIPE_DONE_KEY, pipeDone); pipeRefresh(); } },
     ...(n.prompt ? [{ label: '시작 프롬프트 채우기', disabled: !tid, action: () => fillNodePrompt(n) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
@@ -1093,9 +1082,7 @@ function refreshNodeLabel(n) {
 
 function bindNode(nodeId, tid) {
   if (tid) pipeBind[nodeId] = tid; else delete pipeBind[nodeId];
-  delete pipeDone[nodeId];
   writeSession(PIPE_BIND_KEY, pipeBind);
-  writeSession(PIPE_DONE_KEY, pipeDone);
   for (const id of agents.keys()) renderItem(id);
   renderStrip();
 }
@@ -1138,16 +1125,17 @@ function deleteSelectedEdge() {
   renderStrip();
 }
 
-function createPipeline(template) {
-  const p = ViewLogic.pipelineFromTemplate(template, newPipeId);
+// A new, empty pipeline, opened for editing with its name ready to type.
+function createPipeline() {
+  const p = { id: newPipeId(), name: '새 파이프라인', nodes: [], edges: [] };
   pipelines.push(p);
   pipeCur = p.id;
   writePref(PIPE_CUR_KEY, pipeCur);
   savePipes();
   pipe.sel = null;
-  setPipeEditing(template === 'empty');
-  renderPipeline();
+  setPipeEditing(true);
   renderStrip();
+  renamePipeline();
 }
 
 function renamePipeline() {
@@ -1176,14 +1164,12 @@ function renamePipeline() {
   input.addEventListener('blur', () => finish(true));
 }
 
-const TEMPLATE_ITEMS = (act) => Object.entries(ViewLogic.PIPELINE_TEMPLATES).map(([k, t]) => ({ label: k === 'empty' ? '빈 그래프' : t.name, action: () => act(k) }));
-
 function pipelineMenu() {
   const p = currentPipe();
   return [
     ...pipelines.map((x) => ({ label: x.name, hint: x.id === (p && p.id) ? '보는 중' : '', action: () => { pipeCur = x.id; writePref(PIPE_CUR_KEY, pipeCur); pipe.sel = null; setPipeEditing(false); renderStrip(); } })),
     ...(pipelines.length ? [{ sep: true }] : []),
-    { label: '새 파이프라인', sub: TEMPLATE_ITEMS(createPipeline) },
+    { label: '새 파이프라인', action: createPipeline },
     ...(p ? [
       { label: '이름 바꾸기', action: renamePipeline },
       { label: '이 파이프라인 삭제', action: () => {
@@ -1209,21 +1195,20 @@ function renderStrip() {
   const mine = p && activeId ? p.nodes.find((n) => boundTerminal(n.id) === activeId) : null;
   strip.hidden = !mine || pipe.view === 'pipeline';
   if (strip.hidden) return;
-  const states = pipeStates(p);
   const byId = new Map(p.nodes.map((n) => [n.id, n]));
   const title = h('button', 'strip-title', p.name);
   title.type = 'button';
   title.title = '파이프라인 보기 (Ctrl+Shift+G)';
   title.addEventListener('click', () => setView('pipeline'));
   const parts = [title];
-  ViewLogic.pipelineOrder(p).forEach((id, i) => {
+  // No arrows here: neighbours in this line need not be linked in the graph.
+  ViewLogic.pipelineOrder(p).forEach((id) => {
     const n = byId.get(id);
-    const st = states[id];
-    if (i) parts.push(h('span', 'strip-arrow', '→'));
-    const chip = h('button', `strip-chip s-${st.state}${st.next ? ' next' : ''}${boundTerminal(id) === activeId ? ' on' : ''}`);
+    const st = nodeState(n);
+    const chip = h('button', `strip-chip s-${st}${boundTerminal(id) === activeId ? ' on' : ''}`);
     chip.type = 'button';
     chip.append(h('i'), n.name);
-    chip.title = st.next ? '다음 차례' : PIPE_STATE_LABEL[st.state];
+    chip.title = PIPE_STATE_LABEL[st] || '';
     chip.addEventListener('click', () => openNode(n));
     parts.push(chip);
   });
@@ -1249,7 +1234,7 @@ pipe.els.canvas.addEventListener('pointerdown', (e) => {
   pipe.selEdge = -1;
   renderPipeline();
 });
-for (const b of pipe.els.empty.querySelectorAll('[data-template]')) b.addEventListener('click', () => createPipeline(b.dataset.template));
+$('#pipe-create').addEventListener('click', createPipeline);
 document.addEventListener('keydown', (e) => {
   if (pipe.view !== 'pipeline' || e.target.closest('input, textarea, select')) return;
   if (e.key === 'Escape') { e.stopPropagation(); if (pipe.editing) setPipeEditing(false); else setView('terminal'); }

@@ -280,30 +280,16 @@ test('terminal groups: navigation, new terminal, ungroup target, summary', () =>
   assert.deepStrictEqual(groupSummary(['waiting', 'working', 'idle', 'waiting']), { dots: ['waiting', 'working', 'idle', 'waiting'], waiting: 2 });
 });
 
-test('pipelines: templates, node states, next step, flow order', () => {
-  const { pipelineFromTemplate, pipelineStates, pipelineOrder } = require('../src/renderer/view-logic');
-  let n = 0;
-  const p = pipelineFromTemplate('waterfall', () => `i${n++}`);
-  assert.deepStrictEqual(p.nodes.map((x) => x.name), ['기획', '설계', '구현', '테스트', '배포']);
-  assert.strictEqual(p.edges.length, 4);
-  const [plan, design, build, test1, ship] = p.nodes.map((x) => x.id);
-  const st = pipelineStates(p, {
-    [plan]: { status: 'idle' }, // Claude finished
-    [design]: { status: 'shell', done: true }, // marked done by hand
-    [build]: { status: 'waiting', done: true }, // waiting wins over a done mark
-    [test1]: { status: 'shell' },
-  });
-  assert.deepStrictEqual(Object.values(st).map((x) => x.state), ['done', 'done', 'waiting', 'ready', 'none']);
-  assert.deepStrictEqual(Object.values(st).map((x) => x.next), [false, false, false, false, false]);
-  const st2 = pipelineStates(p, { [plan]: { status: 'idle' }, [design]: { status: 'idle' }, [build]: { status: 'idle' } });
-  assert.strictEqual(st2[test1].next, true); // no session yet, still next
-  assert.strictEqual(st2[ship].next, false);
-  assert.deepStrictEqual(pipelineOrder(p), [plan, design, build, test1, ship]);
-  // A loop (prototype: evaluate -> prototype) still gives every step once.
-  const q = pipelineFromTemplate('prototype', () => `q${n++}`);
-  const order = pipelineOrder(q);
-  assert.deepStrictEqual(order.map((id) => q.nodes.find((x) => x.id === id).name), ['요구 수집', '프로토타입', '사용자 평가', '개발', '배포']);
-  const [gather, proto] = order;
-  assert.strictEqual(pipelineStates(q, { [gather]: { status: 'idle' } })[proto].next, true); // the loop back does not block it
-  assert.deepStrictEqual(pipelineFromTemplate('nope', () => 'x').nodes, []);
+test('pipelines: nodes in arrow order, loops included', () => {
+  const { pipelineOrder } = require('../src/renderer/view-logic');
+  const node = (id) => ({ id, name: id, x: 0, y: 0, prompt: '' });
+  const p = { nodes: ['c', 'a', 'b', 'd'].map(node), edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }] };
+  assert.deepStrictEqual(pipelineOrder(p), ['a', 'b', 'c', 'd']); // unlinked d keeps its place among sources
+  // A loop (b -> a) still gives every node once, starting at the earliest.
+  const q = { nodes: ['a', 'b', 'c'].map(node), edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }, { from: 'b', to: 'c' }] };
+  assert.deepStrictEqual(pipelineOrder(q), ['a', 'b', 'c']);
+  // Arrows to missing nodes and self-arrows are ignored.
+  const r = { nodes: ['a', 'b'].map(node), edges: [{ from: 'a', to: 'a' }, { from: 'x', to: 'b' }] };
+  assert.deepStrictEqual(pipelineOrder(r), ['a', 'b']);
+  assert.deepStrictEqual(pipelineOrder({ nodes: [], edges: [] }), []);
 });
