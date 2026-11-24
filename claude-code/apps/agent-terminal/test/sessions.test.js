@@ -405,3 +405,23 @@ test('Esc then Claude\'s "Interrupted" sets a working Claude idle (no hook comes
   ptys[0].emitData(`⎿  Interrupted\r\n${'\x1b[2K\x1b[38;5;246m─\x1b[39m'.repeat(400)}`);
   assert.strictEqual(status(), 'idle');
 });
+
+test('the status line tells the session id and name before any hook', () => {
+  const { m, events } = setup();
+  const { id } = m.create({ cwd: '/repo' });
+  const view = () => events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  m.onStatusLine(id, { model: { id: 'x' } }); // no session: nothing
+  assert.strictEqual(events.filter(([c]) => c === 'session:agent').length, 0);
+  m.onStatusLine(id, { session_id: 's1' }); // claude just started
+  assert.deepStrictEqual(view().session, { id: 's1', name: null });
+  assert.strictEqual(view().status, null);
+  m.onStatusLine(id, { session_id: 's1', session_name: ' sample-ui ' }); // /rename
+  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui' });
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/repo' });
+  assert.deepStrictEqual([view().status, view().session], ['working', { id: 's1', name: 'sample-ui' }]);
+  // Another claude reporting into the same terminal (tmux) does not take over.
+  m.onStatusLine(id, { session_id: 's2', session_name: 'other' });
+  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui' });
+  m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 's1' });
+  assert.strictEqual(view().session, null);
+});

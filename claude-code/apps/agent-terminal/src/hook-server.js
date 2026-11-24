@@ -30,14 +30,22 @@ function salvage(head) {
 // Receives, on 127.0.0.1:
 //   POST /hook - Claude Code HTTP hooks (type "http" POSTs the event JSON)
 //   POST /cwd  - {"cwd", "wslDistro"?, "home"?} from the app's shell integration
-//   POST /status - the status line input (claude-settings.js), for plan usage
+//   POST /status - the status line input (claude-settings.js): plan usage,
+//                  session id and name
 // Requests must carry the per-run token; the terminal id header says which
 // terminal sent them.
-function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
+// Answers are 2xx with an empty body, so hooks neither block nor change any
+// decision (PermissionRequest, TaskCompleted, ...). One exception: for the
+// main session's UserPromptSubmit, `onPrompt(terminalId, event)` may return
+// text, answered as hookSpecificOutput.additionalContext, which Claude Code
+// adds to the prompt's context (https://code.claude.com/docs/en/hooks: an
+// HTTP hook's JSON body uses the command hooks' output format).
+function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, onPrompt = () => null, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
   const server = http.createServer((req, res) => {
-    // Always answer 2xx with an empty body: hooks then neither block nor
-    // change any decision (PermissionRequest, TaskCompleted, ...).
-    const done = (code) => { res.writeHead(code); res.end(); };
+    const done = (code, body = '') => {
+      res.writeHead(code, body ? { 'Content-Type': 'application/json' } : undefined);
+      res.end(body);
+    };
     if (req.method !== 'POST' || !['/hook', '/cwd', '/status'].includes(req.url)) return done(404);
     if (req.headers['x-omni-token'] !== token) return done(403);
     const terminalId = String(req.headers['x-omni-terminal'] || '');
@@ -50,16 +58,20 @@ function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, t
       if (size <= MAX_BODY) chunks.push(c);
     });
     req.on('end', () => {
-      done(200);
-      if (!terminalId) return;
+      if (!terminalId) return done(200);
       if (size > MAX_BODY) {
+        done(200);
         const [big, meta] = salvage(Buffer.concat(chunks).subarray(0, HEAD_KEEP).toString('utf8'));
         if (big && req.url === '/hook') onEvent(terminalId, big, meta);
         return;
       }
       let ev;
-      try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return; }
-      if (!ev || typeof ev !== 'object') return;
+      try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return done(200); }
+      if (!ev || typeof ev !== 'object') return done(200);
+      // claude-hook.sh (tmux) sends without waiting for the answer: nothing to add there.
+      const context = req.url === '/hook' && !ev.omni && ev.hook_event_name === 'UserPromptSubmit' && !ev.agent_id
+        ? onPrompt(terminalId, ev) : null;
+      done(200, context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } }) : '');
       if (req.url === '/cwd') {
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
       } else if (req.url === '/status') {

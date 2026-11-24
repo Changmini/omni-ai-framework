@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('agentApi', {
   sendLine: (id, text) => ipcRenderer.invoke('session:sendLine', id, text),
   write: (id, data) => ipcRenderer.send('session:write', id, data),
   resize: (id, cols, rows) => ipcRenderer.send('session:resize', id, cols, rows),
+  // terminal id -> what its Claude is told about its pipelines (pipeline-context.js)
+  setPipelineContext: (map) => ipcRenderer.send('pipeline:context', map),
   rename: (id, name) => ipcRenderer.invoke('session:rename', id, name),
   claudeConfig: (id) => ipcRenderer.invoke('session:config', id),
   focusPane: (id, target) => ipcRenderer.invoke('session:focusPane', id, target),

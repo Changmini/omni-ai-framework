@@ -126,6 +126,7 @@ class SessionManager {
       lastStatus: null,
       claude: emptyState(), // the terminal's main claude session
       primarySid: null,
+      sessionNames: new Map(), // session_id -> its name (status line), or null
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       teammateSids: new Set(), // sessions known to be split-pane teammates
       tmuxSocket: null, // from claude-hook.sh, to select a pane on click
@@ -326,6 +327,22 @@ class SessionManager {
     s.name = n || null;
     this.emit('session:meta', { id, name: s.name });
     return true;
+  }
+
+  // The status line input (claude-settings.js), for the session's id and name.
+  // The status line runs as claude starts, so the main session is known
+  // before any hook (a prompt can then be typed into it).
+  onStatusLine(id, data) {
+    const s = this.sessions.get(id);
+    const sid = data && typeof data.session_id === 'string' ? data.session_id.slice(0, 100) : '';
+    if (!s || !sid) return;
+    const name = typeof data.session_name === 'string' && data.session_name.trim() ? data.session_name.trim().slice(0, 200) : null;
+    s.sessionNames.set(sid, name);
+    if (!s.primarySid && !s.teammateSids.has(sid)) {
+      s.primarySid = sid;
+      s.others.delete(sid);
+    }
+    this.emitAgent(s);
   }
 
   // One Claude Code hook event, already authenticated by the hook server.
@@ -826,7 +843,7 @@ class SessionManager {
   // The main claude session is gone (SessionEnd, or its tmux pane closed).
   endPrimary(s) {
     if (s.claude.status || s.claude.sessionId) s.claude = { ...emptyState(), cwd: s.claude.cwd, updatedAt: this.now() };
-    if (s.primarySid) s.usage.delete(s.primarySid);
+    if (s.primarySid) { s.usage.delete(s.primarySid); s.sessionNames.delete(s.primarySid); }
     s.team = null;
     s.tasks = null;
     s.primarySid = null;
@@ -952,6 +969,8 @@ class SessionManager {
       tasks: s.tasks,
       focusable: Boolean(view.status && s.primaryPane && (s.primarySocket || s.tmuxSocket)),
       context: view.status ? this.contextOf(s, s.primarySid) : null,
+      // The main claude session, from its first hook or status line (before any prompt).
+      session: s.primarySid ? { id: s.primarySid, name: s.sessionNames.get(s.primarySid) || null } : null,
     };
   }
 

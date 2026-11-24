@@ -28,6 +28,31 @@ test('hook server accepts only token-bearing POSTs and passes the terminal id', 
   } finally { srv.close(); }
 });
 
+test('hook server answers a main UserPromptSubmit with the context, everything else empty', async () => {
+  const got = [];
+  const asked = [];
+  const srv = await startHookServer({
+    onEvent: (id, ev) => got.push([id, ev.hook_event_name]),
+    onPrompt: (id, ev) => { asked.push([id, ev.session_id]); return id === '3' ? '노드 정보' : null; },
+    token: 'tok',
+  });
+  const post = (terminal, body) => fetch(`http://127.0.0.1:${srv.port}/hook`, {
+    method: 'POST', headers: { 'x-omni-token': 'tok', 'x-omni-terminal': terminal }, body: JSON.stringify(body),
+  }).then(async (r) => [r.status, r.headers.get('content-type'), await r.text()]);
+  try {
+    const [status, type, body] = await post('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' });
+    assert.deepStrictEqual([status, type], [200, 'application/json']);
+    assert.deepStrictEqual(JSON.parse(body), { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '노드 정보' } });
+    assert.deepStrictEqual(await post('4', { hook_event_name: 'UserPromptSubmit', session_id: 's2' }), [200, null, '']); // nothing to add
+    // Not asked for other events, subagents, or claude-hook.sh (tmux, which does not wait).
+    assert.deepStrictEqual(await post('3', { hook_event_name: 'Stop', session_id: 's1' }), [200, null, '']);
+    assert.deepStrictEqual(await post('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', agent_id: 'a' }), [200, null, '']);
+    assert.deepStrictEqual(await post('3', { omni: { pane: '%1' }, event: { hook_event_name: 'UserPromptSubmit', session_id: 's1' } }), [200, null, '']);
+    assert.deepStrictEqual(asked, [['3', 's1'], ['4', 's2']]);
+    assert.strictEqual(got.length, 5); // every event still reaches onEvent
+  } finally { srv.close(); }
+});
+
 test('settings file has one http hook per event, with env-var headers', () => {
   const s = buildClaudeSettings(4321);
   assert.deepStrictEqual(Object.keys(s.hooks), HOOK_EVENTS);

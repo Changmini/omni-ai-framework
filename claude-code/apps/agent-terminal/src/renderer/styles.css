@@ -903,6 +903,12 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-gap { flex: 1; }
 .pipe-tools { display: flex; gap: 8px; }
 .pipe-tools[hidden] { display: none; }
+/* a switch: the dot lights when on */
+.pipe-notify { display: inline-flex; align-items: center; gap: 7px; }
+.pipe-notify[hidden] { display: none; }
+.pipe-notify::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.pipe-notify[aria-checked="true"] { color: var(--text); border-color: var(--muted); }
+.pipe-notify[aria-checked="true"]::before { background: var(--ok); border-color: var(--ok); }
 .pipe-body { flex: 1; min-height: 0; display: flex; }
 .pipe-canvas { flex: 1; min-width: 0; overflow: auto; position: relative;
   background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size: 20px 20px; }
@@ -921,7 +927,6 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pn-name { font-weight: 700; font-size: 14px; line-height: 1.3; }
 .pn-sess { font: 11.5px/1.35 var(--mono); color: var(--muted); }
 .pn-state { font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.4; }
-.pn-state.notice { color: var(--err); }
 .pipe-node.s-working::before { background: var(--busy); } .pipe-node.s-working .pn-state { color: var(--busy); }
 .pipe-node.s-waiting::before { background: var(--wait); } .pipe-node.s-waiting .pn-state { color: var(--wait); }
 .pipe-node.s-waiting { box-shadow: 0 0 0 1px rgba(242,127,178,.5), 0 0 16px rgba(242,127,178,.16); }
