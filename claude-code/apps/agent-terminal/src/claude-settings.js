@@ -39,18 +39,18 @@ const HOOK_EVENTS = [
 // carries the app's port, new on each start). Plan usage is account-wide:
 // one file per user; the session, one file per terminal. Both live in the
 // user's runtime folder or ~/.cache (never a shared temp folder, where a
-// planted link would be written through). Without grep plan usage cannot be
-// compared and is reported every time. POSIX sh.
+// planted link would be written through). POSIX sh, shell builtins only
+// besides reading the input (cat) and reporting (curl).
 const STATUS_LINE_COMMAND = [
   'input=$(cat)',
   'd="${XDG_RUNTIME_DIR:-$HOME/.cache}"; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null',
   'due=',
-  'case "$input" in *\'"five_hour"\'*)'
-    + ' seg=$(printf \'%s\' "$input" | grep -o \'"five_hour"[^}]*}\' | head -1)'
-    + '; if [ -z "$seg" ] || [ "$(cat "$d/omni-plan" 2>/dev/null)" != "$OMNI_CWD_URL $seg" ]; then'
-    + ' printf \'%s\' "$OMNI_CWD_URL $seg" > "$d/omni-plan" 2>/dev/null; due=1; fi ;; esac',
-  // The session, by shell builtins only (no process per run): the id, and
-  // the name up to its closing quote (an escaped \" stays part of it).
+  // Plan usage, like grep -o '"five_hour"[^}]*}' | head -1, by shell builtins.
+  'case "$input" in *\'"five_hour"\'*) seg=${input#*\'"five_hour"\'}; seg=\'"five_hour"\'${seg%%\'}\'*}\'}\''
+    + '; last=; { IFS= read -r last < "$d/omni-plan"; } 2>/dev/null'
+    + '; if [ "$last" != "$OMNI_CWD_URL $seg" ]; then printf \'%s\\n\' "$OMNI_CWD_URL $seg" > "$d/omni-plan" 2>/dev/null; due=1; fi ;; esac',
+  // The session: the id, and the name up to its closing quote (an escaped
+  // \" stays part of it).
   'sid=; case "$input" in *\'"session_id":"\'*) sid=${input#*\'"session_id":"\'}; sid=${sid%%\'"\'*} ;; esac',
   'nm=; case "$input" in *\'"session_name":"\'*) r=${input#*\'"session_name":"\'}'
     + '; while :; do p=${r%%\'"\'*}; nm=$nm$p; case "$r" in *\'"\'*) r=${r#*\'"\'} ;; *) break ;; esac'

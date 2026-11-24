@@ -79,17 +79,17 @@ test('the status line command posts its input to /status and runs the user statu
       await settle(3);
       assert.strictEqual(got.length, 3);
     } finally { srv2.close(); }
-    // Without grep the usage cannot be compared: reported every time.
+    // Needs only cat and curl (no grep, head): still compared, reported once.
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-nogrep-'));
-    for (const tool of ['cat', 'head', 'curl']) {
+    for (const tool of ['cat', 'curl']) {
       const where = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
       fs.symlinkSync(where, path.join(bin, tool));
     }
     const shPath = spawnSync('sh', ['-c', 'command -v sh'], { encoding: 'utf8' }).stdout.trim();
     run({ PATH: bin }, next, shPath);
     run({ PATH: bin }, next, shPath);
-    await settle(5);
-    assert.strictEqual(got.length, 5);
+    await settle(4);
+    assert.strictEqual(got.length, 4);
     got.length = 3;
     // A wrong token is refused.
     run({ OMNI_HOOK_TOKEN: 'bad' }, { ...STATUS, rate_limits: { five_hour: { used_percentage: 40 } } });
