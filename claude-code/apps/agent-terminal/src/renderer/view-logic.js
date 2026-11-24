@@ -458,11 +458,12 @@
   // pipeline `p`: the node, its memo and the nodes one arrow away, each with
   // its session. `sessionOf(nodeId)` -> null (no terminal bound), { claude:
   // null } (no Claude in it) or { claude: { id, name } }. Text for Claude,
-  // in the user's language; '' for a node not in `p`.
+  // in the user's language; '' for a node not in `p`. A node taken out for a
+  // while (`off`) gets nothing, and its neighbours see only its name.
   function pipelineContext(p, nodeId, sessionOf) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));
     const me = byId.get(nodeId);
-    if (!me) return '';
+    if (!me || me.off) return '';
     const memo = (n) => {
       const t = String(n.memo || '').trim().replace(/\s+/g, ' ');
       return t.length > MEMO_MAX ? `${t.slice(0, MEMO_MAX)}…` : t;
@@ -476,6 +477,7 @@
     const near = (from, to) => [...new Set(p.edges.filter((e) => e[from] === nodeId && e[to] !== nodeId && byId.has(e[to])).map((e) => e[to]))];
     const line = (label, id) => {
       const n = byId.get(id);
+      if (n.off) return `- ${label}: 「${n.name}」 — 잠시 빠짐`;
       const m = memo(n);
       return `- ${label}: 「${n.name}」 — ${session(id)}${m ? ` — 메모: ${m}` : ''}`;
     };

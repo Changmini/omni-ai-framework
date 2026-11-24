@@ -932,7 +932,7 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-node.s-waiting { box-shadow: 0 0 0 1px rgba(242,127,178,.5), 0 0 16px rgba(242,127,178,.16); }
 .pipe-node.s-error::before { background: var(--err); } .pipe-node.s-error .pn-state { color: var(--err); }
 .pipe-node.s-idle::before { background: var(--ok); } .pipe-node.s-idle .pn-state { color: var(--ok); }
-.pipe-node.s-none { opacity: .6; }
+.pipe-node.s-none, .pipe-node.off { opacity: .6; }
 .pipe-node.on { outline: 2px solid var(--text); outline-offset: 2px; }
 .pipe-node:hover { border-color: var(--muted); }
 .pipeline.editing .pipe-node { cursor: grab; }
@@ -949,6 +949,8 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pp-h { margin: 0 0 4px; font-size: 13px; }
 .pp-field { display: block; margin-top: 8px; }
 .pp-field > span { display: block; color: var(--muted); margin-bottom: 3px; }
+.pp-check { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.pp-check[hidden] { display: none; }
 .pp-in {
   width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--bg);
   color: var(--text); font: inherit; font-size: 12.5px;
