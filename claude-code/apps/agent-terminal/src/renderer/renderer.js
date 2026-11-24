@@ -265,6 +265,8 @@ function select(id) {
   const switching = activeId !== id;
   if (switching) { closeSearch(false); closeViewer(false); }
   activeId = id;
+  // Choosing a terminal shows it; keys must not go to one hidden under the graph.
+  if (pipe.view === 'pipeline' && !pipe.keepView) setView('terminal');
   setGroupCollapsed(groupOf[id], false); // the shown terminal is never folded away
   renderList(); // Ctrl+1..9 count within the shown terminal's group
   pipeRefresh();
@@ -283,7 +285,8 @@ function select(id) {
   requestAnimationFrame(() => {
     fitActive();
     // A double-click on a name selects first; leave focus in the rename box.
-    if (![...agents.values()].some((x) => x.renaming)) a.term.focus();
+    if (pipe.view === 'pipeline') pipe.els.root.focus();
+    else if (![...agents.values()].some((x) => x.renaming)) a.term.focus();
   });
   renderActive();
 }
@@ -920,6 +923,7 @@ function openNode(n) {
   if (tid) { select(tid); setView('terminal'); return; }
   pipe.sel = n.id;
   setPipeEditing(true);
+  if (pipe.view !== 'pipeline') setView('pipeline'); // from the strip over the terminal
 }
 
 function nodeNotice(id, text) {
@@ -1062,7 +1066,8 @@ function renderProps(p) {
   sess.value = boundTerminal(n.id) || '';
   sess.addEventListener('change', async () => {
     if (sess.value === '__new') {
-      const tid = await newTerminal();
+      pipe.keepView = true; // stay on the graph while binding the step
+      const tid = await newTerminal().finally(() => { pipe.keepView = false; });
       if (!n.name.startsWith('새 ')) { agents.get(tid).info.name = n.name; api.rename(tid, n.name); renderItem(tid); }
       bindNode(n.id, tid);
     } else bindNode(n.id, sess.value || null);
