@@ -827,3 +827,64 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .rv-dialog pre { margin: 8px 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; font: 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
 .rv-dialog .rv-add { color: var(--ok); }
 .rv-dialog-btns { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+
+/* ---------- terminal groups ---------- */
+.group { list-style: none; }
+.group-head {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px 7px 16px; border-top: 1px solid var(--line); background: #171a21;
+  cursor: pointer; user-select: none; min-width: 0;
+}
+.group:first-child .group-head { border-top-color: var(--hair); }
+.group-head:hover { background: #1b1f27; }
+.group-head:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.group-chev { flex: none; width: 10px; font-size: 10px; color: var(--muted); transition: transform .12s; }
+.group.collapsed .group-chev { transform: rotate(-90deg); }
+.group-name { min-width: 0; font-weight: 600; font-size: 13px; }
+.group.current .group-name { color: #fff; }
+.group-count { flex: none; color: var(--muted); font-size: 12px; }
+.group-msg { flex: none; font-size: 12px; font-weight: 600; color: var(--wait); }
+.group-msg:empty { display: none; }
+.group-dots { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.group-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--off); }
+.group-dots i[data-status="working"] { background: var(--busy); }
+.group-dots i[data-status="waiting"] { background: var(--wait); }
+.group-dots i[data-status="idle"] { background: var(--ok); }
+.group-dots i[data-status="error"] { background: var(--err); }
+.group-more {
+  flex: none; margin-left: 2px; background: none; border: 0; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 13px; padding: 0 4px; border-radius: 4px; line-height: 1.2;
+}
+.group-dots:empty + .group-more { margin-left: auto; }
+.group-more:hover { color: var(--text); background: rgba(255, 255, 255, .06); }
+/* a folded group that has a terminal waiting for the user keeps the signal */
+.group.alert > .group-head { background: linear-gradient(90deg, rgba(242, 127, 178, .13), #171a21 70%); }
+.group.alert > .group-head::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--wait); }
+.group-head.drop { box-shadow: inset 0 0 0 1px var(--text); }
+.group-items { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.group.collapsed > .group-items { display: none; }
+.group-items:empty::before { content: "비어 있음"; display: block; padding: 7px 16px 8px 30px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--hair); }
+/* terminals inside a group: indented, their state bar moves in with them */
+.group-items .agent-row { padding-left: 30px; }
+.group-items .agent-row > .led { left: 14px; }
+.group-items .agent-children { padding-left: 40px; }
+.group-items .agent-tasks { padding-left: 30px; }
+.group-add { margin-left: auto; font-size: 12px; color: var(--muted); }
+.group-add:hover { color: var(--text); }
+.new-terminal-group { margin-left: 6px; color: var(--text); font-weight: 600; }
+
+/* ---------- popup menu ---------- */
+.menu-pop {
+  position: fixed; z-index: 60; min-width: 170px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+.menu-pop.sub { position: fixed; }
+.menu-item {
+  display: flex; width: 100%; align-items: center; gap: 14px; justify-content: space-between;
+  padding: 5px 10px; border: 0; border-radius: 5px; background: none; color: var(--text);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; white-space: nowrap;
+}
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: rgba(255, 255, 255, .07); outline: none; }
+.menu-item:disabled { color: var(--muted); cursor: default; }
+.menu-hint { color: var(--muted); font-size: 11.5px; }
+.menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }

@@ -52,9 +52,9 @@ function writePref(key, value) {
 // ---------- terminal lifecycle ----------
 
 // A plain shell in the home folder; the user cds and runs claude as usual.
-async function newTerminal() {
+async function newTerminal(groupId = null) {
   const info = await api.create({ cols: 100, rows: 30 });
-  addAgent(info);
+  addAgent(info, groupId);
   select(info.id);
   return info.id;
 }
@@ -82,11 +82,12 @@ function isShortcut(e) {
   return (e.ctrlKey && e.shiftKey && !e.altKey && e.code in SHORTCUTS) || navTarget(e) !== null;
 }
 
-// Ctrl+1..9: n-th terminal in the sidebar order; Ctrl+Tab / Ctrl+Shift+Tab:
-// next / previous (wrapping). Returns the terminal id to show, or null.
+// Ctrl+1..9: n-th terminal of the shown terminal's group; Ctrl+Tab /
+// Ctrl+Shift+Tab: next / previous in that group (wrapping). Returns the
+// terminal id to show, or null.
 function navTarget(e) {
   if (!e.ctrlKey || e.altKey || e.metaKey) return null;
-  const ids = [...agents.keys()];
+  const ids = ViewLogic.groupNav([...agents.keys()], groupOf, activeId);
   if (!ids.length) return null;
   const digit = /^Digit([1-9])$/.exec(e.code);
   if (digit && !e.shiftKey) return ids[Number(digit[1]) - 1] ?? null;
@@ -110,7 +111,7 @@ setInterval(() => {
   for (const led of document.querySelectorAll('.led[data-status="working"], .led[data-status="waiting"]')) led.classList.toggle('dim', ledDim);
 }, 1000);
 
-function addAgent(info) {
+function addAgent(info, groupId = null) {
   const el = document.createElement('div');
   el.className = 'term';
   els.terminals.appendChild(el);
@@ -222,9 +223,11 @@ function addAgent(info) {
     closeTerminal(info.id);
   });
   enableDrag(item, info.id);
-  els.list.appendChild(item);
+  row.addEventListener('contextmenu', (e) => { e.preventDefault(); openMenu(e.clientX, e.clientY, terminalMenu(info.id)); });
 
   agents.set(info.id, { info, term, fit, el, item, search, activity: [], stopBlink: () => clearTimeout(blinkTimer) });
+  placeItem(info.id, item, groupId);
+  saveOrder();
   loadActivity(info.id);
   renderItem(info.id);
   renderList();
@@ -237,12 +240,16 @@ function removeAgent(id) {
   a.term.dispose();
   a.el.remove();
   a.item.remove();
+  // Another terminal of the same group is shown next, if there is one.
+  const sameGroup = ViewLogic.groupNav([...agents.keys()], groupOf, id).filter((x) => x !== id);
   agents.delete(id);
+  delete groupOf[id];
+  saveGroupOf();
   // Closing the last terminal closes the window, like a regular terminal app.
   if (agents.size === 0) { window.close(); return; }
   if (activeId === id) {
     activeId = null;
-    select([...agents.keys()].at(-1));
+    select(sameGroup.at(-1) || [...agents.keys()].at(-1));
   }
   renderList();
   renderActive();
@@ -253,6 +260,8 @@ function select(id) {
   const switching = activeId !== id;
   if (switching) { closeSearch(false); closeViewer(false); }
   activeId = id;
+  setGroupCollapsed(groupOf[id], false); // the shown terminal is never folded away
+  renderList(); // Ctrl+1..9 count within the shown terminal's group
   loadConfig();
   if (switching) { clearGit(); clearTree(); } // not the previous terminal's project meanwhile
   if (switching) { api.previewSetActive?.(id); syncPreview(); }
@@ -283,12 +292,21 @@ function fitActive() {
 
 function renderList() {
   els.count.textContent = String(agents.size);
-  // Position badges for Ctrl+1..9, in sidebar order.
-  [...agents.values()].forEach((a, i) => {
+  // Position badges for Ctrl+1..9: within the shown terminal's group only.
+  const nav = ViewLogic.groupNav([...agents.keys()], groupOf, activeId);
+  for (const [id, a] of agents) {
+    const i = nav.indexOf(id);
     const n = a.item.querySelector('.agent-num');
-    n.textContent = i < 9 ? String(i + 1) : '';
-    n.title = i < 9 ? `Ctrl+${i + 1}` : '';
-  });
+    n.textContent = i >= 0 && i < 9 ? String(i + 1) : '';
+    n.title = i >= 0 && i < 9 ? `Ctrl+${i + 1}` : '';
+  }
+  for (const g of groups) {
+    groupEls.get(g.id)?.li.classList.toggle('current', groupOf[activeId] === g.id);
+    renderGroupHead(g.id);
+  }
+  // The new-terminal button names the group a new terminal goes to.
+  const target = groupById(ViewLogic.newTerminalGroup(groups, groupOf, activeId));
+  els.newTerminal.replaceChildren('＋ 새 터미널', ...(target ? [h('span', 'new-terminal-group', `→ ${target.name}`)] : []));
 }
 
 const baseName = (p) => (p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
@@ -401,6 +419,7 @@ function renderItem(id) {
     const head = `${c.team ? '팀 작업' : '작업'} ${t.done}/${t.total}`;
     tasks.textContent = now ? `${head}, ${now.owner ? `${now.owner}: ` : ''}${now.subject}` : head;
   }
+  renderGroupHead(groupOf[id]);
   if (id === activeId) renderActive();
 }
 
@@ -431,31 +450,325 @@ function renderActive() {
   els.banner.textContent = banner ? `${waiting ? '⏳' : '⚠'} ${banner}` : '';
 }
 
+// ---------- terminal groups ----------
+// Every terminal sits in a group (a folder of the sidebar). Groups fold;
+// a folded group still shows a dot per terminal and how many wait for the
+// user. Groups (name, order, folded) are kept in localStorage; which group
+// a terminal is in, only for this run of the app (sessionStorage): terminals
+// end with the app, and shortcuts open them again. Ctrl+1..9 and Ctrl+Tab
+// stay inside the shown terminal's group (ViewLogic.groupNav).
+const GROUPS_KEY = 'terminalGroups';
+const GROUP_OF_KEY = 'terminalGroupOf';
+const DEFAULT_GROUP = '기본';
+let groups = [];
+try { groups = JSON.parse(readPref(GROUPS_KEY, '[]')); } catch { groups = []; }
+groups = (Array.isArray(groups) ? groups : [])
+  .filter((g) => g && typeof g.id === 'string')
+  .map((g) => ({ id: g.id, name: String(g.name || DEFAULT_GROUP).slice(0, 80), collapsed: Boolean(g.collapsed) }));
+let groupOf = {}; // terminal id -> group id
+try { groupOf = JSON.parse(sessionStorage.getItem(GROUP_OF_KEY) || '{}') || {}; } catch { groupOf = {}; }
+const groupEls = new Map(); // group id -> { li, head, list, name, count, msg, dots }
+
+const saveGroups = () => writePref(GROUPS_KEY, JSON.stringify(groups));
+const saveGroupOf = () => { try { sessionStorage.setItem(GROUP_OF_KEY, JSON.stringify(groupOf)); } catch { /* this run only */ } };
+const groupById = (gid) => groups.find((g) => g.id === gid);
+
+function addGroup(name, at = groups.length) {
+  const g = { id: `g-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, collapsed: false };
+  groups.splice(at, 0, g);
+  saveGroups();
+  renderGroups();
+  return g.id;
+}
+
+// One element per group, in the order of `groups`.
+function renderGroups() {
+  for (const [gid, ge] of groupEls) {
+    if (!groupById(gid)) { ge.li.remove(); groupEls.delete(gid); }
+  }
+  for (const g of groups) {
+    let ge = groupEls.get(g.id);
+    if (!ge) ge = makeGroupEl(g.id);
+    els.list.appendChild(ge.li); // in order
+    ge.li.classList.toggle('collapsed', g.collapsed);
+    ge.head.setAttribute('aria-expanded', String(!g.collapsed));
+    if (!ge.renaming) ge.name.textContent = g.name;
+  }
+  renderList();
+}
+
+function makeGroupEl(gid) {
+  const li = h('li', 'group');
+  li.dataset.gid = gid;
+  const head = h('div', 'group-head');
+  head.tabIndex = 0;
+  head.setAttribute('role', 'button');
+  const chev = h('span', 'group-chev', '▾');
+  chev.setAttribute('aria-hidden', 'true');
+  const name = h('span', 'group-name ellipsis');
+  name.title = '더블클릭(또는 F2)해서 이름 바꾸기';
+  const count = h('span', 'group-count');
+  const msg = h('span', 'group-msg');
+  const dots = h('span', 'group-dots');
+  const more = h('button', 'group-more', '⋯');
+  more.type = 'button';
+  more.title = '그룹 메뉴';
+  more.setAttribute('aria-label', '그룹 메뉴');
+  head.append(chev, name, count, msg, dots, more);
+  const list = h('ul', 'group-items');
+  li.append(head, list);
+  const ge = { li, head, list, name, count, msg, dots };
+  groupEls.set(gid, ge);
+
+  head.addEventListener('click', (e) => { if (!more.contains(e.target) && !ge.renaming) toggleGroup(gid); });
+  head.addEventListener('keydown', (e) => {
+    if (e.target !== head) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(gid); }
+    if (e.key === 'F2') { e.preventDefault(); renameGroup(gid); }
+  });
+  name.addEventListener('dblclick', (e) => { e.stopPropagation(); renameGroup(gid); });
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const r = more.getBoundingClientRect();
+    openMenu(r.left, r.bottom + 2, groupMenu(gid));
+  });
+  // Drop on the head: to the end of this group. Hovering a folded one unfolds it.
+  let unfoldTimer = null;
+  head.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    clearDropMarks();
+    head.classList.add('drop');
+    if (groupById(gid)?.collapsed && !unfoldTimer) unfoldTimer = setTimeout(() => { unfoldTimer = null; setGroupCollapsed(gid, false); }, 600);
+  });
+  head.addEventListener('dragleave', () => { head.classList.remove('drop'); clearTimeout(unfoldTimer); unfoldTimer = null; });
+  head.addEventListener('drop', (e) => {
+    e.preventDefault();
+    clearTimeout(unfoldTimer);
+    unfoldTimer = null;
+    clearDropMarks();
+    const moving = dragId ? agents.get(dragId)?.item : null;
+    if (moving) { list.appendChild(moving); saveOrder(); }
+  });
+  return ge;
+}
+
+function setGroupCollapsed(gid, collapsed) {
+  const g = groupById(gid);
+  if (!g || g.collapsed === collapsed) return;
+  g.collapsed = collapsed;
+  saveGroups();
+  renderGroups();
+}
+const toggleGroup = (gid) => setGroupCollapsed(gid, !groupById(gid)?.collapsed);
+
+// The group's head: count, and while folded a dot per terminal and how many wait.
+function renderGroupHead(gid) {
+  const ge = groupEls.get(gid);
+  const g = groupById(gid);
+  if (!ge || !g) return;
+  const ids = [...agents.keys()].filter((id) => groupOf[id] === gid);
+  ge.count.textContent = String(ids.length);
+  const sum = ViewLogic.groupSummary(ids.map((id) => ledStatus(agents.get(id).info)));
+  const show = g.collapsed;
+  ge.msg.textContent = show && sum.waiting ? `기다림 ${sum.waiting}` : '';
+  ge.dots.replaceChildren(...(show ? sum.dots : []).map((s) => { const d = h('i'); d.dataset.status = s; return d; }));
+  ge.li.classList.toggle('alert', show && sum.waiting > 0);
+}
+
+// Inline rename of a group, as for terminals: Enter or leaving saves, Esc cancels.
+function renameGroup(gid) {
+  const ge = groupEls.get(gid);
+  const g = groupById(gid);
+  if (!ge || !g || ge.renaming) return;
+  ge.renaming = true;
+  const input = document.createElement('input');
+  input.className = 'rename';
+  input.value = g.name;
+  input.maxLength = 80;
+  input.setAttribute('aria-label', '그룹 이름');
+  ge.name.replaceChildren(input);
+  input.focus();
+  input.select();
+  let ready = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => { ready = true; if (document.activeElement !== input) { input.focus(); input.select(); } }));
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    ge.renaming = false;
+    if (save && input.value.trim()) { g.name = input.value.trim(); saveGroups(); }
+    ge.name.textContent = g.name;
+    renderList();
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('blur', () => { if (ready) finish(true); else input.focus(); });
+}
+
+// The group a terminal goes to when it is listed: its own (this run), the
+// one asked for, else the shown terminal's or the first; a default group
+// when there is none.
+function placeItem(id, item, prefer = null) {
+  let gid = (prefer && groupById(prefer) && prefer) || (groupById(groupOf[id]) && groupOf[id])
+    || ViewLogic.newTerminalGroup(groups, groupOf, activeId);
+  if (!gid) gid = addGroup(DEFAULT_GROUP);
+  groupOf[id] = gid;
+  saveGroupOf();
+  groupEls.get(gid).list.appendChild(item);
+}
+
+function moveToGroup(id, gid) {
+  const a = agents.get(id);
+  const ge = groupEls.get(gid);
+  if (!a || !ge) return;
+  ge.list.appendChild(a.item);
+  saveOrder();
+}
+
+function moveToNewGroup(id) {
+  const at = groups.findIndex((g) => g.id === groupOf[id]) + 1;
+  const gid = addGroup('새 그룹', at > 0 ? at : groups.length);
+  moveToGroup(id, gid);
+  renameGroup(gid);
+}
+
+// Removing a group: its terminals move to `target` (they are not closed).
+function removeGroup(gid, target) {
+  const ge = groupEls.get(gid);
+  const into = groupEls.get(target);
+  if (!ge) return;
+  if (ge.list.children.length && !into) return;
+  for (const li of [...ge.list.children]) into.list.appendChild(li);
+  groups = groups.filter((g) => g.id !== gid);
+  saveGroups();
+  renderGroups();
+  saveOrder();
+}
+
+function groupMenu(gid) {
+  const others = groups.filter((g) => g.id !== gid);
+  const hasTerminals = groupEls.get(gid)?.list.children.length > 0;
+  const anyOpen = groups.some((g) => !g.collapsed);
+  const target = ViewLogic.ungroupTarget(groups, gid);
+  return [
+    { label: '이 그룹에 새 터미널', action: () => newTerminal(gid) },
+    { label: '이름 바꾸기', hint: 'F2', action: () => renameGroup(gid) },
+    { label: anyOpen ? '모두 접기' : '모두 펼치기', action: () => { for (const g of groups) g.collapsed = anyOpen; saveGroups(); renderGroups(); } },
+    { sep: true },
+    !others.length ? { label: '그룹 해제', disabled: true, hint: '마지막 그룹' }
+      : !hasTerminals ? { label: '그룹 해제', action: () => removeGroup(gid, null) }
+        : { label: '그룹 해제: 터미널 옮길 곳', sub: others.map((g) => ({ label: g.name, hint: g.id === target ? '기본' : '', action: () => removeGroup(gid, g.id) })) },
+  ];
+}
+
+function terminalMenu(id) {
+  const others = groups.filter((g) => g.id !== groupOf[id]);
+  return [
+    { label: '그룹으로 이동', sub: [...others.map((g) => ({ label: g.name, action: () => moveToGroup(id, g.id) })), ...(others.length ? [{ sep: true }] : []), { label: '새 그룹…', action: () => moveToNewGroup(id) }] },
+    { label: '이름 바꾸기', hint: 'F2', action: () => startRename(id) },
+    { label: '터미널 닫기', hint: 'Ctrl+Shift+W', action: () => closeTerminal(id) },
+  ];
+}
+
+// ---------- menu ----------
+// A small popup menu: items { label, hint, action, sub: [items], disabled } or { sep: true }.
+let menuEl = null;
+function closeMenu() {
+  if (!menuEl) return;
+  menuEl.remove();
+  menuEl = null;
+}
+function openMenu(x, y, items) {
+  closeMenu();
+  menuEl = h('div', 'menu-pop');
+  menuEl.setAttribute('role', 'menu');
+  const build = (list, parent, left, top) => {
+    const m = list === items ? menuEl : h('div', 'menu-pop sub');
+    for (const it of list) {
+      if (it.sep) { m.append(h('div', 'menu-sep')); continue; }
+      const row = h('button', 'menu-item');
+      row.type = 'button';
+      row.setAttribute('role', 'menuitem');
+      row.disabled = Boolean(it.disabled);
+      row.append(h('span', 'menu-label', it.label), h('span', 'menu-hint', it.sub ? '▸' : it.hint || ''));
+      if (it.sub) {
+        const open = () => {
+          for (const s of m.querySelectorAll(':scope > .menu-pop.sub')) s.remove();
+          const r = row.getBoundingClientRect();
+          const sub = build(it.sub, m, r.right - 4, r.top - 4);
+          m.append(sub);
+          fit(sub);
+        };
+        row.addEventListener('mouseenter', open);
+        row.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+      } else if (!it.disabled) {
+        row.addEventListener('click', (e) => { e.stopPropagation(); closeMenu(); it.action(); });
+        row.addEventListener('mouseenter', () => { for (const s of m.querySelectorAll(':scope > .menu-pop.sub')) s.remove(); });
+      }
+      m.append(row);
+    }
+    if (parent) { m.style.left = `${left}px`; m.style.top = `${top}px`; }
+    return m;
+  };
+  const fit = (m) => {
+    const r = m.getBoundingClientRect();
+    if (r.right > window.innerWidth - 4) m.style.left = `${Math.max(4, window.innerWidth - r.width - 4)}px`;
+    if (r.bottom > window.innerHeight - 4) m.style.top = `${Math.max(4, window.innerHeight - r.height - 4)}px`;
+  };
+  build(items, null);
+  menuEl.style.left = `${x}px`;
+  menuEl.style.top = `${y}px`;
+  document.body.append(menuEl);
+  fit(menuEl);
+  menuEl.querySelector('.menu-item:not(:disabled)')?.focus();
+}
+document.addEventListener('mousedown', (e) => { if (menuEl && !menuEl.contains(e.target)) closeMenu(); }, true);
+document.addEventListener('keydown', (e) => { if (menuEl && e.key === 'Escape') { e.stopPropagation(); closeMenu(); } }, true);
+window.addEventListener('blur', closeMenu);
+window.addEventListener('resize', closeMenu);
+
+$('#group-add').addEventListener('click', () => renameGroup(addGroup('새 그룹')));
+renderGroups();
+
 // ---------- reorder ----------
 // Drag a terminal in the sidebar, or Ctrl+Shift+PageUp/PageDown (Alt+Up/Down
 // on a focused row). The main process keeps the order for page reloads.
 let dragId = null;
 
-function saveOrder() {
-  const ids = [...els.list.children].map((li) => li.dataset.id).filter((id) => agents.has(id));
-  const reordered = new Map(ids.map((id) => [id, agents.get(id)]));
+// The sidebar is the order: groups one after another, and a terminal's group
+// is the one it sits in.
+function syncOrder() {
+  const items = [...els.list.querySelectorAll('li.agent')].filter((li) => agents.has(li.dataset.id));
+  for (const li of items) groupOf[li.dataset.id] = li.closest('li.group')?.dataset.gid;
+  saveGroupOf();
+  const reordered = new Map(items.map((li) => [li.dataset.id, agents.get(li.dataset.id)]));
   agents.clear();
   for (const [id, a] of reordered) agents.set(id, a);
-  api.reorder(ids);
+  return items.map((li) => li.dataset.id);
+}
+
+function saveOrder() {
+  api.reorder(syncOrder());
   renderList();
 }
 
 function moveTerminal(id, delta) {
   const li = agents.get(id)?.item;
   if (!li) return;
-  if (delta < 0 && li.previousElementSibling) els.list.insertBefore(li, li.previousElementSibling);
-  else if (delta > 0 && li.nextElementSibling) els.list.insertBefore(li.nextElementSibling, li);
+  // Within its group.
+  if (delta < 0 && li.previousElementSibling) li.parentNode.insertBefore(li, li.previousElementSibling);
+  else if (delta > 0 && li.nextElementSibling) li.parentNode.insertBefore(li.nextElementSibling, li);
   else return;
   saveOrder();
 }
 
 function clearDropMarks() {
-  for (const li of els.list.children) li.classList.remove('drop-before', 'drop-after');
+  for (const el of els.list.querySelectorAll('.drop-before, .drop-after, .group-head.drop')) el.classList.remove('drop-before', 'drop-after', 'drop');
 }
 
 function enableDrag(item, id) {
@@ -485,7 +798,7 @@ function enableDrag(item, id) {
     const after = item.classList.contains('drop-after');
     clearDropMarks();
     if (!moving) return;
-    els.list.insertBefore(moving, after ? item.nextSibling : item);
+    item.parentNode.insertBefore(moving, after ? item.nextSibling : item);
     saveOrder();
   });
 }

@@ -448,6 +448,39 @@
     return m[1] === today ? time : `${m[1].slice(5)} ${time}`;
   }
 
+  // ---------- terminal groups ----------
+  // Every terminal is in one group (`groupOf`: terminal id -> group id);
+  // `order` is all terminal ids in sidebar order, groups one after another.
+
+  // The terminals Ctrl+1..9 and Ctrl+Tab move between: those of the shown
+  // terminal's group, in sidebar order (all of them when it has no group).
+  function groupNav(order, groupOf, activeId) {
+    const g = groupOf[activeId];
+    return g ? order.filter((id) => groupOf[id] === g) : order.slice();
+  }
+
+  // The group a new terminal goes to: the shown terminal's, else the first
+  // group; null when there is none yet (a default group is made).
+  function newTerminalGroup(groups, groupOf, activeId) {
+    const g = groupOf[activeId];
+    if (g && groups.some((x) => x.id === g)) return g;
+    return groups.length ? groups[0].id : null;
+  }
+
+  // Where the terminals of a removed group go by default: the group above,
+  // else the one below; null when it is the only group.
+  function ungroupTarget(groups, id) {
+    const i = groups.findIndex((x) => x.id === id);
+    if (i < 0 || groups.length < 2) return null;
+    return (groups[i - 1] || groups[i + 1]).id;
+  }
+
+  // What a collapsed group shows: one dot per terminal (its state) and how
+  // many wait for the user.
+  function groupSummary(statuses) {
+    return { dots: statuses.slice(), waiting: statuses.filter((s) => s === 'waiting').length };
+  }
+
   // Why a prompt shortcut must not be sent to a terminal (`info`: its
   // claude state and status), or null. No Claude: a shell would run the
   // words as a command. Waiting: the keys would answer the open dialog, and
@@ -472,6 +505,6 @@
 
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
-    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, PREVIEW_MIN, TERMINAL_MIN,
+    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

@@ -261,3 +261,21 @@ test('promptBlock: a prompt goes only to a Claude ready for input', () => {
   assert.strictEqual(promptBlock({ status: 'running' }), 'no-claude');
   assert.strictEqual(promptBlock({ status: 'exited', claude: { status: 'idle' } }), 'no-claude');
 });
+
+test('terminal groups: navigation, new terminal, ungroup target, summary', () => {
+  const { groupNav, newTerminalGroup, ungroupTarget, groupSummary } = require('../src/renderer/view-logic');
+  const groups = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const order = ['1', '2', '3', '4', '5'];
+  const groupOf = { 1: 'a', 2: 'a', 3: 'b', 4: 'a', 5: 'b' };
+  assert.deepStrictEqual(groupNav(order, groupOf, '3'), ['3', '5']); // Ctrl+1 = 3, Ctrl+2 = 5
+  assert.deepStrictEqual(groupNav(order, groupOf, '1'), ['1', '2', '4']);
+  assert.deepStrictEqual(groupNav(order, {}, '1'), order);
+  assert.strictEqual(newTerminalGroup(groups, groupOf, '3'), 'b');
+  assert.strictEqual(newTerminalGroup(groups, groupOf, null), 'a'); // nothing shown: the first group
+  assert.strictEqual(newTerminalGroup(groups, { 9: 'gone' }, '9'), 'a');
+  assert.strictEqual(newTerminalGroup([], {}, null), null); // a default group is made
+  assert.strictEqual(ungroupTarget(groups, 'b'), 'a');
+  assert.strictEqual(ungroupTarget(groups, 'a'), 'b');
+  assert.strictEqual(ungroupTarget([{ id: 'a' }], 'a'), null);
+  assert.deepStrictEqual(groupSummary(['waiting', 'working', 'idle', 'waiting']), { dots: ['waiting', 'working', 'idle', 'waiting'], waiting: 2 });
+});
