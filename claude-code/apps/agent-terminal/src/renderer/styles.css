@@ -173,9 +173,9 @@ body {
 .agent-claude[data-status="waiting"] { color: var(--wait); }
 .agent-claude[data-status="idle"] { color: var(--ok); }
 .agent-claude[data-status="error"] { color: var(--err); }
-.agent.dragging { opacity: .4; }
-.agent.drop-before { box-shadow: inset 0 2px 0 var(--text); }
-.agent.drop-after { box-shadow: inset 0 -2px 0 var(--text); }
+.agent.dragging, .shortcut.dragging { opacity: .4; }
+.agent.drop-before, .shortcut.drop-before { box-shadow: inset 0 2px 0 var(--text); }
+.agent.drop-after, .shortcut.drop-after { box-shadow: inset 0 -2px 0 var(--text); }
 /* sidebar width and collapse */
 .sidebar-resizer {
   flex: none; width: 6px; margin: 0 -3px; z-index: 2;
