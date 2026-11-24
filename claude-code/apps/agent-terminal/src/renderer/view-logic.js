@@ -448,6 +448,85 @@
     return m[1] === today ? time : `${m[1].slice(5)} ${time}`;
   }
 
+  // ---------- pipelines ----------
+  // A pipeline is a graph the user draws: nodes (steps, each optionally bound
+  // to a terminal session) and edges (the flow). It only shows the flow; it
+  // starts or advances nothing by itself.
+
+  const NODE_W = 168;
+  const NODE_GAP = 50;
+  const row = (names, y = 112, x0 = 60) => names.map((name, i) => ({ key: name, name, x: x0 + i * (NODE_W + NODE_GAP), y }));
+  const PIPELINE_TEMPLATES = {
+    waterfall: { name: '워터폴', nodes: row(['기획', '설계', '구현', '테스트', '배포']), edges: [['기획', '설계'], ['설계', '구현'], ['구현', '테스트'], ['테스트', '배포']] },
+    prototype: {
+      name: '프로토타입',
+      nodes: [...row(['요구 수집', '프로토타입', '사용자 평가']), ...row(['개발', '배포'], 260, 60 + 2 * (NODE_W + NODE_GAP))],
+      edges: [['요구 수집', '프로토타입'], ['프로토타입', '사용자 평가'], ['사용자 평가', '프로토타입'], ['사용자 평가', '개발'], ['개발', '배포']],
+    },
+    parallel: {
+      name: '병렬',
+      nodes: [{ key: '계획', name: '계획', x: 60, y: 180 }, { key: '화면 구현', name: '화면 구현', x: 278, y: 90 },
+        { key: 'API 구현', name: 'API 구현', x: 278, y: 270 }, { key: '통합·검증', name: '통합·검증', x: 496, y: 180 }],
+      edges: [['계획', '화면 구현'], ['계획', 'API 구현'], ['화면 구현', '통합·검증'], ['API 구현', '통합·검증']],
+    },
+    empty: { name: '새 파이프라인', nodes: [], edges: [] },
+  };
+
+  // A new pipeline from a template; `newId()` makes ids.
+  function pipelineFromTemplate(key, newId) {
+    const t = PIPELINE_TEMPLATES[key] || PIPELINE_TEMPLATES.empty;
+    const ids = new Map(t.nodes.map((n) => [n.key, newId()]));
+    return {
+      id: newId(),
+      name: t.name,
+      nodes: t.nodes.map((n) => ({ id: ids.get(n.key), name: n.name, x: n.x, y: n.y, prompt: '' })),
+      edges: t.edges.map(([a, b]) => ({ from: ids.get(a), to: ids.get(b) })),
+    };
+  }
+
+  // Each node's state from its session: `sessions` node id -> { status, done }
+  // (status: the session's light, as ledStatus gives it; absent: no session;
+  // done: marked done by hand). -> node id -> { state, next }. state: none
+  // (no session), ready, working, waiting, error, done (Claude finished, or
+  // marked done while not working). next: not started yet and every step
+  // before it is done; an edge back to an earlier step (a loop, in flow
+  // order) does not count, or the first step of a loop would never be next.
+  function pipelineStates(p, sessions) {
+    const base = {};
+    for (const n of p.nodes) {
+      const s = sessions[n.id];
+      let state = !s ? 'none' : s.status === 'working' || s.status === 'waiting' || s.status === 'error' ? s.status
+        : s.status === 'idle' ? 'done' : 'ready';
+      if (s && s.done && state !== 'working' && state !== 'waiting') state = 'done';
+      base[n.id] = state;
+    }
+    const pos = new Map(pipelineOrder(p).map((id, i) => [id, i]));
+    const out = {};
+    for (const n of p.nodes) {
+      const before = p.edges.filter((e) => e.to === n.id && pos.get(e.from) < pos.get(n.id)).map((e) => e.from);
+      const open = base[n.id] === 'none' || base[n.id] === 'ready';
+      out[n.id] = { state: base[n.id], next: open && before.length > 0 && before.every((b) => base[b] === 'done') };
+    }
+    return out;
+  }
+
+  // The steps in flow order (for the one-line strip): sources first; a loop
+  // is broken at the earliest remaining node.
+  function pipelineOrder(p) {
+    const indeg = new Map(p.nodes.map((n) => [n.id, 0]));
+    for (const e of p.edges) if (indeg.has(e.to) && indeg.has(e.from) && e.from !== e.to) indeg.set(e.to, indeg.get(e.to) + 1);
+    const left = p.nodes.map((n) => n.id);
+    const out = [];
+    while (left.length) {
+      let i = left.findIndex((id) => indeg.get(id) === 0);
+      if (i < 0) i = 0; // a loop: take the earliest node
+      const [id] = left.splice(i, 1);
+      out.push(id);
+      for (const e of p.edges) if (e.from === id && left.includes(e.to)) indeg.set(e.to, indeg.get(e.to) - 1);
+    }
+    return out;
+  }
+
   // ---------- terminal groups ----------
   // Every terminal is in one group (`groupOf`: terminal id -> group id);
   // `order` is all terminal ids in sidebar order, groups one after another.
@@ -505,6 +584,7 @@
 
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
-    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary, PREVIEW_MIN, TERMINAL_MIN,
+    previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
+    PIPELINE_TEMPLATES, pipelineFromTemplate, pipelineStates, pipelineOrder, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

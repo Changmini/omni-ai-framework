@@ -94,6 +94,10 @@
         <span id="active-name" class="active-name"></span>
         <span id="active-cwd" class="muted ellipsis"></span>
         <span id="active-status" class="status-text"></span>
+        <span id="view-switch" class="view-switch" role="tablist" aria-label="보기">
+          <button type="button" role="tab" data-view="terminal" aria-selected="true">터미널</button>
+          <button type="button" role="tab" data-view="pipeline" aria-selected="false" title="파이프라인 (Ctrl+Shift+G)">파이프라인</button>
+        </span>
         <button id="preview-toggle" class="icon-btn preview-toggle" title="미리보기 (Ctrl+Shift+P)" aria-label="미리보기">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><path d="M3.5 11 6.5 7.5 8.5 9.5 10 8 12.5 11Z" fill="currentColor"/><circle cx="11" cy="5.5" r="1.1" fill="currentColor"/></svg>
           <span class="preview-badge" aria-hidden="true"></span>
@@ -103,7 +107,40 @@
         </button>
       </div>
       <div id="error-banner" class="error-banner" hidden></div>
+      <div id="pipe-strip" class="pipe-strip" hidden></div>
       <div id="center" class="center">
+      <!-- Pipeline graph over the terminals and the preview (Ctrl+Shift+G). -->
+      <section id="pipeline" class="pipeline" hidden tabindex="-1" aria-label="파이프라인">
+        <div class="pipe-bar">
+          <span id="pipe-title" class="pipe-title ellipsis" title="더블클릭: 이름 바꾸기"></span>
+          <button id="pipe-pick" class="vbtn" type="button" aria-haspopup="menu">파이프라인 ▾</button>
+          <span class="pipe-gap"></span>
+          <span id="pipe-edit-tools" class="pipe-tools" hidden>
+            <button id="pipe-add" class="vbtn" type="button">＋ 노드</button>
+            <button id="pipe-del-edge" class="vbtn" type="button" hidden>선 삭제</button>
+          </span>
+          <button id="pipe-edit" class="vbtn" type="button">편집</button>
+          <button id="pipe-done" class="vbtn primary" type="button" hidden>편집 끝</button>
+        </div>
+        <div class="pipe-body">
+        <div id="pipe-canvas" class="pipe-canvas">
+          <div id="pipe-world" class="pipe-world">
+            <svg id="pipe-edges" class="pipe-edges" aria-hidden="true"></svg>
+            <div id="pipe-nodes"></div>
+          </div>
+        </div>
+        <div id="pipe-props" class="pipe-props" hidden></div>
+        </div>
+        <div id="pipe-empty" class="pipe-empty" hidden>
+          <h3>파이프라인 만들기</h3>
+          <div class="pipe-templates">
+            <button class="vbtn" type="button" data-template="waterfall">워터폴</button>
+            <button class="vbtn" type="button" data-template="prototype">프로토타입</button>
+            <button class="vbtn" type="button" data-template="parallel">병렬</button>
+            <button class="vbtn" type="button" data-template="empty">빈 그래프</button>
+          </div>
+        </div>
+      </section>
       <div id="terminals" class="terminals">
         <div id="search-bar" class="search-bar" hidden role="search">
           <input id="search-input" placeholder="검색" spellcheck="false" aria-label="터미널 출력 검색">
