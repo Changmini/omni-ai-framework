@@ -452,6 +452,44 @@
   // A pipeline is a graph the user draws: nodes (each optionally bound to a
   // terminal session) and arrows. It implies no order of work.
 
+  const MEMO_MAX = 300;
+
+  // What the Claude in the session bound to node `nodeId` is told about
+  // pipeline `p`: the node, its memo and the nodes one arrow away, each with
+  // its session. `sessionOf(nodeId)` -> null (no terminal bound), { claude:
+  // null } (no Claude in it) or { claude: { id, name } }. Text for Claude,
+  // in the user's language; '' for a node not in `p`.
+  function pipelineContext(p, nodeId, sessionOf) {
+    const byId = new Map(p.nodes.map((n) => [n.id, n]));
+    const me = byId.get(nodeId);
+    if (!me) return '';
+    const memo = (n) => {
+      const t = String(n.memo || '').trim().replace(/\s+/g, ' ');
+      return t.length > MEMO_MAX ? `${t.slice(0, MEMO_MAX)}…` : t;
+    };
+    const session = (id) => {
+      const s = sessionOf(id);
+      if (!s) return '세션 없음';
+      if (!s.claude) return 'Claude 없음';
+      return s.claude.name ? `세션 「${s.claude.name}」(id ${s.claude.id})` : `세션 id ${s.claude.id}`;
+    };
+    const near = (from, to) => [...new Set(p.edges.filter((e) => e[from] === nodeId && e[to] !== nodeId && byId.has(e[to])).map((e) => e[to]))];
+    const line = (label, id) => {
+      const n = byId.get(id);
+      const m = memo(n);
+      return `- ${label}: 「${n.name}」 — ${session(id)}${m ? ` — 메모: ${m}` : ''}`;
+    };
+    const before = near('to', 'from');
+    const after = near('from', 'to');
+    return [
+      `[Omni Agent Terminal] 사용자가 그린 파이프라인 「${p.name}」에서 이 세션은 「${me.name}」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.`,
+      ...(memo(me) ? [`- 이 노드 메모: ${memo(me)}`] : []),
+      ...before.map((id) => line('이전 노드', id)),
+      ...after.map((id) => line('다음 노드', id)),
+      ...(before.length || after.length ? [] : ['- 화살표로 이어진 노드 없음']),
+    ].join('\n');
+  }
+
   // The nodes in arrow order (for the one-line strip): sources first; a loop
   // is broken at the earliest remaining node.
   function pipelineOrder(p) {
@@ -504,11 +542,13 @@
 
   // Why a prompt shortcut must not be sent to a terminal (`info`: its
   // claude state and status), or null. No Claude: a shell would run the
-  // words as a command. Waiting: the keys would answer the open dialog, and
-  // Enter picks its highlighted choice (e.g. approves a tool call).
+  // words as a command; a Claude just started has no status yet, only its
+  // session (from the status line). Waiting: the keys would answer the open
+  // dialog, and Enter picks its highlighted choice (e.g. approves a tool call).
   function promptBlock(info) {
-    const status = info && info.claude && info.claude.status;
-    if (!status || info.status === 'exited') return 'no-claude';
+    const c = info && info.claude;
+    const status = c && c.status;
+    if (!(status || (c && c.session)) || info.status === 'exited') return 'no-claude';
     if (status === 'waiting') return 'waiting';
     return null;
   }
@@ -527,6 +567,6 @@
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
-    pipelineOrder, PREVIEW_MIN, TERMINAL_MIN,
+    pipelineContext, pipelineOrder, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

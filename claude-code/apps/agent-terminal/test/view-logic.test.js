@@ -258,6 +258,9 @@ test('promptBlock: a prompt goes only to a Claude ready for input', () => {
   assert.strictEqual(promptBlock({ status: 'running', claude: { status: 'working' } }), null);
   assert.strictEqual(promptBlock({ status: 'running', claude: { status: 'waiting' } }), 'waiting'); // Enter would answer the dialog
   assert.strictEqual(promptBlock({ status: 'running', claude: { status: null } }), 'no-claude');
+  // Just started: no hook yet, but the status line told its session.
+  assert.strictEqual(promptBlock({ status: 'running', claude: { status: null, session: { id: 's1', name: null } } }), null);
+  assert.strictEqual(promptBlock({ status: 'exited', claude: { status: null, session: { id: 's1', name: null } } }), 'no-claude');
   assert.strictEqual(promptBlock({ status: 'running' }), 'no-claude');
   assert.strictEqual(promptBlock({ status: 'exited', claude: { status: 'idle' } }), 'no-claude');
 });
@@ -292,4 +295,29 @@ test('pipelines: nodes in arrow order, loops included', () => {
   const r = { nodes: ['a', 'b'].map(node), edges: [{ from: 'a', to: 'a' }, { from: 'x', to: 'b' }] };
   assert.deepStrictEqual(pipelineOrder(r), ['a', 'b']);
   assert.deepStrictEqual(pipelineOrder({ nodes: [], edges: [] }), []);
+});
+
+test('pipelines: what the Claude of a node is told', () => {
+  const { pipelineContext } = require('../src/renderer/view-logic');
+  const node = (id, name, memo = '') => ({ id, name, x: 0, y: 0, memo });
+  const p = {
+    name: '앱 개발',
+    nodes: [node('a', '조사', '요구 정리'), node('b', '화면', '로그인 화면'), node('c', '통합'), node('d', 'API'), node('e', '외딴')],
+    edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'b', to: 'c' }, { from: 'd', to: 'c' }, { from: 'b', to: 'b' }, { from: 'b', to: 'gone' }],
+  };
+  const sessions = { a: { claude: { id: 'id-a', name: 'research' } }, b: { claude: { id: 'id-b', name: null } }, c: { claude: null } };
+  const text = pipelineContext(p, 'b', (id) => sessions[id] || null);
+  assert.strictEqual(text, [
+    '[Omni Agent Terminal] 사용자가 그린 파이프라인 「앱 개발」에서 이 세션은 「화면」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.',
+    '- 이 노드 메모: 로그인 화면',
+    '- 이전 노드: 「조사」 — 세션 「research」(id id-a) — 메모: 요구 정리',
+    '- 다음 노드: 「통합」 — Claude 없음', // once, though two arrows; self and missing nodes left out
+  ].join('\n'));
+  // Two steps away (API -> 통합) is not part of 화면's text; an unbound node says so.
+  assert.match(pipelineContext(p, 'c', () => null), /이전 노드: 「화면」 — 세션 없음 — 메모: 로그인 화면\n- 이전 노드: 「API」 — 세션 없음$/);
+  assert.match(pipelineContext(p, 'e', () => null), /화살표로 이어진 노드 없음$/);
+  assert.strictEqual(pipelineContext(p, 'nope', () => null), '');
+  // A long memo is cut.
+  const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(400)), node('b', '화면')] };
+  assert.match(pipelineContext(long, 'a', () => null), /메모: x{300}…/);
 });

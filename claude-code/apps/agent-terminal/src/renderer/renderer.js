@@ -753,41 +753,49 @@ renderGroups();
 // A graph the user draws freely: nodes, each optionally bound to a terminal
 // session whose state it shows live, and arrows between them. It shows how
 // the user arranged their sessions and what each is doing; it implies no
-// order of work and starts, advances or enforces nothing. Pipelines (nodes,
-// arrows, prompts) are kept in localStorage; which terminal a node is bound
-// to only for this run (sessionStorage), as terminal groups are.
+// order of work and starts, advances or enforces nothing. With "Claude에게
+// 알리기" on, each bound session's Claude is told its node, memo and the
+// nodes one arrow away (pipeline-context.js says when). Pipelines (nodes,
+// arrows, memos) are kept in localStorage; which terminal a node is bound to
+// only for this run (sessionStorage), as terminal groups are.
 const PIPE_KEY = 'pipelines';
 const PIPE_CUR_KEY = 'pipelineCurrent';
 const PIPE_BIND_KEY = 'pipelineBind';
 const NODE_W = 168;
 const NODE_H = 66;
-// By ledStatus, plus none (no session bound).
-const PIPE_STATE_LABEL = { none: '세션 없음', shell: '셸', working: '작업 중', waiting: '승인 대기', error: '오류', idle: '끝남', exited: '종료됨' };
+// By ledStatus, plus none (no session bound) and ready (Claude started, no prompt yet).
+const PIPE_STATE_LABEL = { none: '세션 없음', ready: '준비됨', shell: '셸', working: '작업 중', waiting: '승인 대기', error: '오류', idle: '끝남', exited: '종료됨' };
 const readSession = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || '{}') || {}; } catch { return {}; } };
 const writeSession = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* this run only */ } };
 let pipelines = [];
 try { pipelines = JSON.parse(readPref(PIPE_KEY, '[]')); } catch { pipelines = []; }
 if (!Array.isArray(pipelines)) pipelines = [];
+// The memo was saved as `prompt` before: same text, new key.
+for (const p of pipelines) for (const n of p.nodes || []) if (n.memo === undefined && 'prompt' in n) { n.memo = n.prompt || ''; delete n.prompt; }
 let pipeCur = readPref(PIPE_CUR_KEY, '');
 const pipeBind = readSession(PIPE_BIND_KEY); // node id -> terminal id
 const pipe = {
-  view: 'terminal', editing: false, sel: null, selEdge: -1, notice: new Map(),
+  view: 'terminal', editing: false, sel: null, selEdge: -1,
   els: {
     root: $('#pipeline'), title: $('#pipe-title'), pick: $('#pipe-pick'), edit: $('#pipe-edit'), editTools: $('#pipe-edit-tools'),
     add: $('#pipe-add'), delEdge: $('#pipe-del-edge'), done: $('#pipe-done'), canvas: $('#pipe-canvas'), world: $('#pipe-world'),
     edges: $('#pipe-edges'), nodes: $('#pipe-nodes'), props: $('#pipe-props'), empty: $('#pipe-empty'), strip: $('#pipe-strip'),
+    notify: $('#pipe-notify'),
     switchBtns: [...document.querySelectorAll('#view-switch button')],
   },
 };
 const newPipeId = () => `p-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-const savePipes = () => writePref(PIPE_KEY, JSON.stringify(pipelines));
+const savePipes = () => { writePref(PIPE_KEY, JSON.stringify(pipelines)); pipeRefresh(); };
 const currentPipe = () => pipelines.find((p) => p.id === pipeCur) || pipelines[0] || null;
 const boundTerminal = (nodeId) => (agents.has(pipeBind[nodeId]) ? pipeBind[nodeId] : null);
 
 // The node's state: its session's light, or none.
 function nodeState(n) {
   const tid = boundTerminal(n.id);
-  return tid ? ledStatus(agents.get(tid).info) : 'none';
+  if (!tid) return 'none';
+  const { info } = agents.get(tid);
+  const st = ledStatus(info);
+  return st === 'shell' && info.claude && info.claude.session ? 'ready' : st;
 }
 
 function setView(view) {
@@ -813,13 +821,43 @@ function pipeRefresh() {
     pipeFrame = 0;
     if (pipe.view === 'pipeline' && !pipe.dragging) renderPipeline();
     renderStrip();
+    syncPipelineContext();
   });
+}
+
+// Terminal id -> what its Claude is told, for pipelines with notify on; to
+// the main process only when it changed (it decides what reaches Claude).
+let pipeContextKey = '';
+function syncPipelineContext() {
+  const sessionOf = (nodeId) => {
+    const tid = boundTerminal(nodeId);
+    if (!tid) return null;
+    const c = agents.get(tid).info.claude;
+    const s = c && c.session;
+    return { claude: s && agents.get(tid).info.status !== 'exited' ? { id: s.id, name: s.name } : null };
+  };
+  const map = {};
+  for (const p of pipelines) {
+    if (!p.notify) continue;
+    for (const n of p.nodes) {
+      const tid = boundTerminal(n.id);
+      if (!tid) continue;
+      const text = ViewLogic.pipelineContext(p, n.id, sessionOf);
+      map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text;
+    }
+  }
+  const key = JSON.stringify(map);
+  if (key === pipeContextKey) return;
+  pipeContextKey = key;
+  api.setPipelineContext(map);
 }
 
 function renderPipeline() {
   const p = currentPipe();
   const { els } = pipe;
   if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '파이프라인'; // not while renaming
+  els.notify.hidden = !p;
+  els.notify.setAttribute('aria-checked', String(Boolean(p && p.notify)));
   els.edit.hidden = !p || pipe.editing;
   els.editTools.hidden = !pipe.editing;
   els.done.hidden = !pipe.editing;
@@ -871,12 +909,13 @@ function renderPipeline() {
     div.style.left = `${n.x}px`;
     div.style.top = `${n.y}px`;
     const info = tid ? agents.get(tid).info : null;
-    const label = pipe.notice.get(n.id) || `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
+    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
     // the session: its name, or its folder when it is named after the step
     const sessName = info ? displayName(info) : '';
     const sessText = !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
-    div.append(h('div', 'pn-name ellipsis', n.name), h('div', 'pn-sess ellipsis', sessText), h('div', `pn-state ellipsis${pipe.notice.has(n.id) ? ' notice' : ''}`, label));
-    div.title = `${n.name}${info ? `\n세션: ${displayName(info)}` : '\n세션 없음'}${n.prompt ? `\n시작 프롬프트: ${n.prompt}` : ''}`;
+    div.append(h('div', 'pn-name ellipsis', n.name), h('div', 'pn-sess ellipsis', sessText), h('div', 'pn-state ellipsis', label));
+    const claudeName = info && info.claude && info.claude.session && info.claude.session.name;
+    div.title = `${n.name}${info ? `\n터미널: ${displayName(info)}` : '\n세션 없음'}${claudeName ? `\nClaude 세션: ${claudeName}` : ''}${n.memo ? `\n메모: ${n.memo}` : ''}`;
     if (pipe.editing) {
       const handle = h('span', 'pn-handle');
       handle.title = '끌어서 다른 노드에 연결';
@@ -917,29 +956,10 @@ function openNode(n) {
   if (pipe.view !== 'pipeline') setView('pipeline'); // from the strip over the terminal
 }
 
-function nodeNotice(id, text) {
-  pipe.notice.set(id, text);
-  pipeRefresh();
-  setTimeout(() => { if (pipe.notice.get(id) === text) { pipe.notice.delete(id); pipeRefresh(); } }, 2500);
-}
-
-// The start prompt typed into the node's Claude (not sent), as other
-// prefilled requests are.
-function fillNodePrompt(n) {
-  const tid = boundTerminal(n.id);
-  const a = tid && agents.get(tid);
-  const block = a ? ViewLogic.promptBlock(a.info) : 'no-claude';
-  if (block) { nodeNotice(n.id, block === 'waiting' ? '승인 대기 중이라 채우지 않음' : 'Claude가 없어 채우지 않음'); return; }
-  api.write(tid, ViewLogic.promptInput(n.prompt, false));
-  select(tid);
-  setView('terminal');
-}
-
 function nodeMenu(n) {
   const tid = boundTerminal(n.id);
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
-    ...(n.prompt ? [{ label: '시작 프롬프트 채우기', disabled: !tid, action: () => fillNodePrompt(n) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
   ];
@@ -1062,17 +1082,16 @@ function renderProps(p) {
     } else bindNode(n.id, sess.value || null);
     renderPipeline();
   });
-  const prompt = document.createElement('textarea');
-  prompt.className = 'pp-in';
-  prompt.rows = 3;
-  prompt.value = n.prompt || '';
-  prompt.placeholder = '선택';
-  prompt.addEventListener('input', () => { n.prompt = prompt.value; savePipes(); });
+  const memo = document.createElement('textarea');
+  memo.className = 'pp-in';
+  memo.rows = 4;
+  memo.value = n.memo || '';
+  memo.addEventListener('input', () => { n.memo = memo.value; savePipes(); });
   const del = h('button', 'btn pp-del', '노드 삭제');
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
   const field = (label, el) => { const l = h('label', 'pp-field'); l.append(h('span', null, label), el); return l; };
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('세션', sess), field('시작 프롬프트', prompt), del);
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('세션', sess), field('메모', memo), del);
 }
 
 function refreshNodeLabel(n) {
@@ -1085,6 +1104,7 @@ function bindNode(nodeId, tid) {
   writeSession(PIPE_BIND_KEY, pipeBind);
   for (const id of agents.keys()) renderItem(id);
   renderStrip();
+  pipeRefresh();
 }
 
 function deleteNode(id) {
@@ -1106,7 +1126,7 @@ function addNode() {
   if (!p) return;
   const c = pipe.els.canvas;
   const k = p.nodes.length % 6;
-  const n = { id: newPipeId(), name: '새 단계', x: Math.round((c.scrollLeft + 60 + k * 30) / 10) * 10, y: Math.round((c.scrollTop + 60 + k * 30) / 10) * 10, prompt: '' };
+  const n = { id: newPipeId(), name: '새 단계', x: Math.round((c.scrollLeft + 60 + k * 30) / 10) * 10, y: Math.round((c.scrollTop + 60 + k * 30) / 10) * 10, memo: '' };
   p.nodes.push(n);
   savePipes();
   pipe.sel = n.id;
@@ -1223,6 +1243,13 @@ function nodeNamesOf(tid) {
 
 for (const b of pipe.els.switchBtns) b.addEventListener('click', () => setView(b.dataset.view));
 pipe.els.edit.addEventListener('click', () => setPipeEditing(true));
+pipe.els.notify.addEventListener('click', () => {
+  const p = currentPipe();
+  if (!p) return;
+  p.notify = !p.notify;
+  savePipes();
+  renderPipeline();
+});
 pipe.els.done.addEventListener('click', () => setPipeEditing(false));
 pipe.els.add.addEventListener('click', addNode);
 pipe.els.delEdge.addEventListener('click', deleteSelectedEdge);

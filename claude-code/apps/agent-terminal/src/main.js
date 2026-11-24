@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard, protocol, s
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
+const { PipelineContext } = require('./pipeline-context');
 const { buildClaudeSettings } = require('./claude-settings');
 const { shellLaunch, parseCwdReport, INIT_DIR } = require('./shell');
 const { withWslEnv } = require('./wsl');
@@ -27,6 +28,7 @@ const gitView = require('./git-view');
 let win = null;
 let manager = null;
 let plan = null;
+const pipelineContext = new PipelineContext();
 let previewWin = null; // the preview in its own window, when detached
 let previewActive = null; // the terminal the main window shows (the detached preview follows it)
 let previewWatch = null;
@@ -186,6 +188,7 @@ function registerIpc() {
     const d = str(data);
     if (d !== null) manager.write(str(id, 20), d);
   });
+  ipcMain.on('pipeline:context', (_e, map) => pipelineContext.set(map));
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
   ipcMain.handle('session:reorder', (_e, ids) =>
     manager.reorder(Array.isArray(ids) ? ids.slice(0, 500).map((x) => str(x, 20)).filter(Boolean) : []));
@@ -374,7 +377,11 @@ if (primaryInstance) app.whenReady().then(async () => {
       }
     },
     onCwd: (id, report) => manager && manager.reportShellCwd(id, report),
-    onStatusLine: (_id, data) => plan && plan.report(data),
+    onStatusLine: (id, data) => {
+      if (plan) plan.report(data);
+      if (manager) manager.onStatusLine(id, data);
+    },
+    onPrompt: (id, ev) => pipelineContext.forPrompt(id, String(ev.session_id || '')),
   });
   plan = new PlanUsage({ emit: send });
   // Per process, so no other instance can ever overwrite the port in it.

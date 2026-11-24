@@ -111,3 +111,31 @@ test('user-statusline.py: local, then project, then user settings', (t) => {
   assert.strictEqual(run(bad, local, path.join(d, 'missing.json'), user), '~/.claude/sl.sh');
   assert.strictEqual(run(local), '');
 });
+
+test('the status line reports the session id and name when they change, per terminal', async (t) => {
+  if (spawnSync('curl', ['--version']).status !== 0) return t.skip('no curl');
+  const got = [];
+  const srv = await startHookServer({ onEvent() {}, onStatusLine: (id, d) => got.push([id, d.session_id, d.session_name]), token: 'tok' });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-slsess-'));
+  try {
+    const run = (input, terminal = '3', shell = 'sh') => spawnSync(shell, ['-c', STATUS_LINE_COMMAND], {
+      input: JSON.stringify(input), encoding: 'utf8',
+      env: { ...process.env, XDG_RUNTIME_DIR: tmp, OMNI_HOOK_TOKEN: 'tok', OMNI_TERMINAL_ID: terminal, OMNI_CWD_URL: srv.cwdUrl, OMNI_USER_STATUSLINE: '' },
+    });
+    const settle = async (n) => { for (let i = 0; i < 100 && got.length < n; i++) await new Promise((r) => setTimeout(r, 20)); await new Promise((r) => setTimeout(r, 150)); };
+    run({ session_id: 'a1', model: { id: 'x' } }); // claude started: no name, no plan usage yet
+    await settle(1);
+    run({ session_id: 'a1', model: { id: 'y' } }); // same session: not again
+    await settle(2);
+    assert.deepStrictEqual(got, [['3', 'a1', undefined]]);
+    run({ session_id: 'a1', session_name: 'api 통합 "v2"' }, '3', 'bash'); // --name / /rename, quotes escaped in JSON
+    await settle(2);
+    run({ session_id: 'a1', session_name: 'api 통합 "v2"' });
+    run({ session_id: 'a1', session_name: 'api 통합 "v2"' }, '4'); // another terminal keeps its own
+    await settle(3);
+    assert.deepStrictEqual(got.slice(1), [['3', 'a1', 'api 통합 "v2"'], ['4', 'a1', 'api 통합 "v2"']]);
+    run({ session_id: 'b2', session_name: 'api 통합 "v2"' }); // a new session in terminal 3
+    await settle(4);
+    assert.deepStrictEqual(got.at(-1), ['3', 'b2', 'api 통합 "v2"']);
+  } finally { srv.close(); }
+});
