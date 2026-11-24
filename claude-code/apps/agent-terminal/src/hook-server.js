@@ -36,11 +36,15 @@ function salvage(head) {
 // terminal sent them.
 // Answers are 2xx with an empty body, so hooks neither block nor change any
 // decision (PermissionRequest, TaskCompleted, ...). One exception: for the
-// main session's UserPromptSubmit, `onPrompt(terminalId, event)` may return
-// text, answered as hookSpecificOutput.additionalContext, which Claude Code
-// adds to the prompt's context (https://code.claude.com/docs/en/hooks: an
-// HTTP hook's JSON body uses the command hooks' output format).
-function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, onPrompt = () => null, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
+// main session's UserPromptSubmit, UserPromptExpansion and PostToolUse,
+// `onReply(terminalId, event)` may return text, answered as
+// hookSpecificOutput.additionalContext, which Claude Code adds to Claude's
+// context next to the prompt or the tool result
+// (https://code.claude.com/docs/en/hooks: an HTTP hook's JSON body uses the
+// command hooks' output format; verified on Claude Code 2.1.331).
+const REPLY_EVENTS = new Set(['UserPromptSubmit', 'UserPromptExpansion', 'PostToolUse']);
+
+function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, onReply = () => null, token = crypto.randomBytes(24).toString('hex'), port = 0 }) {
   const server = http.createServer((req, res) => {
     const done = (code, body = '') => {
       res.writeHead(code, body ? { 'Content-Type': 'application/json' } : undefined);
@@ -69,9 +73,9 @@ function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, o
       try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return done(200); }
       if (!ev || typeof ev !== 'object') return done(200);
       // claude-hook.sh (tmux) sends without waiting for the answer: nothing to add there.
-      const context = req.url === '/hook' && !ev.omni && ev.hook_event_name === 'UserPromptSubmit' && !ev.agent_id
-        ? onPrompt(terminalId, ev) : null;
-      done(200, context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context } }) : '');
+      const context = req.url === '/hook' && !ev.omni && REPLY_EVENTS.has(ev.hook_event_name) && !ev.agent_id
+        ? onReply(terminalId, ev) : null;
+      done(200, context ? JSON.stringify({ hookSpecificOutput: { hookEventName: ev.hook_event_name, additionalContext: context } }) : '');
       if (req.url === '/cwd') {
         if (typeof ev.cwd === 'string' && ev.cwd) onCwd(terminalId, ev);
       } else if (req.url === '/status') {

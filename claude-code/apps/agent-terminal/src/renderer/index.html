@@ -123,6 +123,24 @@
           </span>
           <button id="pipe-edit" class="vbtn" type="button">편집</button>
           <button id="pipe-done" class="vbtn primary" type="button" hidden>편집 끝</button>
+          <span class="pipe-help">
+            <button class="pipe-help-btn" type="button" aria-label="Claude에게 전달되는 조건" aria-describedby="pipe-help-pop">!</button>
+            <div id="pipe-help-pop" class="pipe-help-pop" role="tooltip">
+              <h4>Claude에게 전달되는 조건</h4>
+              <dl>
+                <dt>자동</dt>
+                <dd>「Claude에게 알리기」 켬 · 노드에 세션 연결 · 노드를 빼지 않음<br>→ 그 세션에서 프롬프트를 보낼 때, 내용이 바뀐 뒤 한 번 붙음 (새 Claude 세션, 대화 압축 뒤에도 한 번)</dd>
+                <dt>필요할 때</dt>
+                <dd>세션에서 <code>/omni:pipeline</code> 입력, 또는 Claude가 pipeline 스킬을 쓸 때<br>→ 스위치와 관계없이 그때마다 붙음</dd>
+                <dt>내용</dt>
+                <dd>이 노드의 이름·메모, 화살표로 바로 이어진 노드의 이름·메모·Claude 세션(이름, id). 뺀 노드는 「잠시 빠짐」만</dd>
+                <dt>비용</dt>
+                <dd>붙을 때만 토큰 사용 (수백 자)</dd>
+                <dt>대상</dt>
+                <dd>앱 터미널에서 실행한 <code>claude</code></dd>
+              </dl>
+            </div>
+          </span>
         </div>
         <div class="pipe-body">
         <div id="pipe-canvas" class="pipe-canvas">

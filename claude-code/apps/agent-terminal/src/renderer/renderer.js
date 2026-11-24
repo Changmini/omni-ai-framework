@@ -825,8 +825,10 @@ function pipeRefresh() {
   });
 }
 
-// Terminal id -> what its Claude is told, for pipelines with notify on; to
-// the main process only when it changed (it decides what reaches Claude).
+// Terminal id -> what its Claude is told: `auto` for pipelines with notify
+// on, `demand` (the /omni:pipeline skill) for every bound node. To the main
+// process only when changed; it decides what reaches Claude and when
+// (pipeline-context.js).
 let pipeContextKey = '';
 function syncPipelineContext() {
   const sessionOf = (nodeId) => {
@@ -836,21 +838,20 @@ function syncPipelineContext() {
     const s = c && c.session;
     return { claude: s && agents.get(tid).info.status !== 'exited' ? { id: s.id, name: s.name } : null };
   };
-  const map = {};
+  const maps = { auto: {}, demand: {} };
+  const add = (map, tid, text) => { if (text) map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text; };
   for (const p of pipelines) {
-    if (!p.notify) continue;
     for (const n of p.nodes) {
       const tid = boundTerminal(n.id);
       if (!tid) continue;
-      const text = ViewLogic.pipelineContext(p, n.id, sessionOf);
-      if (!text) continue;
-      map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text;
+      if (p.notify) add(maps.auto, tid, ViewLogic.pipelineContext(p, n.id, sessionOf));
+      add(maps.demand, tid, ViewLogic.pipelineContext(p, n.id, sessionOf, true));
     }
   }
-  const key = JSON.stringify(map);
+  const key = JSON.stringify(maps);
   if (key === pipeContextKey) return;
   pipeContextKey = key;
-  api.setPipelineContext(map);
+  api.setPipelineContext(maps);
 }
 
 function renderPipeline() {

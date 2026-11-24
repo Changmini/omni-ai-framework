@@ -28,28 +28,36 @@ test('hook server accepts only token-bearing POSTs and passes the terminal id', 
   } finally { srv.close(); }
 });
 
-test('hook server answers a main UserPromptSubmit with the context, everything else empty', async () => {
+test('hook server answers the main session through onReply, everything else empty', async () => {
   const got = [];
   const asked = [];
   const srv = await startHookServer({
     onEvent: (id, ev) => got.push([id, ev.hook_event_name]),
-    onPrompt: (id, ev) => { asked.push([id, ev.session_id]); return id === '3' ? '노드 정보' : null; },
+    onReply: (id, ev) => { asked.push([id, ev.hook_event_name]); return id === '3' ? `${ev.hook_event_name} 정보` : null; },
     token: 'tok',
   });
   const post = (terminal, body) => fetch(`http://127.0.0.1:${srv.port}/hook`, {
     method: 'POST', headers: { 'x-omni-token': 'tok', 'x-omni-terminal': terminal }, body: JSON.stringify(body),
   }).then(async (r) => [r.status, r.headers.get('content-type'), await r.text()]);
-  try {
-    const [status, type, body] = await post('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' });
+  const ctx = async (terminal, body) => {
+    const [status, type, text] = await post(terminal, body);
     assert.deepStrictEqual([status, type], [200, 'application/json']);
-    assert.deepStrictEqual(JSON.parse(body), { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '노드 정보' } });
+    return JSON.parse(text).hookSpecificOutput;
+  };
+  try {
+    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' }),
+      { hookEventName: 'UserPromptSubmit', additionalContext: 'UserPromptSubmit 정보' });
+    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'UserPromptExpansion', session_id: 's1', command_name: 'omni:pipeline' }),
+      { hookEventName: 'UserPromptExpansion', additionalContext: 'UserPromptExpansion 정보' });
+    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Skill' }),
+      { hookEventName: 'PostToolUse', additionalContext: 'PostToolUse 정보' });
     assert.deepStrictEqual(await post('4', { hook_event_name: 'UserPromptSubmit', session_id: 's2' }), [200, null, '']); // nothing to add
     // Not asked for other events, subagents, or claude-hook.sh (tmux, which does not wait).
     assert.deepStrictEqual(await post('3', { hook_event_name: 'Stop', session_id: 's1' }), [200, null, '']);
-    assert.deepStrictEqual(await post('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', agent_id: 'a' }), [200, null, '']);
+    assert.deepStrictEqual(await post('3', { hook_event_name: 'PostToolUse', session_id: 's1', agent_id: 'a' }), [200, null, '']);
     assert.deepStrictEqual(await post('3', { omni: { pane: '%1' }, event: { hook_event_name: 'UserPromptSubmit', session_id: 's1' } }), [200, null, '']);
-    assert.deepStrictEqual(asked, [['3', 's1'], ['4', 's2']]);
-    assert.strictEqual(got.length, 5); // every event still reaches onEvent
+    assert.strictEqual(asked.length, 4);
+    assert.strictEqual(got.length, 7); // every event still reaches onEvent
   } finally { srv.close(); }
 });
 
@@ -67,11 +75,40 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   const script = Buffer.from(ps.args.at(-1), 'base64').toString('utf16le');
   assert.match(script, /function global:claude/);
   assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS/);
+  assert.match(script, /'--plugin-dir', \$env:OMNI_CLAUDE_PLUGIN/);
   assert.match(script, /OMNI_CWD_URL/);
   assert.match(script, /function global:wsl/);
   assert.match(script, /IFS=; exec bash --rcfile \$OMNI_INIT_BASH -i/);
   assert.deepStrictEqual(shellLaunch('linux', { SHELL: '/bin/bash' }).args.slice(0, 1), ['--rcfile']);
   assert.match(shellLaunch('darwin', { SHELL: '/bin/zsh' }).env.ZDOTDIR, /shell-init[\\/]zsh$/);
+});
+
+test('bash claude wrapper adds the hook settings and, when present, the app plugin', (t) => {
+  const { spawnSync } = require('node:child_process');
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  if (spawnSync('bash', ['--version']).status !== 0) return t.skip('no bash');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-wrap-'));
+  fs.mkdirSync(path.join(tmp, 'bin'));
+  fs.mkdirSync(path.join(tmp, 'plugin dir'));
+  fs.writeFileSync(path.join(tmp, 'bin', 'claude'), '#!/bin/sh\nprintf "%s|" "$@"\n', { mode: 0o755 });
+  const run = (plugin) => spawnSync('bash', ['-c', `source "${path.join(__dirname, '../src/shell-init/omni.bash')}" >/dev/null 2>&1; claude -n 'a b'`], {
+    encoding: 'utf8', env: { HOME: tmp, PATH: `${path.join(tmp, 'bin')}:/usr/bin:/bin`, OMNI_CLAUDE_SETTINGS: '/x.json', OMNI_CLAUDE_PLUGIN: plugin },
+  }).stdout;
+  try {
+    assert.strictEqual(run(path.join(tmp, 'plugin dir')), `--settings|/x.json|--plugin-dir|${path.join(tmp, 'plugin dir')}|-n|a b|`);
+    assert.strictEqual(run(path.join(tmp, 'missing')), '--settings|/x.json|-n|a b|'); // no such folder: left out
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('the app plugin has the pipeline skill', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dir = path.join(__dirname, '../src/claude-plugin');
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.claude-plugin/plugin.json'), 'utf8')).name, 'omni');
+  assert.match(fs.readFileSync(path.join(dir, 'skills/pipeline/SKILL.md'), 'utf8'), /^---\nname: pipeline\ndescription: .+\n---\n/);
+  assert.strictEqual(require('../src/pipeline-context').SKILL, 'omni:pipeline'); // plugin name : skill name
 });
 
 test('parseCwdReport handles OSC 7 and OSC 9;9', () => {

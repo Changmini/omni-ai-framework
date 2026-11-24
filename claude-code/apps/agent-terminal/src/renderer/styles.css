@@ -904,6 +904,24 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-tools { display: flex; gap: 8px; }
 .pipe-tools[hidden] { display: none; }
 /* a switch: the dot lights when on */
+/* (!) next to 편집: how the pipeline reaches Claude, on hover or focus */
+.pipe-help { position: relative; flex: none; display: inline-flex; }
+.pipe-help-btn {
+  width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--muted); background: none;
+  color: var(--muted); font: 700 12px/1 var(--sans); cursor: help; padding: 0;
+}
+.pipe-help-btn:hover, .pipe-help-btn:focus-visible { color: var(--text); border-color: var(--text); }
+.pipe-help-pop {
+  display: none; position: absolute; right: 0; top: calc(100% + 8px); z-index: 5; width: 380px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+  box-shadow: 0 10px 30px #0008; font-size: 12px; line-height: 1.55; word-break: keep-all;
+}
+.pipe-help:hover .pipe-help-pop, .pipe-help-btn:focus-visible + .pipe-help-pop { display: block; }
+.pipe-help-pop h4 { margin: 0 0 8px; font-size: 13px; }
+.pipe-help-pop dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; }
+.pipe-help-pop dt { color: var(--muted); font-weight: 600; }
+.pipe-help-pop dd { margin: 0; }
+.pipe-help-pop code { font: 11.5px var(--mono); }
 .pipe-notify { display: inline-flex; align-items: center; gap: 7px; }
 .pipe-notify[hidden] { display: none; }
 .pipe-notify::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }

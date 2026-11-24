@@ -320,6 +320,7 @@ test('pipelines: what the Claude of a node is told', () => {
   // Taken out for a while: it gets nothing; its neighbours see only its name.
   const off = { ...p, nodes: p.nodes.map((n) => (n.id === 'c' ? { ...n, off: true } : n)) };
   assert.strictEqual(pipelineContext(off, 'c', (id) => sessions[id] || null), '');
+  assert.match(pipelineContext(off, 'c', (id) => sessions[id] || null, true), /이 세션은 「통합」 노드/); // asked with the skill
   assert.match(pipelineContext(off, 'b', (id) => sessions[id] || null), /- 다음 노드: 「통합」 — 잠시 빠짐$/);
   // A long memo is cut.
   const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(400)), node('b', '화면')] };

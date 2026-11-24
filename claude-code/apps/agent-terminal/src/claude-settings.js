@@ -20,6 +20,10 @@ const HOOK_EVENTS = [
   'TaskCreated',
   'TaskCompleted',
   'SessionEnd',
+  // For the pipeline (pipeline-context.js): /omni:pipeline typed, and a
+  // compaction that may have dropped what was told before.
+  'UserPromptExpansion',
+  'PostCompact',
 ];
 
 // The status line: reports what Claude Code passes it to the app in the

@@ -170,11 +170,12 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **우클릭:** `세션으로 이동`, `편집`.
 - **Claude에게 알리기:** 파이프라인마다 켜고 끕니다(기본 꺼짐). 켜면 연결된 각 세션의 Claude가 자기 노드를 참고합니다.
   - **보내는 내용:** 파이프라인 이름, 이 노드의 이름·메모, 화살표로 바로 이어진 이전·다음 노드의 이름·메모와 그 Claude 세션의 이름·id(`--name`·`/rename`으로 붙인 이름, 없으면 Claude가 만든 제목). 두 단계 이상 떨어진 노드와 실시간 상태는 넣지 않습니다. 작업 지시가 아닌 참고 정보라고 함께 적습니다.
-  - **보내는 때:** 그 세션에서 사용자가 프롬프트를 보낼 때, 내용이 바뀐 뒤(또는 새 Claude 세션에서) 한 번만 그 프롬프트에 붙습니다. 그 밖의 프롬프트에는 아무것도 붙지 않습니다.
-  - **방식:** 앱이 이미 받는 `UserPromptSubmit` 훅의 응답에 담아 줍니다(`additionalContext`). 앱이 먼저 Claude에게 보내는 일은 없고, 프로젝트에 파일을 만들지 않습니다.
+  - **보내는 때:** 그 세션에서 사용자가 프롬프트를 보낼 때, 내용이 바뀐 뒤 한 번만 그 프롬프트에 붙습니다. 새 Claude 세션이거나 대화가 압축된 뒤(`PostCompact` 훅)에도 한 번 붙습니다. 그 밖의 프롬프트에는 아무것도 붙지 않습니다. 무엇을 보냈는지는 앱이 켜져 있는 동안만 기억해서, 앱을 다시 켠 뒤 같은 대화를 이어 가면(`claude --resume`) 한 번 더 붙습니다.
+  - **필요할 때 부르기:** 세션에서 `/omni:pipeline`을 입력하거나, Claude가 스스로 pipeline 스킬을 쓰면(예: "다음 단계는?") 스위치와 관계없이 그때마다 같은 정보를 붙입니다(노드에 연결되지 않은 세션에는 연결되지 않았다고 알림). 이 스킬은 앱에 들어 있는 플러그인(`src/claude-plugin`)으로, 앱 터미널의 `claude` 래퍼가 `--plugin-dir`로 그 세션에만 붙입니다. 사용자 폴더나 프로젝트에 설치하는 것은 없습니다.
+  - **방식:** 앱이 이미 받는 훅의 응답에 담아 줍니다(`additionalContext`): 프롬프트는 `UserPromptSubmit`, `/omni:pipeline`은 `UserPromptExpansion`, Claude가 쓴 스킬은 `PostToolUse`. 앱이 먼저 Claude에게 보내는 일은 없고, 프로젝트에 파일을 만들지 않습니다. 파이프라인 화면의 `편집` 옆 `!`에 마우스를 올리면 이 조건이 요약되어 보입니다.
   - **비용:** 붙은 내용(수백 자)은 그 대화의 컨텍스트에 남아 토큰을 씁니다. 메모는 노드마다 300자까지만 보냅니다.
   - **노드 잠시 빼기:** 노드를 우클릭해 `알리기에서 잠시 빼기`(또는 편집 칸의 `Claude에게 알리기` 체크 해제). 그 노드의 세션은 정보를 받지 않고, 앞뒤 노드의 세션에는 「잠시 빠짐」으로만 보입니다(메모·세션 정보 없음). 노드는 흐리게 표시됩니다.
-  - **한계:** 앱이 띄운 `claude`(앱 터미널의 `claude` 래퍼)만 해당합니다. 앱보다 먼저 만든 tmux 세션의 Claude(tmux용 훅)에는 붙지 않습니다. 대화가 압축되면 앞서 받은 내용이 요약에서 빠질 수 있습니다.
+  - **한계:** 앱이 띄운 `claude`(앱 터미널의 `claude` 래퍼)만 해당합니다. 앱보다 먼저 만든 tmux 세션의 Claude(tmux용 훅)에는 붙지 않습니다.
 - **저장:** 그래프(노드·화살표·메모·알리기 설정)는 이 PC의 앱 데이터 폴더(Windows는 `%APPDATA%\omni-agent-terminal`)에 남고, 노드와 터미널의 연결은 앱을 켜 둔 동안만 기억합니다(터미널 그룹과 같은 이유).
 
 ## 바로가기
@@ -353,12 +354,12 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 2. 앱 터미널의 셸에는 `claude` 함수가 정의됩니다. 사용자가 `claude`를 입력하면 실제 `claude`에 `--settings <훅 설정 파일>`이 붙어 실행됩니다(`src/shell-init/`). 앱 밖의 터미널에는 아무 영향이 없습니다.
 3. Claude가 프롬프트 처리, 도구 실행, 승인 요청, 응답 완료 같은 이벤트마다 수신기로 POST합니다. 헤더의 터미널 번호(`OMNI_TERMINAL_ID`)로 어느 탭인지, 본문의 `agent_id`와 `agent_type`으로 어느 서브에이전트나 팀원인지 구분합니다. 요청마다 실행 시 생성한 토큰을 확인합니다.
 4. 같은 설정의 상태 줄(status line)이 세션 id와 이름(`session_id`, `session_name`)을 알려 줍니다. 상태 줄은 Claude가 켜지자마자 한 번 실행되므로, 프롬프트를 보내기 전에도 그 터미널에 Claude가 있다는 걸 압니다(바로가기 프롬프트와 파이프라인의 `준비됨`). 이름이 바뀌면(`/rename`) 다시 알려 줍니다.
-5. 파이프라인의 「Claude에게 알리기」가 켜져 있으면 `UserPromptSubmit` 훅 응답에 노드 정보를 담습니다(위 「파이프라인」 참고). 다른 훅에는 늘 빈 응답을 줍니다.
+5. 파이프라인 노드 정보를 `UserPromptSubmit`·`UserPromptExpansion`·`PostToolUse`(pipeline 스킬) 훅 응답에 담고, `PostCompact`로 대화 압축을 알아챕니다(위 「파이프라인」 참고). 다른 훅에는 늘 빈 응답을 줍니다.
 6. 팀원 목록은 `~/.claude/teams/session-<세션 앞 8자리>/config.json`, 작업 진행률은 `~/.claude/tasks/`를 읽어 합칩니다. 팀·작업 훅이나 작업·팀 도구(`TaskUpdate`, `TeamCreate`, `Agent` 등)가 실행된 뒤에 다시 읽고, 그 밖에는 Claude가 실행 중일 때 10초마다 읽습니다.
 
 검증한 범위(Linux, Claude Code 2.1.318):
 - **확인함:** tmux 안의 실제 `claude` → 사용자 설정 command 훅 → 앱 터미널로 전달(앱보다 먼저 만든 세션 포함), `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
-- **Claude Code 2.1.331에서 확인함:** 상태 줄이 Claude를 켜자마자(프롬프트 전) `session_id`와 함께 실행됨, `--name`·`/rename` 이름이 `session_name`으로 옴, 훅 응답의 `additionalContext`가 그 프롬프트에 붙고 바뀌지 않으면 다시 붙지 않음(실제 Claude로 확인)
+- **Claude Code 2.1.331에서 확인함:** HTTP 훅으로 `UserPromptExpansion`(`command_name: "omni:pipeline"`)·`PostToolUse`(`tool_name: "Skill"`, `tool_input.skill`)·`PreCompact`/`PostCompact`(`/compact` 뒤에도 같은 `session_id`)를 받고 응답의 `additionalContext`가 Claude에게 전달됨, `--plugin-dir`로 붙인 플러그인 스킬을 `/omni:pipeline`으로 부르거나 Claude가 스스로 씀. 상태 줄이 Claude를 켜자마자(프롬프트 전) `session_id`와 함께 실행됨, `--name`·`/rename` 이름이 `session_name`으로 옴, 훅 응답의 `additionalContext`가 그 프롬프트에 붙고 바뀌지 않으면 다시 붙지 않음(실제 Claude로 확인)
 - **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
 - **사용자 환경에서 확인함:** WSLg에서 Electron 창 실행
 - **확인 못 함:** `setup-linux.sh`의 실제 설치 단계(`--dry-run`과 실행기 생성만 확인), Windows에서의 Claude 상태 표시, WSL 연동(Linux bash에서 WSL 환경을 흉내 낸 테스트만 통과), 팀 작업 진행률(실험에서 Claude가 작업 목록을 만들지 않았음)
@@ -378,7 +379,8 @@ src/
 ├── hook-server.js     # 127.0.0.1 HTTP 훅 수신기 (토큰 확인)
 ├── claude-settings.js # --settings로 넘길 훅·상태 줄 설정 생성
 ├── plan-usage.js      # 상태 줄 입력 → 현재 세션(5시간) 사용량
-├── pipeline-context.js # 파이프라인 노드 정보를 Claude 세션마다 바뀐 뒤 한 번만 훅 응답으로 넘김
+├── pipeline-context.js # 파이프라인 노드 정보를 훅 응답으로: 바뀐 뒤(새 세션·압축 뒤) 한 번, 스킬로 부르면 그때마다
+├── claude-plugin/     # 앱 터미널의 claude에만 --plugin-dir로 붙는 플러그인: /omni:pipeline 스킬
 ├── shell.js           # 셸 실행 방법(PowerShell/bash/zsh) + 현재 폴더 보고 파싱
 ├── shell-init/        # 앱 터미널 전용 셸 연동: claude 래퍼(원래 상태 줄 찾기: user-statusline.py), 프롬프트마다 현재 폴더 보고,
 │                      #   tmux용 훅(claude-hook.sh)과 설치 스크립트(omni-tmux-setup.sh)
