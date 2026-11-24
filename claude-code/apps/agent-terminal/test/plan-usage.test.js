@@ -134,8 +134,19 @@ test('the status line reports the session id and name when they change, per term
     run({ session_id: 'a1', session_name: 'api 통합 "v2"' }, '4'); // another terminal keeps its own
     await settle(3);
     assert.deepStrictEqual(got.slice(1), [['3', 'a1', 'api 통합 "v2"'], ['4', 'a1', 'api 통합 "v2"']]);
-    run({ session_id: 'b2', session_name: 'api 통합 "v2"' }); // a new session in terminal 3
+    run({ session_id: 'a1', session_name: 'api 통합 "v3"' }); // changed after an escaped quote
     await settle(4);
-    assert.deepStrictEqual(got.at(-1), ['3', 'b2', 'api 통합 "v2"']);
+    assert.deepStrictEqual(got.at(-1), ['3', 'a1', 'api 통합 "v3"']);
+    run({ session_id: 'b2', session_name: 'api 통합 "v3"' }); // a new session in terminal 3
+    await settle(5);
+    assert.deepStrictEqual(got.at(-1), ['3', 'b2', 'api 통합 "v3"']);
+    // Two claude sessions in tmux panes of one terminal: each reported once, not on every update.
+    const pane = (sid, p) => spawnSync('sh', ['-c', STATUS_LINE_COMMAND], {
+      input: JSON.stringify({ session_id: sid }), encoding: 'utf8',
+      env: { ...process.env, XDG_RUNTIME_DIR: tmp, OMNI_HOOK_TOKEN: 'tok', OMNI_TERMINAL_ID: '5', OMNI_CWD_URL: srv.cwdUrl, OMNI_USER_STATUSLINE: '', TMUX_PANE: p },
+    });
+    for (let i = 0; i < 3; i++) { pane('p1', '%1'); pane('p2', '%2'); }
+    await settle(7);
+    assert.deepStrictEqual(got.slice(5), [['5', 'p1', undefined], ['5', 'p2', undefined]]);
   } finally { srv.close(); }
 });

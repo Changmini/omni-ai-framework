@@ -39,9 +39,8 @@ const HOOK_EVENTS = [
 // carries the app's port, new on each start). Plan usage is account-wide:
 // one file per user; the session, one file per terminal. Both live in the
 // user's runtime folder or ~/.cache (never a shared temp folder, where a
-// planted link would be written through). Without grep nothing can be
-// compared: plan usage is then reported every time, the session never.
-// POSIX sh (ERE alternation, not GNU \|).
+// planted link would be written through). Without grep plan usage cannot be
+// compared and is reported every time. POSIX sh.
 const STATUS_LINE_COMMAND = [
   'input=$(cat)',
   'd="${XDG_RUNTIME_DIR:-$HOME/.cache}"; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null',
@@ -50,9 +49,16 @@ const STATUS_LINE_COMMAND = [
     + ' seg=$(printf \'%s\' "$input" | grep -o \'"five_hour"[^}]*}\' | head -1)'
     + '; if [ -z "$seg" ] || [ "$(cat "$d/omni-plan" 2>/dev/null)" != "$OMNI_CWD_URL $seg" ]; then'
     + ' printf \'%s\' "$OMNI_CWD_URL $seg" > "$d/omni-plan" 2>/dev/null; due=1; fi ;; esac',
-  'sess=$(printf \'%s\' "$input" | grep -oE \'"(session_id|session_name)":"([^"\\\\]|\\\\.)*"\' 2>/dev/null)',
-  'if [ -n "$sess" ] && [ "$(cat "$d/omni-session-$OMNI_TERMINAL_ID" 2>/dev/null)" != "$OMNI_CWD_URL $sess" ]; then'
-    + ' printf \'%s\' "$OMNI_CWD_URL $sess" > "$d/omni-session-$OMNI_TERMINAL_ID" 2>/dev/null; due=1; fi',
+  // The session, by shell builtins only (no process per run): the id, and
+  // the name up to its closing quote (an escaped \" stays part of it).
+  'sid=; case "$input" in *\'"session_id":"\'*) sid=${input#*\'"session_id":"\'}; sid=${sid%%\'"\'*} ;; esac',
+  'nm=; case "$input" in *\'"session_name":"\'*) r=${input#*\'"session_name":"\'}'
+    + '; while :; do p=${r%%\'"\'*}; nm=$nm$p; case "$r" in *\'"\'*) r=${r#*\'"\'} ;; *) break ;; esac'
+    + '; case "$p" in *\'\\\') nm=$nm\'"\' ;; *) break ;; esac; done ;; esac',
+  // One file per terminal and tmux pane: claude sessions in other panes of
+  // the same terminal do not overwrite each other's last report.
+  'if [ -n "$sid" ]; then f="$d/omni-session-$OMNI_TERMINAL_ID$TMUX_PANE"; last=; { IFS= read -r last < "$f"; } 2>/dev/null'
+    + '; if [ "$last" != "$OMNI_CWD_URL $sid $nm" ]; then printf \'%s\\n\' "$OMNI_CWD_URL $sid $nm" > "$f" 2>/dev/null; due=1; fi; fi',
   'if [ -n "$due" ]; then ( printf \'%s\' "$input" | curl -s -m 2 -o /dev/null -X POST -H \'Content-Type: application/json\''
     + ' -H "X-Omni-Token: $OMNI_HOOK_TOKEN" -H "X-Omni-Terminal: $OMNI_TERMINAL_ID"'
     + ' --data-binary @- "${OMNI_CWD_URL%/cwd}/status" >/dev/null 2>&1 & ); fi',
