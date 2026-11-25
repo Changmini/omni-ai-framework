@@ -717,6 +717,10 @@ function openMenu(x, y, items) {
           const r = row.getBoundingClientRect();
           const sub = build(it.sub, m, r.right - 4, r.top - 4);
           m.append(sub);
+          // No room on the right (a menu at the window's right edge): open to
+          // the left of the menu rather than over it.
+          const w = sub.getBoundingClientRect().width;
+          if (r.right - 4 + w > window.innerWidth - 4) sub.style.left = `${Math.max(4, m.getBoundingClientRect().left - w + 4)}px`;
           fit(sub);
         };
         row.addEventListener('mouseenter', open);
@@ -2144,7 +2148,7 @@ const autoDepth = new Map(); // terminal id -> rule-sent prompts in a row
 const zapTimers = new Map();
 
 function newRule(from = null) {
-  const t = from || { name: '새 규칙', event: 'prompt', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'context', text: '' }, freq: 'every' };
+  const { group, ...t } = from || { name: '새 규칙', event: 'prompt', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'context', text: '' }, freq: 'every' };
   return { ...JSON.parse(JSON.stringify(t)), id: `r-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, enabled: true, hits: 0, lastAt: 0 };
 }
 const saveRules = () => { writePref(RULES_KEY, JSON.stringify(rules)); rulesSync(); };
@@ -2329,7 +2333,7 @@ function ruleEditor(r) {
     const b = h('button', null, label);
     b.type = 'button';
     b.setAttribute('aria-pressed', String((r.cond.kind || 'none') === k));
-    b.addEventListener('click', () => { r.cond = { kind: k, value: k === 'none' ? '' : r.cond.value || '' }; changed(true); });
+    b.addEventListener('click', () => { if (k !== (r.cond.kind || 'none')) r.cond = { kind: k, value: k === 'none' ? '' : r.cond.value || '' }; changed(true); });
     seg.append(b);
   }
   const condHint = h('div', 'rl-note');
@@ -2339,7 +2343,7 @@ function ruleEditor(r) {
     condHint.textContent = bad ? '정규식이 올바르지 않아 맞는 것이 없습니다' : RULE_SUBJECT[r.event] || '';
     condHint.classList.toggle('bad', bad);
   };
-  const condValue = input(r.cond.value, r.cond.kind === 'regex' ? '예: git push|migrate' : '예: 배포', (v) => { r.cond.value = v; condCheck(); changed(); }, 'pp-in mono');
+  const condValue = input(r.cond.value, r.cond.kind === 'regex' ? '예: git push|migrate' : '예: 배포', (v) => { r.cond.value = v; delete r.cond.label; condCheck(); changed(); }, 'pp-in mono');
   condValue.hidden = r.cond.kind === 'none';
   condCheck();
 
@@ -2461,9 +2465,11 @@ const RULE_SUBJECT = {
 rulesEls.add.addEventListener('click', () => { const r = newRule(); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); });
 rulesEls.templates.addEventListener('click', () => {
   const b = rulesEls.templates.getBoundingClientRect();
-  openMenu(b.left, b.bottom + 2, RuleLogic.TEMPLATES.map((t) => ({
-    label: t.name,
-    action: () => { const r = newRule(t); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); },
+  const add = (t) => { const r = newRule(t); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); };
+  const groupsOf = [...new Set(RuleLogic.TEMPLATES.map((t) => t.group))];
+  openMenu(b.left, b.bottom + 2, groupsOf.map((g) => ({
+    label: g,
+    sub: RuleLogic.TEMPLATES.filter((t) => t.group === g).map((t) => ({ label: t.name, action: () => add(t) })),
   })));
 });
 
