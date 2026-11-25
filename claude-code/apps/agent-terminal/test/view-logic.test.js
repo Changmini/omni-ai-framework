@@ -339,3 +339,16 @@ test('pipelines: lines that reopen a saved Claude session', () => {
   assert.deepStrictEqual(resumeLines({ id: 'x; rm -rf ~', cwd: '/x' }, 'linux'), []); // never typed
   assert.deepStrictEqual(resumeLines(null, 'linux'), []);
 });
+
+test('pipelines: the recommended pipeline (lead, implementer, reviewer)', () => {
+  const { recommendedPipeline, pipelineOrder } = require('../src/renderer/view-logic');
+  let n = 0;
+  const p = recommendedPipeline(() => `r${n++}`);
+  assert.strictEqual(p.name, '권장 개발 파이프라인');
+  assert.deepStrictEqual(p.nodes.map((x) => x.name), ['팀장', '구현', '리뷰어']);
+  const name = (id) => p.nodes.find((x) => x.id === id).name;
+  assert.deepStrictEqual(p.edges.map((e) => `${name(e.from)}→${name(e.to)}`), ['팀장→구현', '구현→리뷰어', '팀장→리뷰어', '리뷰어→팀장']);
+  assert.ok(p.nodes.every((x) => x.memo && x.memo.length <= 300)); // sent to Claude whole
+  assert.deepStrictEqual(pipelineOrder(p).map(name), ['팀장', '구현', '리뷰어']);
+  assert.strictEqual(new Set([p.id, ...p.nodes.map((x) => x.id)]).size, 4);
+});

@@ -514,6 +514,28 @@
     return lines;
   }
 
+  // The recommended development pipeline, as the omni-pipeline plugin runs it
+  // (claude-code/README.md "팀 개발 파이프라인"): the lead talks with the user
+  // and writes the SPEC, the implementer builds from the SPEC alone, the
+  // reviewer reads the SPEC and the diff and reports only the gaps back to the
+  // lead. Sessions exchange files, not conversation. The memos say each role
+  // in a line, so a session told about its node knows its part.
+  function recommendedPipeline(newId) {
+    const lead = newId();
+    const impl = newId();
+    const review = newId();
+    return {
+      id: newId(),
+      name: '권장 개발 파이프라인',
+      nodes: [
+        { id: lead, name: '팀장', x: 60, y: 160, memo: '사용자와 대화하고 SPEC 을 쓴다(프로젝트 규칙의 위치·양식, 없으면 docs/specs/<이름>.md). 코드는 쓰지 않는다. 리뷰어가 보고한 차이마다 구현 수정·SPEC 수정·기각을 판단한다. 에이전트: omni-pipeline:lead' },
+        { id: impl, name: '구현', x: 340, y: 60, memo: '새 세션에서 SPEC 만 읽고 시작한다. 팀장이 만든 worktree 에서 일하고 결과는 커밋·diff 로 남긴다. 완료 기준이 맞으면 멈춘다. 에이전트: omni-pipeline:implementer' },
+        { id: review, name: '리뷰어', x: 620, y: 160, memo: '읽기 전용. SPEC 과 diff 만 보고, 구현 과정은 모른다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
+      ],
+      edges: [{ from: lead, to: impl }, { from: impl, to: review }, { from: lead, to: review }, { from: review, to: lead }],
+    };
+  }
+
   // The nodes in arrow order (for the one-line strip): sources first; a loop
   // is broken at the earliest remaining node.
   function pipelineOrder(p) {
@@ -591,6 +613,6 @@
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
-    pipelineContext, pipelineOrder, resumeLines, PREVIEW_MIN, TERMINAL_MIN,
+    pipelineContext, pipelineOrder, recommendedPipeline, resumeLines, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

@@ -772,6 +772,9 @@ try { pipelines = JSON.parse(readPref(PIPE_KEY, '[]')); } catch { pipelines = []
 if (!Array.isArray(pipelines)) pipelines = [];
 // The memo was saved as `prompt` before: same text, new key.
 for (const p of pipelines) for (const n of p.nodes || []) if (n.memo === undefined && 'prompt' in n) { n.memo = n.prompt || ''; delete n.prompt; }
+// The recommended pipeline comes with the app, once: deleting it sticks (the
+// "새 파이프라인" menu and the empty screen can add it again).
+const PIPE_SEEDED_KEY = 'pipelineSeeded';
 let pipeCur = readPref(PIPE_CUR_KEY, '');
 const pipeBind = readSession(PIPE_BIND_KEY); // node id -> terminal id
 const pipe = {
@@ -786,6 +789,13 @@ const pipe = {
 };
 const newPipeId = () => `p-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const savePipes = () => { writePref(PIPE_KEY, JSON.stringify(pipelines)); pipeRefresh(); };
+if (readPref(PIPE_SEEDED_KEY, '') !== '1') {
+  pipelines.push(ViewLogic.recommendedPipeline(newPipeId));
+  if (!pipelines.some((p) => p.id === pipeCur)) pipeCur = pipelines[0].id;
+  writePref(PIPE_KEY, JSON.stringify(pipelines));
+  writePref(PIPE_CUR_KEY, pipeCur);
+  writePref(PIPE_SEEDED_KEY, '1');
+}
 const currentPipe = () => pipelines.find((p) => p.id === pipeCur) || pipelines[0] || null;
 const boundTerminal = (nodeId) => (agents.has(pipeBind[nodeId]) ? pipeBind[nodeId] : null);
 
@@ -1232,6 +1242,18 @@ function createPipeline() {
   renamePipeline();
 }
 
+// The recommended pipeline (팀장 → 구현 → 리뷰어), ready to bind terminals to.
+function addRecommendedPipeline() {
+  const p = ViewLogic.recommendedPipeline(newPipeId);
+  pipelines.push(p);
+  pipeCur = p.id;
+  writePref(PIPE_CUR_KEY, pipeCur);
+  savePipes();
+  pipe.sel = null;
+  setPipeEditing(false);
+  renderStrip();
+}
+
 function renamePipeline() {
   const p = currentPipe();
   if (!p) return;
@@ -1263,7 +1285,7 @@ function pipelineMenu() {
   return [
     ...pipelines.map((x) => ({ label: x.name, hint: x.id === (p && p.id) ? '보는 중' : '', action: () => { pipeCur = x.id; writePref(PIPE_CUR_KEY, pipeCur); pipe.sel = null; setPipeEditing(false); renderStrip(); } })),
     ...(pipelines.length ? [{ sep: true }] : []),
-    { label: '새 파이프라인', action: createPipeline },
+    { label: '새 파이프라인', sub: [{ label: '빈 그래프', action: createPipeline }, { label: '권장 개발 파이프라인', action: addRecommendedPipeline }] },
     ...(p ? [
       { label: '이름 바꾸기', action: renamePipeline },
       { label: '이 파이프라인 삭제', action: () => {
@@ -1336,6 +1358,7 @@ pipe.els.canvas.addEventListener('pointerdown', (e) => {
   renderPipeline();
 });
 $('#pipe-create').addEventListener('click', createPipeline);
+$('#pipe-create-recommended').addEventListener('click', addRecommendedPipeline);
 document.addEventListener('keydown', (e) => {
   if (pipe.view !== 'pipeline' || e.target.closest('input, textarea, select')) return;
   if (e.key === 'Escape') { e.stopPropagation(); if (pipe.editing) setPipeEditing(false); else setView('terminal'); }
