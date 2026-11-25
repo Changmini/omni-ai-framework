@@ -127,6 +127,7 @@ class SessionManager {
       claude: emptyState(), // the terminal's main claude session
       primarySid: null,
       sessionNames: new Map(), // session_id -> its name (status line), or null
+      promptedSids: new Set(), // sessions that got a prompt, so have a conversation to resume
       others: new Map(), // session_id -> other claude sessions shown here (split-pane teammates in tmux)
       teammateSids: new Set(), // sessions known to be split-pane teammates
       tmuxSocket: null, // from claude-hook.sh, to select a pane on click
@@ -377,6 +378,7 @@ class SessionManager {
       s.primarySid = sid;
       s.others.delete(sid); // was listed beside the previous main session
     }
+    if (sid && ev.hook_event_name === 'UserPromptSubmit' && !ev.agent_id) s.promptedSids.add(sid);
     if (meta.pane) s.primaryPane = meta.pane;
     this.recordActivity(s, ev, ev.agent_id ? ev.agent_type || 'subagent' : null);
     if (meta.pane) s.primarySocket = meta.socket || s.tmuxSocket;
@@ -845,7 +847,7 @@ class SessionManager {
   // The main claude session is gone (SessionEnd, or its tmux pane closed).
   endPrimary(s) {
     if (s.claude.status || s.claude.sessionId) s.claude = { ...emptyState(), cwd: s.claude.cwd, updatedAt: this.now() };
-    if (s.primarySid) { s.usage.delete(s.primarySid); s.sessionNames.delete(s.primarySid); }
+    if (s.primarySid) { s.usage.delete(s.primarySid); s.sessionNames.delete(s.primarySid); s.promptedSids.delete(s.primarySid); }
     s.team = null;
     s.tasks = null;
     s.primarySid = null;
@@ -979,6 +981,7 @@ class SessionManager {
         name: s.sessionNames.get(s.primarySid) || null,
         cwd: s.claude.cwd || null,
         wsl: s.wsl ? s.wsl.distro : null,
+        prompted: s.promptedSids.has(s.primarySid),
       } : null,
     };
   }

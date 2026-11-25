@@ -838,13 +838,15 @@ function pipeRefresh() {
 
 // Each node keeps the last Claude session of its terminal (saved with the
 // pipeline), so it can be reopened after the app restarts (reopenSession).
+// Only once it got a prompt: a claude started and left without one has no
+// conversation to resume and must not replace the one saved before.
 function rememberSessions() {
   let changed = false;
   for (const p of pipelines) {
     for (const n of p.nodes) {
       const tid = boundTerminal(n.id);
       const s = tid && agents.get(tid).info.claude && agents.get(tid).info.claude.session;
-      if (!s) continue;
+      if (!s || !s.prompted) continue;
       const saved = { id: s.id, name: s.name || null, cwd: s.cwd || null, wsl: s.wsl || null };
       if (JSON.stringify(n.claude) === JSON.stringify(saved)) continue;
       n.claude = saved;
