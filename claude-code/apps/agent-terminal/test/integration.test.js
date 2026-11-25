@@ -58,11 +58,13 @@ test('hook server answers the main session through onReply, everything else empt
     assert.deepStrictEqual(await ctx('3', { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Skill' }),
       { hookEventName: 'PostToolUse', additionalContext: 'PostToolUse 정보' });
     assert.deepStrictEqual(await post('4', { hook_event_name: 'UserPromptSubmit', session_id: 's2' }), [200, null, '']); // nothing to add
-    // Not asked for other events, subagents, or claude-hook.sh (tmux, which does not wait).
+    // A subagent's tool call is asked too (rules.js keeps only blocks and asks for it).
+    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'PreToolUse', session_id: 's1', agent_id: 'a', tool_name: 'Bash' }),
+      { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: '확인' });
+    // Not asked for other events or claude-hook.sh (tmux, which does not wait).
     assert.deepStrictEqual(await post('3', { hook_event_name: 'Stop', session_id: 's1' }), [200, null, '']);
-    assert.deepStrictEqual(await post('3', { hook_event_name: 'PostToolUse', session_id: 's1', agent_id: 'a' }), [200, null, '']);
     assert.deepStrictEqual(await post('3', { omni: { pane: '%1' }, event: { hook_event_name: 'UserPromptSubmit', session_id: 's1' } }), [200, null, '']);
-    assert.strictEqual(asked.length, 4);
+    assert.strictEqual(asked.length, 5);
     assert.strictEqual(got.length, 7); // every event still reaches onEvent
   } finally { srv.close(); }
 });

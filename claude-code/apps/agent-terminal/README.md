@@ -186,7 +186,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **무엇을:**
   - `Claude 에게 글 붙이기`: 프롬프트나 도구 실행에 글을 붙여 Claude가 읽게 합니다(붙인 만큼 그 세션의 토큰을 씀).
   - `파이프라인 노드 정보 붙이기`: 위 [파이프라인](#파이프라인)의 노드 정보.
-  - `실행 막기`, `실행 전 확인 받기`: 명령·도구 실행 전에만. 막으면 Claude에게 이유가 전해지고, 확인은 허용 목록에 있는 명령이어도 승인 창을 띄웁니다.
+  - `실행 막기`, `실행 전 확인 받기`: 명령·도구 실행 전에만. 막으면 Claude에게 이유가 전해지고, 확인은 허용 목록에 있는 명령이어도 승인 창을 띄웁니다. 그 세션의 서브에이전트가 실행하는 명령에도 적용됩니다.
   - `다른 터미널 입력창에 글 넣기`: 기본은 넣기만 하고, 보내기는 직접 Enter. `넣고 바로 보내기`를 켜면 바로 보냅니다. 승인 대기 중이거나 Claude가 없는 터미널에는 넣지 않습니다. 사람이 입력하지 않은 채 자동 보내기가 3번 이어지면 그다음은 넣기만 합니다(두 Claude가 서로 일을 넘기며 끝없이 도는 것을 막음).
   - `사이드바에 표시`: 그 터미널에 ⚡ 표시를 남기고, 그 터미널을 볼 때 지웁니다.
 - **글에 쓸 수 있는 값:** `{terminal}` `{branch}` `{cwd}` `{prompt}` `{command}` `{file}` `{tool}` `{last_answer}`.
@@ -194,7 +194,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **목록:** 규칙마다 켜기·끄기, 규칙 문장, 실행 횟수와 마지막 시각. 규칙이 실행되면 그 터미널 이름 옆에 ⚡가 잠시 보입니다. 넣지 못했거나 넣기만 했으면 그 까닭이 규칙 아래에 보입니다.
 - **템플릿:** `템플릿 ▾`에서 작업 끝나면 다른 터미널에 넘기기, 그룹 규칙 상기, 위험 명령 확인, 키워드로 체크리스트, 승인 대기 표시, 파이프라인 노드 알리기.
 - **시험:** `최근 기록으로 시험`이 이번에 앱을 켠 뒤 받은 같은 종류의 훅(최근 30개 중 5개)에 조건을 맞춰 보고, 맞으면 만들어질 글을 보여 줍니다.
-- **대상:** 앱 터미널에서 실행한 Claude의 메인 세션만. 서브에이전트·팀원, 앱보다 먼저 만든 tmux 세션의 Claude(tmux용 훅)에는 적용되지 않습니다.
+- **대상:** 앱 터미널에서 실행한 Claude의 메인 세션(막기·확인은 그 서브에이전트까지). 팀원, 앱보다 먼저 만든 tmux 세션의 Claude(tmux용 훅)에는 적용되지 않습니다.
 - **저장:** 규칙은 이 PC의 앱 데이터 폴더(Windows는 `%APPDATA%\omni-agent-terminal`)에 남습니다. 고른 터미널은 이름으로 저장하고, 앱을 켜 둔 동안은 같은 터미널을 따라갑니다(폴더를 옮겨 이름이 바뀌어도).
 
 ## 바로가기
@@ -378,7 +378,7 @@ Claude Code의 [HTTP 훅](https://code.claude.com/docs/en/hooks)을 씁니다. *
 
 검증한 범위(Linux, Claude Code 2.1.318):
 - **확인함:** tmux 안의 실제 `claude` → 사용자 설정 command 훅 → 앱 터미널로 전달(앱보다 먼저 만든 세션 포함), `--settings`로 넘긴 HTTP 훅 실행, 헤더의 환경 변수 치환, 서브에이전트 신호, 대화형 세션의 에이전트 팀(`alpha`, `beta` 2명) 표시와 해산 후 정리
-- **Claude Code 2.1.331에서 확인함:** HTTP 훅 응답의 `additionalContext`가 `UserPromptSubmit`·`PostToolUse`에서 Claude에게 전달됨, `PreToolUse`의 `permissionDecision: "deny"`는 도구를 막고 이유가 Claude에게 전해짐, `"ask"`는 `--allowedTools`로 허용한 명령도 승인 창을 띄움, `Stop` 입력에 `last_assistant_message`가 있음, `PostCompact`(`/compact` 뒤에도 같은 `session_id`). 상태 줄이 Claude를 켜자마자(프롬프트 전) `session_id`와 함께 실행됨, `--name`·`/rename` 이름이 `session_name`으로 옴, 훅 응답의 `additionalContext`가 그 프롬프트에 붙고 바뀌지 않으면 다시 붙지 않음(실제 Claude로 확인)
+- **Claude Code 2.1.331에서 확인함:** HTTP 훅 응답의 `additionalContext`가 `UserPromptSubmit`·`PostToolUse`에서 Claude에게 전달됨, `PreToolUse`의 `permissionDecision: "deny"`는 도구를 막고 이유가 Claude에게 전해짐, `"ask"`는 `--allowedTools`로 허용한 명령도 승인 창을 띄움, `Stop` 입력에 `last_assistant_message`가 있음, 서브에이전트의 `PreToolUse`(같은 `session_id`, `agent_id` 포함)에도 `deny`가 적용됨(2.1.332), `PostCompact`(`/compact` 뒤에도 같은 `session_id`). 상태 줄이 Claude를 켜자마자(프롬프트 전) `session_id`와 함께 실행됨, `--name`·`/rename` 이름이 `session_name`으로 옴, 훅 응답의 `additionalContext`가 그 프롬프트에 붙고 바뀌지 않으면 다시 붙지 않음(실제 Claude로 확인)
 - **Claude Code 2.1.332에서 확인함:** `PreToolUse` 응답의 `additionalContext`가 Claude에게 전달됨(실제 Claude로 자동화 규칙 확인)
 - **Windows에서 확인함:** PowerShell 연동 로드, `claude` 래퍼, `cd` 후 경로와 브랜치 표시
 - **사용자 환경에서 확인함:** WSLg에서 Electron 창 실행
