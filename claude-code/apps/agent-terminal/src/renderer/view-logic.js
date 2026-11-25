@@ -518,8 +518,9 @@
   // (claude-code/README.md "팀 개발 파이프라인"): the lead talks with the user
   // and writes the SPEC, the implementer builds from the SPEC alone, the
   // reviewer reads the SPEC and the diff and reports only the gaps back to the
-  // lead. Sessions exchange files, not conversation. The memos say each role
-  // in a line, so a session told about its node knows its part.
+  // lead. Sessions exchange files, not conversation. The memos give each role
+  // as the recommended-pipeline figure describes it, within the 300 characters
+  // sent to Claude, so a session told about its node knows its part.
   function recommendedPipeline(newId) {
     const lead = newId();
     const impl = newId();
@@ -528,9 +529,9 @@
       id: newId(),
       name: '권장 개발 파이프라인',
       nodes: [
-        { id: lead, name: '팀장', x: 60, y: 160, memo: '사용자와 대화하고 SPEC 을 쓴다(프로젝트 규칙의 위치·양식, 없으면 docs/specs/<이름>.md). 코드는 쓰지 않는다. 리뷰어가 보고한 차이마다 구현 수정·SPEC 수정·기각을 판단한다. 에이전트: omni-pipeline:lead' },
-        { id: impl, name: '구현', x: 340, y: 60, memo: '새 세션에서 SPEC 만 읽고 시작한다. 팀장이 만든 worktree 에서 일하고 결과는 커밋·diff 로 남긴다. 완료 기준이 맞으면 멈춘다. 에이전트: omni-pipeline:implementer' },
-        { id: review, name: '리뷰어', x: 620, y: 160, memo: '읽기 전용. SPEC 과 diff 만 보고, 구현 과정은 모른다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
+        { id: lead, name: '팀장', x: 60, y: 160, memo: '대화는 여기서만 한다. 요구가 모호하면 SPEC 을 쓸 수 있을 때까지 사용자를 인터뷰하고, 대화를 직접 들은 팀장이 SPEC(요구·제약·완료 기준)을 쓴다(요약 손실 없음). 결정이 바뀌면 바로 SPEC 에 반영한다. 코드는 짜지 않고 계획·판단·리뷰 처리에 집중한다. 리뷰어의 차이 보고를 보고 구현에 수정을 맡길지, SPEC 이 틀렸으니 사용자에게 다시 물을지 판단한다. 긴 결과는 파일로 남기고 경로만 넘긴다. 에이전트: omni-pipeline:lead' },
+        { id: impl, name: '구현', x: 340, y: 60, memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 써서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 완료 기준이 맞으면 멈춘다. 에이전트: omni-pipeline:implementer' },
+        { id: review, name: '리뷰어', x: 620, y: 160, memo: '구현 과정을 모르는 게 장점이다. 코드를 만든 추론을 보지 않았으니 그 논리에 끌려가지 않는다. 입력은 SPEC 과 코드 변경(diff)뿐, 도구는 Read·Grep·Glob 만 쓴다. 「스타일은 넘기고 정확성에 영향을 주는 누락만」처럼 팀장이 정한 범위로 보고, 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
       ],
       edges: [{ from: lead, to: impl }, { from: impl, to: review }, { from: lead, to: review }, { from: review, to: lead }],
     };
