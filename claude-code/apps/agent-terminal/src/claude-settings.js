@@ -20,9 +20,8 @@ const HOOK_EVENTS = [
   'TaskCreated',
   'TaskCompleted',
   'SessionEnd',
-  // For the pipeline (pipeline-context.js): /omni:pipeline typed, and a
-  // compaction that may have dropped what was told before.
-  'UserPromptExpansion',
+  // For automation rules (rules.js): a compaction may have dropped text
+  // already given to Claude, and "after compaction" is a rule event.
   'PostCompact',
 ];
 

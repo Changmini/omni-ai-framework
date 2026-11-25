@@ -428,3 +428,16 @@ test('the status line tells the session id and name before any hook', () => {
   m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 's1' });
   assert.strictEqual(view().session, null);
 });
+
+test('ruleMeta: the main session only, with branch and folder', () => {
+  const { m } = setup();
+  const { id } = m.create({ cwd: '/repo', command: '' });
+  assert.deepStrictEqual(m.ruleMeta(id, 'A'), { branch: 'main', cwd: '/repo' }); // first session: becomes the main one
+  m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 'A', cwd: '/repo' });
+  m.onHookEvent(id, { hook_event_name: 'TeammateIdle', session_id: 'T' });
+  assert.ok(m.ruleMeta(id, 'A'));
+  assert.strictEqual(m.ruleMeta(id, 'B'), null); // another claude in the terminal
+  assert.strictEqual(m.ruleMeta(id, 'T'), null); // a teammate
+  assert.strictEqual(m.ruleMeta(id, ''), null);
+  assert.strictEqual(m.ruleMeta('nope', 'A'), null);
+});

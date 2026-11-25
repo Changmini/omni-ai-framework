@@ -6,7 +6,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, shell, clipboard, protocol, s
 const pty = require('node-pty');
 const { SessionManager } = require('./sessions');
 const { startHookServer } = require('./hook-server');
-const { PipelineContext } = require('./pipeline-context');
+const { Rules } = require('./rules');
 const { buildClaudeSettings } = require('./claude-settings');
 const { shellLaunch, parseCwdReport, INIT_DIR } = require('./shell');
 const { withWslEnv } = require('./wsl');
@@ -28,7 +28,8 @@ const gitView = require('./git-view');
 let win = null;
 let manager = null;
 let plan = null;
-const pipelineContext = new PipelineContext();
+// The automation rules: run on the main session of a terminal only.
+const rules = new Rules({ emit: (ch, p) => send(ch, p), meta: (id, sid, cwd) => (manager ? manager.ruleMeta(id, sid, cwd) : null) });
 let previewWin = null; // the preview in its own window, when detached
 let previewActive = null; // the terminal the main window shows (the detached preview follows it)
 let previewWatch = null;
@@ -188,7 +189,8 @@ function registerIpc() {
     const d = str(data);
     if (d !== null) manager.write(str(id, 20), d);
   });
-  ipcMain.on('pipeline:context', (_e, map) => pipelineContext.set(map));
+  ipcMain.on('rules:set', (_e, state) => rules.set(state));
+  ipcMain.handle('rules:recent', () => rules.recentEvents());
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
   ipcMain.handle('session:reorder', (_e, ids) =>
     manager.reorder(Array.isArray(ids) ? ids.slice(0, 500).map((x) => str(x, 20)).filter(Boolean) : []));
@@ -369,7 +371,7 @@ if (primaryInstance) app.whenReady().then(async () => {
   hooks = await startHookServer({
     onEvent: (id, ev, meta) => {
       if (manager) manager.onHookEvent(id, ev, meta);
-      if (ev && ev.hook_event_name === 'PostCompact' && !ev.agent_id) pipelineContext.compacted(String(id), String(ev.session_id || ''));
+      if (ev && !meta.pane) rules.onEvent(String(id), ev);
       // Claude wrote the preview: shown at once, not at the next look.
       const file = ev && ev.tool_input && ev.tool_input.file_path;
       if (manager && ev && ev.hook_event_name === 'PostToolUse' && /^(Write|Edit|MultiEdit)$/.test(ev.tool_name || '')
@@ -382,7 +384,7 @@ if (primaryInstance) app.whenReady().then(async () => {
       if (plan) plan.report(data);
       if (manager) manager.onStatusLine(id, data);
     },
-    onReply: (id, ev) => pipelineContext.reply(id, ev),
+    onReply: (id, ev) => rules.reply(String(id), ev),
   });
   plan = new PlanUsage({ emit: send });
   // Per process, so no other instance can ever overwrite the port in it.
@@ -398,9 +400,6 @@ if (primaryInstance) app.whenReady().then(async () => {
     shell: shellLaunch(),
     extraEnv: {
       OMNI_CLAUDE_SETTINGS: settingsFile,
-      // The app's own plugin (the pipeline skill), loaded with --plugin-dir by
-      // the claude wrapper for app terminals only: nothing is installed.
-      OMNI_CLAUDE_PLUGIN: path.join(__dirname, 'claude-plugin'),
       OMNI_HOOK_TOKEN: hooks.token,
       OMNI_CWD_URL: hooks.cwdUrl,
       // For `wsl` typed in an app PowerShell terminal (see shell-init/omni.ps1).
