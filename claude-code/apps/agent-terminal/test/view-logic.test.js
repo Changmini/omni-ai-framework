@@ -312,16 +312,17 @@ test('pipelines: what the Claude of a node is told', () => {
     '- 이 노드 메모: 로그인 화면',
     '- 이전 노드: 「조사」 — 세션 「research」(id id-a) — 메모: 요구 정리',
     '- 다음 노드: 「통합」 — Claude 없음', // once, though two arrows; self and missing nodes left out
+    '- 다른 Claude에게 일을 맡길 때: 이 블록과, 다른 Claude에게서 받은 [Omni Agent Terminal] 블록을 모두 고치거나 줄이지 말고 원문 그대로 함께 넘기세요.',
   ].join('\n'));
   // Two steps away (API -> 통합) is not part of 화면's text; an unbound node says so.
-  assert.match(pipelineContext(p, 'c', () => null), /이전 노드: 「화면」 — 세션 없음 — 메모: 로그인 화면\n- 이전 노드: 「API」 — 세션 없음$/);
-  assert.match(pipelineContext(p, 'e', () => null), /화살표로 이어진 노드 없음$/);
+  assert.match(pipelineContext(p, 'c', () => null), /이전 노드: 「화면」 — 세션 없음 — 메모: 로그인 화면\n- 이전 노드: 「API」 — 세션 없음\n/);
+  assert.match(pipelineContext(p, 'e', () => null), /화살표로 이어진 노드 없음\n- 다른 Claude에게 일을 맡길 때/);
   assert.strictEqual(pipelineContext(p, 'nope', () => null), '');
   // Taken out for a while: it gets nothing; its neighbours see only its name.
   const off = { ...p, nodes: p.nodes.map((n) => (n.id === 'c' ? { ...n, off: true } : n)) };
   assert.strictEqual(pipelineContext(off, 'c', (id) => sessions[id] || null), '');
   assert.match(pipelineContext(off, 'c', (id) => sessions[id] || null, true), /이 세션은 「통합」 노드/); // asked with the skill
-  assert.match(pipelineContext(off, 'b', (id) => sessions[id] || null), /- 다음 노드: 「통합」 — 잠시 빠짐$/);
+  assert.match(pipelineContext(off, 'b', (id) => sessions[id] || null), /- 다음 노드: 「통합」 — 잠시 빠짐\n/);
   // A long memo is cut.
   const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(400)), node('b', '화면')] };
   assert.match(pipelineContext(long, 'a', () => null), /메모: x{300}…/);

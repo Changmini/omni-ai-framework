@@ -453,12 +453,16 @@
   // terminal session) and arrows. It implies no order of work.
 
   const MEMO_MAX = 300;
+  const PIPELINE_MARK = '[Omni Agent Terminal]';
 
   // What the Claude in the session bound to node `nodeId` is told about
   // pipeline `p`: the node, its memo and the nodes one arrow away, each with
   // its session. `sessionOf(nodeId)` -> null (no terminal bound), { claude:
   // null } (no Claude in it) or { claude: { id, name } }. Text for Claude,
-  // in the user's language; '' for a node not in `p`. A node taken out for a
+  // in the user's language; '' for a node not in `p`. Its last line asks to
+  // pass the block on unchanged, with any received from earlier Claudes, so
+  // it survives a chain of hand-offs (a Claude handed work never hears from
+  // the app itself). A node taken out for a
   // while (`off`) gets nothing, unless `asked` (its session ran the pipeline
   // skill); its neighbours see only its name.
   function pipelineContext(p, nodeId, sessionOf, asked = false) {
@@ -485,11 +489,12 @@
     const before = near('to', 'from');
     const after = near('from', 'to');
     return [
-      `[Omni Agent Terminal] 사용자가 그린 파이프라인 「${p.name}」에서 이 세션은 「${me.name}」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.`,
+      `${PIPELINE_MARK} 사용자가 그린 파이프라인 「${p.name}」에서 이 세션은 「${me.name}」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.`,
       ...(memo(me) ? [`- 이 노드 메모: ${memo(me)}`] : []),
       ...before.map((id) => line('이전 노드', id)),
       ...after.map((id) => line('다음 노드', id)),
       ...(before.length || after.length ? [] : ['- 화살표로 이어진 노드 없음']),
+      `- 다른 Claude에게 일을 맡길 때: 이 블록과, 다른 Claude에게서 받은 ${PIPELINE_MARK} 블록을 모두 고치거나 줄이지 말고 원문 그대로 함께 넘기세요.`,
     ].join('\n');
   }
 
