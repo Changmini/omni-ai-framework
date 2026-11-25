@@ -1,0 +1,20 @@
+{
+  "skill_name": "leading-changes",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Users should be able to export their data. Interview me until you can write the spec.",
+      "expected_output": "Reads the relevant code, asks a few targeted questions at a time, then writes a spec from the template with checkable 'done when' items and asks for approval before any implementation."
+    },
+    {
+      "id": 2,
+      "prompt": "Fix the typo in the README heading.",
+      "expected_output": "Decides the change is too small for the structure and edits it directly, without writing a spec or starting other roles."
+    },
+    {
+      "id": 3,
+      "prompt": "The reviewer says the export ignores the date filter, but the spec never mentions a date filter.",
+      "expected_output": "Treats it as a spec gap: asks the user whether the filter is required, updates the spec if so, and only then sends the gap back to the implementer."
+    }
+  ]
+}

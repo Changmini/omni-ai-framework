@@ -97,7 +97,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
 | 도구명·모델명 금지 (`validate`가 정규식으로 검사) | `.agents/`, 관리 블록 |
 
 ### 4.2 스킬 ✅
-- frontmatter는 **표준 필드만** 씁니다(`validate`가 비표준 필드를 오류 처리). 이름 규칙은 표준 + 벤더 규칙의 합집합입니다. 공식 `skills-ref validate`로 6종 모두 통과를 확인했습니다.
+- frontmatter는 **표준 필드만** 씁니다(`validate`가 비표준 필드를 오류 처리). 이름 규칙은 표준 + 벤더 규칙의 합집합입니다. 공식 `skills-ref validate`로 이전 기본 스킬 6종의 통과를 확인했습니다. `leading-changes`·`implementing-specs`는 `omni.py validate`로만 확인했습니다(skills-ref 미실행).
 - 프레임워크 확장은 `metadata`의 `omni.*` 키로 표현합니다.
 
   | `metadata` 키 | 의미 | AGENTS.md 표현 | Claude Code 어댑터 번역 🔜 |
@@ -106,12 +106,12 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
   | `omni.arguments: "[task]"` | 인자 힌트 | — | `argument-hint` |
 
 - 각 스킬은 `evals/evals.json`에 3건 이상의 케이스를 둡니다(1건은 "적용하면 안 되는" 경우).
-- 기본 스킬 6종: `planning-changes`, `verifying-changes`, `reviewing-changes`, `writing-specs`(manual), `writing-documents`, `authoring-skills`.
+- 기본 스킬 6종: 역할마다 대응하는 `leading-changes`(lead), `implementing-specs`(implementer), `reviewing-changes`(reviewer)와 공통 `verifying-changes`, `writing-documents`, `authoring-skills`.
 
 ### 4.3 역할 (서브 에이전트) ✅
 - 형식: `.agents/agents/<name>.md`, frontmatter `name`(파일명과 일치), `description`(무엇 + 언제), `access`(`read-only` | `read-write`).
 - 본문 필수 요소: "호출자 대화를 볼 수 없음, 최종 사용자에게 질문 금지", Inputs, Rules, 고정된 Output 형식.
-- 기본 역할 3종: `explorer`, `planner`, `reviewer`. 모두 read-only입니다.
+- 기본 역할 3종: `lead`(read-write, 사용자와 대화하고 스펙을 씀, 코드는 쓰지 않음), `implementer`(read-write, 새 컨텍스트에서 스펙만 읽고 구현), `reviewer`(read-only, 스펙과 diff만 보고 차이만 보고). 세션 사이에는 대화가 아니라 파일(스펙, diff, 차이 목록)만 오갑니다.
 - 도구 고유 형식(Claude Code `.claude/agents/*.md`, Kimi YAML agent spec)으로의 변환은 어댑터의 몫입니다 🔜.
 
 ### 4.4 문서 디자인 ✅

@@ -106,16 +106,16 @@ A skill is a folder under `.agents/skills/` with a `SKILL.md` file (Agent Skills
 | Skill | Use when | Trigger | File |
 | --- | --- | --- | --- |
 | authoring-skills | Creates or revises skills and agent role files in this framework's format. Use when the user wants to add a skill or role, turn a repeated workflow into one, or fix one that is not picked up. | auto | `.agents/skills/authoring-skills/SKILL.md` |
-| planning-changes | Plans and executes a multi-file or unfamiliar code change as explore, plan, implement, verify, review. Use when a change touches several files, the approach is uncertain, or the code is unfamiliar. Skip it for changes describable in one sentence. | auto | `.agents/skills/planning-changes/SKILL.md` |
-| reviewing-changes | Reviews a finished change against its plan or requirements and reports only gaps that affect correctness. Use before declaring a multi-file task done, or when the user asks for a review of a diff. | auto | `.agents/skills/reviewing-changes/SKILL.md` |
+| implementing-specs | Hands a written spec to the implementer role so the work starts in a fresh context from the spec alone, on its own branch or worktree, and comes back as commits and a diff. Use when a spec exists and is approved, or the user asks to implement a spec file. | auto | `.agents/skills/implementing-specs/SKILL.md` |
+| leading-changes | Leads a change from the user's request to an accepted result as the lead role. Decides whether it needs the spec, implement, review structure; interviews the user and writes the spec; hands it to the implementer and reviewer roles; and acts on the gaps they report. Use when a change touches several files or the requirements are unclear. Skip it for a one- or two-file change. | auto | `.agents/skills/leading-changes/SKILL.md` |
+| reviewing-changes | Reviews a finished change against its spec through the reviewer role, which only reads, does not know how the change was made, and reports only the gaps. Use after implementation and before accepting a change, or when the user asks for a review of a diff. | auto | `.agents/skills/reviewing-changes/SKILL.md` |
 | verifying-changes | Discovers and runs the project's own checks (tests, type checks, linters, builds) and reports the evidence. Use after editing code, before saying a task is done, or when the user asks to test or verify. | auto | `.agents/skills/verifying-changes/SKILL.md` |
 | writing-documents | Writes specs, plans, decision records, and review reports using the repository's document templates and style rules. Use when the user asks for any of these documents or a skill step produces one. | auto | `.agents/skills/writing-documents/SKILL.md` |
-| writing-specs | Interviews the user about a feature and writes a self-contained spec before implementation. Use when the user wants to design or scope a larger feature or asks to be interviewed about requirements. | manual | `.agents/skills/writing-specs/SKILL.md` |
 <!-- omni:skills:end -->
 
 ## 3. Agent roles
 
-A role is a self-contained instruction file under `.agents/agents/` for work that benefits from a fresh, isolated context (investigation, independent review).
+A role is a self-contained instruction file under `.agents/agents/`. The `lead` is the session that talks with the user; `implementer` and `reviewer` work in a fresh, isolated context and exchange only files with it (see `.agents/skills/leading-changes/SKILL.md`).
 
 How to use a role:
 
@@ -125,9 +125,9 @@ How to use a role:
 <!-- omni:agents:start -->
 | Role | Use for | Access | File |
 | --- | --- | --- | --- |
-| explorer | Investigates a scoped question about the codebase and returns a concise, sourced answer. Use when answering needs reading many files that the main task does not need to keep. | read-only | `.agents/agents/explorer.md` |
-| planner | Turns a goal into a concrete implementation plan with files, steps, risks, and a verification method. Use before a multi-file change when no approved plan exists. | read-only | `.agents/agents/planner.md` |
-| reviewer | Reviews a diff in a fresh context against the plan or requirements and reports only correctness gaps with evidence. Use before declaring a multi-file change done. | read-only | `.agents/agents/reviewer.md` |
+| implementer | Implements a written spec in a fresh context. Reads only the spec and the code, works on its own branch or worktree, and leaves commits and a diff as the result. Use when a spec exists and the work should start from it. | read-write | `.agents/agents/implementer.md` |
+| lead | Leads a change as the session that talks with the user. Interviews the user, writes the spec, hands work to the implementer and reviewer roles, and decides what each reported gap means. Does not write code. Use as the main session for a change that needs more than a one- or two-file edit. | read-write | `.agents/agents/lead.md` |
+| reviewer | Reviews a change against its spec in a fresh context, without knowing how the change was made, and reports only the gaps between them. Use after implementation, before the lead accepts the change. | read-only | `.agents/agents/reviewer.md` |
 <!-- omni:agents:end -->
 
 ## 4. Document design

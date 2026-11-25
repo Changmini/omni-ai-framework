@@ -1,8 +1,8 @@
 {
   "name": "omni-pipeline",
   "displayName": "Omni Pipeline",
-  "version": "0.2.1",
-  "description": "Goal definition and a plan → critic review → build → code review pipeline with planner, rationale-critic, builder, reviewer and spec-writer agents",
+  "version": "0.3.0",
+  "description": "Goal definition and a lead → SPEC → implementer → reviewer pipeline: lead, implementer and reviewer agents, each with its skill (leading-changes, implementing-specs, reviewing-changes)",
   "author": {
     "name": "changmini"
   },

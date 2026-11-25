@@ -41,7 +41,6 @@ If this repo already has AGENTS.md, replace this file's body with: @AGENTS.md
 
 <!-- Read by the omni-pipeline and omni-jira agents. Delete rows that do not apply; agents then fall back to defaults. -->
 
-- Plans: `<docs/plans/>`
 - Specs: `<docs/specs/>` (file name `YYYY-MM-DD-<topic>-design.md`)
 - Issue records: `<docs/issues/>`
 - Task list (single source of truth): `<docs/tasks.md>`

@@ -2030,7 +2030,7 @@ function renderConfig(data, id = activeId) {
     const ul = h('ul', 'cfg-list');
     for (const x of items) {
       const [fullName, rawSrc, tip] = row(x);
-      // Plugin items: "omni-core:planning-changes" + "플러그인 omni-core" would
+      // Plugin items: "omni-core:verifying-changes" + "플러그인 omni-core" would
       // say the plugin twice; show the short name with the plugin as source.
       const plugin = /^플러그인 (.+)$/.exec(rawSrc || '');
       const name = plugin ? fullName.replace(`${plugin[1]}:`, '') : fullName;
