@@ -318,11 +318,6 @@ test('pipelines: what the Claude of a node is told', () => {
   assert.match(pipelineContext(p, 'c', () => null), /이전 노드: 「화면」 — 세션 없음 — 메모: 로그인 화면\n- 이전 노드: 「API」 — 세션 없음\n/);
   assert.match(pipelineContext(p, 'e', () => null), /화살표로 이어진 노드 없음\n- 다른 Claude에게 일을 맡길 때/);
   assert.strictEqual(pipelineContext(p, 'nope', () => null), '');
-  // Taken out for a while: it gets nothing; its neighbours see only its name.
-  const off = { ...p, nodes: p.nodes.map((n) => (n.id === 'c' ? { ...n, off: true } : n)) };
-  assert.strictEqual(pipelineContext(off, 'c', (id) => sessions[id] || null), '');
-  assert.match(pipelineContext(off, 'c', (id) => sessions[id] || null, true), /이 세션은 「통합」 노드/); // asked with the skill
-  assert.match(pipelineContext(off, 'b', (id) => sessions[id] || null), /- 다음 노드: 「통합」 — 잠시 빠짐\n/);
   // A long memo is cut.
   const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(1100)), node('b', '화면')] };
   assert.match(pipelineContext(long, 'a', () => null), /메모: x{1000}…/);

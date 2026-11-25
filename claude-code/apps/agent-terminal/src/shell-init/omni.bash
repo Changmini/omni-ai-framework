@@ -36,8 +36,6 @@ __omni_user_statusline() {
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
   # OMNI_HOOKED tells the tmux hook (claude-hook.sh) this claude already reports.
   claude() {
-    # The app's plugin (the /omni:pipeline skill), for this session only.
-    if [ -n "$OMNI_CLAUDE_PLUGIN" ] && [ -d "$OMNI_CLAUDE_PLUGIN" ]; then set -- --plugin-dir "$OMNI_CLAUDE_PLUGIN" "$@"; fi
     OMNI_USER_STATUSLINE="$(__omni_user_statusline)" OMNI_HOOKED=1 \
       command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"
   }

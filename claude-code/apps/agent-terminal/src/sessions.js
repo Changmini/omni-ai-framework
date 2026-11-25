@@ -348,6 +348,19 @@ class SessionManager {
     this.emitAgent(s);
   }
 
+  // What automation rules know of terminal `id` for an event of session
+  // `sid` in folder `cwd`: { branch, cwd }, or null when `sid` is not its
+  // main session (a teammate, another claude in tmux). A first session
+  // becomes the main one. The branch is that of `cwd` when the terminal has
+  // not caught up with it yet (`cd dir && claude` reports no new folder
+  // before the first hook).
+  ruleMeta(id, sid, cwd = '') {
+    const s = this.sessions.get(id);
+    if (!s || !sid || s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid)) return null;
+    const branch = cwd && cwd !== s.cwd ? this.gitBranch(this.hostPath(s, cwd)) : s.branch;
+    return { branch: branch || '', cwd: cwd || s.claude.cwd || s.cwd || '' };
+  }
+
   // One Claude Code hook event, already authenticated by the hook server.
   onHookEvent(id, ev, meta = {}) {
     const s = this.sessions.get(id);

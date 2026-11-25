@@ -19,10 +19,7 @@ if ($env:OMNI_CLAUDE_SETTINGS) {
     $cmd = Get-Command claude -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd) { Write-Error 'claude was not found in PATH.'; return }
     $env:OMNI_USER_STATUSLINE = __omniUserStatusLine
-    # The app's plugin (the /omni:pipeline skill), for this session only.
-    $plugin = @()
-    if ($env:OMNI_CLAUDE_PLUGIN -and (Test-Path -LiteralPath $env:OMNI_CLAUDE_PLUGIN -PathType Container)) { $plugin = @('--plugin-dir', $env:OMNI_CLAUDE_PLUGIN) }
-    & $cmd.Source --settings $env:OMNI_CLAUDE_SETTINGS @plugin @args
+    & $cmd.Source --settings $env:OMNI_CLAUDE_SETTINGS @args
   }
 }
 

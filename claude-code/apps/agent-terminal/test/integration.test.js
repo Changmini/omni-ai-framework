@@ -33,7 +33,13 @@ test('hook server answers the main session through onReply, everything else empt
   const asked = [];
   const srv = await startHookServer({
     onEvent: (id, ev) => got.push([id, ev.hook_event_name]),
-    onReply: (id, ev) => { asked.push([id, ev.hook_event_name]); return id === '3' ? `${ev.hook_event_name} 정보` : null; },
+    onReply: (id, ev) => {
+      asked.push([id, ev.hook_event_name]);
+      if (id !== '3') return null;
+      return ev.hook_event_name === 'PreToolUse'
+        ? { permissionDecision: 'ask', permissionDecisionReason: '확인', hookEventName: 'ignored' }
+        : { additionalContext: `${ev.hook_event_name} 정보` };
+    },
     token: 'tok',
   });
   const post = (terminal, body) => fetch(`http://127.0.0.1:${srv.port}/hook`, {
@@ -47,8 +53,8 @@ test('hook server answers the main session through onReply, everything else empt
   try {
     assert.deepStrictEqual(await ctx('3', { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' }),
       { hookEventName: 'UserPromptSubmit', additionalContext: 'UserPromptSubmit 정보' });
-    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'UserPromptExpansion', session_id: 's1', command_name: 'omni:pipeline' }),
-      { hookEventName: 'UserPromptExpansion', additionalContext: 'UserPromptExpansion 정보' });
+    assert.deepStrictEqual(await ctx('3', { hook_event_name: 'PreToolUse', session_id: 's1', tool_name: 'Bash' }),
+      { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: '확인' });
     assert.deepStrictEqual(await ctx('3', { hook_event_name: 'PostToolUse', session_id: 's1', tool_name: 'Skill' }),
       { hookEventName: 'PostToolUse', additionalContext: 'PostToolUse 정보' });
     assert.deepStrictEqual(await post('4', { hook_event_name: 'UserPromptSubmit', session_id: 's2' }), [200, null, '']); // nothing to add
@@ -75,7 +81,6 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   const script = Buffer.from(ps.args.at(-1), 'base64').toString('utf16le');
   assert.match(script, /function global:claude/);
   assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS/);
-  assert.match(script, /'--plugin-dir', \$env:OMNI_CLAUDE_PLUGIN/);
   assert.match(script, /OMNI_CWD_URL/);
   assert.match(script, /function global:wsl/);
   assert.match(script, /IFS=; exec bash --rcfile \$OMNI_INIT_BASH -i/);
@@ -83,7 +88,7 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   assert.match(shellLaunch('darwin', { SHELL: '/bin/zsh' }).env.ZDOTDIR, /shell-init[\\/]zsh$/);
 });
 
-test('bash claude wrapper adds the hook settings and, when present, the app plugin', (t) => {
+test('bash claude wrapper adds the hook settings and keeps the arguments', (t) => {
   const { spawnSync } = require('node:child_process');
   const os = require('node:os');
   const fs = require('node:fs');
@@ -91,24 +96,13 @@ test('bash claude wrapper adds the hook settings and, when present, the app plug
   if (spawnSync('bash', ['--version']).status !== 0) return t.skip('no bash');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-wrap-'));
   fs.mkdirSync(path.join(tmp, 'bin'));
-  fs.mkdirSync(path.join(tmp, 'plugin dir'));
   fs.writeFileSync(path.join(tmp, 'bin', 'claude'), '#!/bin/sh\nprintf "%s|" "$@"\n', { mode: 0o755 });
-  const run = (plugin) => spawnSync('bash', ['-c', `source "${path.join(__dirname, '../src/shell-init/omni.bash')}" >/dev/null 2>&1; claude -n 'a b'`], {
-    encoding: 'utf8', env: { HOME: tmp, PATH: `${path.join(tmp, 'bin')}:/usr/bin:/bin`, OMNI_CLAUDE_SETTINGS: '/x.json', OMNI_CLAUDE_PLUGIN: plugin },
+  const out = spawnSync('bash', ['-c', `source "${path.join(__dirname, '../src/shell-init/omni.bash')}" >/dev/null 2>&1; claude -n 'a b'`], {
+    encoding: 'utf8', env: { HOME: tmp, PATH: `${path.join(tmp, 'bin')}:/usr/bin:/bin`, OMNI_CLAUDE_SETTINGS: '/x.json' },
   }).stdout;
   try {
-    assert.strictEqual(run(path.join(tmp, 'plugin dir')), `--settings|/x.json|--plugin-dir|${path.join(tmp, 'plugin dir')}|-n|a b|`);
-    assert.strictEqual(run(path.join(tmp, 'missing')), '--settings|/x.json|-n|a b|'); // no such folder: left out
+    assert.strictEqual(out, '--settings|/x.json|-n|a b|');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-});
-
-test('the app plugin has the pipeline skill', () => {
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const dir = path.join(__dirname, '../src/claude-plugin');
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, '.claude-plugin/plugin.json'), 'utf8')).name, 'omni');
-  assert.match(fs.readFileSync(path.join(dir, 'skills/pipeline/SKILL.md'), 'utf8'), /^---\nname: pipeline\ndescription: .+\n---\n/);
-  assert.strictEqual(require('../src/pipeline-context').SKILL, 'omni:pipeline'); // plugin name : skill name
 });
 
 test('parseCwdReport handles OSC 7 and OSC 9;9', () => {

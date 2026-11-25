@@ -453,7 +453,7 @@
   // terminal session) and arrows. It implies no order of work.
 
   // Per memo sent to Claude: room for a full role description, not a document
-  // (the whole text is capped again in pipeline-context.js).
+  // (the whole text is capped again in rules.js).
   const MEMO_MAX = 1000;
   const PIPELINE_MARK = '[Omni Agent Terminal]';
 
@@ -464,13 +464,12 @@
   // in the user's language; '' for a node not in `p`. Its last line asks to
   // pass the block on unchanged, with any received from earlier Claudes, so
   // it survives a chain of hand-offs (a Claude handed work never hears from
-  // the app itself). A node taken out for a
-  // while (`off`) gets nothing, unless `asked` (its session ran the pipeline
-  // skill); its neighbours see only its name.
-  function pipelineContext(p, nodeId, sessionOf, asked = false) {
+  // the app itself). Given to Claude by the "파이프라인 노드 정보 붙이기"
+  // automation rule (RuleLogic).
+  function pipelineContext(p, nodeId, sessionOf) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));
     const me = byId.get(nodeId);
-    if (!me || (me.off && !asked)) return '';
+    if (!me) return '';
     const memo = (n) => {
       const t = String(n.memo || '').trim().replace(/\s+/g, ' ');
       return t.length > MEMO_MAX ? `${t.slice(0, MEMO_MAX)}…` : t;
@@ -484,7 +483,6 @@
     const near = (from, to) => [...new Set(p.edges.filter((e) => e[from] === nodeId && e[to] !== nodeId && byId.has(e[to])).map((e) => e[to]))];
     const line = (label, id) => {
       const n = byId.get(id);
-      if (n.off) return `- ${label}: 「${n.name}」 — 잠시 빠짐`;
       const m = memo(n);
       return `- ${label}: 「${n.name}」 — ${session(id)}${m ? ` — 메모: ${m}` : ''}`;
     };
@@ -502,7 +500,7 @@
 
   // The lines that run `claude <args>` in a new terminal on `platform`, at
   // `where` ({ cwd, wsl }): into its WSL distro, to its folder, then claude.
-  // The app's claude wrapper still adds its settings and plugin.
+  // The app's claude wrapper still adds its settings.
   function claudeLines(where, platform, args) {
     const posix = (p) => `'${String(p).replace(/'/g, "'\\''")}'`;
     const ps = (p) => `'${String(p).replace(/'/g, "''")}'`;

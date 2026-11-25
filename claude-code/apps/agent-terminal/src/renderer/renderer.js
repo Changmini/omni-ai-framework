@@ -154,7 +154,7 @@ function addAgent(info, groupId = null) {
     blinkTimer = setTimeout(() => { term.options.cursorBlink = false; }, BLINK_REST_MS);
   };
   if (term.textarea) term.textarea.addEventListener('focus', wake);
-  term.onData((data) => { wake(); api.write(info.id, data); });
+  term.onData((data) => { wake(); userTyped(info.id, data); api.write(info.id, data); });
   term.attachCustomKeyEventHandler((e) => {
     if (isShortcut(e)) return false;
     // Ctrl+C copies while text is selected (like Windows Terminal); otherwise
@@ -280,6 +280,7 @@ function select(id) {
     const on = aid === id;
     a.el.classList.toggle('active', on);
     a.item.classList.toggle('active', on);
+    if (on) a.item.classList.remove('rule-mark'); // seen
   }
   const a = agents.get(id);
   requestAnimationFrame(() => {
@@ -753,9 +754,9 @@ renderGroups();
 // A graph the user draws freely: nodes, each optionally bound to a terminal
 // session whose state it shows live, and arrows between them. It shows how
 // the user arranged their sessions and what each is doing; it implies no
-// order of work and starts, advances or enforces nothing. With "Claude에게
-// 알리기" on, each bound session's Claude is told its node, memo and the
-// nodes one arrow away (pipeline-context.js says when). Pipelines (nodes,
+// order of work and starts, advances or enforces nothing. The automation
+// rule "파이프라인 노드 정보 붙이기" can tell a bound session's Claude its
+// node, memo and the nodes one arrow away (rulesSync). Pipelines (nodes,
 // arrows, memos) are kept in localStorage; which terminal a node is bound to
 // only for this run (sessionStorage), as terminal groups are.
 const PIPE_KEY = 'pipelines';
@@ -783,7 +784,7 @@ const pipe = {
     root: $('#pipeline'), title: $('#pipe-title'), pick: $('#pipe-pick'), edit: $('#pipe-edit'), editTools: $('#pipe-edit-tools'),
     add: $('#pipe-add'), delEdge: $('#pipe-del-edge'), done: $('#pipe-done'), canvas: $('#pipe-canvas'), world: $('#pipe-world'),
     edges: $('#pipe-edges'), nodes: $('#pipe-nodes'), props: $('#pipe-props'), empty: $('#pipe-empty'), strip: $('#pipe-strip'),
-    notify: $('#pipe-notify'), openAll: $('#pipe-open-all'),
+    openAll: $('#pipe-open-all'),
     switchBtns: [...document.querySelectorAll('#view-switch button')],
   },
 };
@@ -832,7 +833,7 @@ function pipeRefresh() {
     if (pipe.view === 'pipeline' && !pipe.dragging) renderPipeline();
     renderStrip();
     rememberSessions();
-    syncPipelineContext();
+    rulesSync();
   });
 }
 
@@ -913,11 +914,6 @@ async function openAllSessions() {
   }
 }
 
-// Terminal id -> what its Claude is told: `auto` for pipelines with notify
-// on, `demand` (the /omni:pipeline skill) for every bound node. To the main
-// process only when changed; it decides what reaches Claude and when
-// (pipeline-context.js).
-let pipeContextKey = '';
 // A node's session as ViewLogic.pipelineContext takes it.
 function nodeSessionOf(nodeId) {
   const tid = boundTerminal(nodeId);
@@ -926,32 +922,25 @@ function nodeSessionOf(nodeId) {
   const s = c && c.session;
   return { claude: s && agents.get(tid).info.status !== 'exited' ? { id: s.id, name: s.name } : null };
 }
-function syncPipelineContext() {
-  const sessionOf = nodeSessionOf;
-  const maps = { auto: {}, demand: {} };
-  const add = (map, tid, text) => { if (text) map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text; };
+// Terminal id -> its pipeline nodes as text for Claude, every pipeline.
+function pipelineTexts() {
+  const map = {};
   for (const p of pipelines) {
     for (const n of p.nodes) {
       const tid = boundTerminal(n.id);
-      if (!tid) continue;
-      if (p.notify) add(maps.auto, tid, ViewLogic.pipelineContext(p, n.id, sessionOf));
-      add(maps.demand, tid, ViewLogic.pipelineContext(p, n.id, sessionOf, true));
+      const text = tid && ViewLogic.pipelineContext(p, n.id, nodeSessionOf);
+      if (text) map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text;
     }
   }
-  const key = JSON.stringify(maps);
-  if (key === pipeContextKey) return;
-  pipeContextKey = key;
-  api.setPipelineContext(maps);
+  return map;
 }
 
 function renderPipeline() {
   const p = currentPipe();
   const { els } = pipe;
   if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '파이프라인'; // not while renaming
-  els.notify.hidden = !p;
   els.openAll.hidden = !p || !p.nodes.some(openable);
   els.openAll.disabled = openingAll;
-  els.notify.setAttribute('aria-checked', String(Boolean(p && p.notify)));
   els.edit.hidden = !p || pipe.editing;
   els.editTools.hidden = !pipe.editing;
   els.done.hidden = !pipe.editing;
@@ -998,12 +987,12 @@ function renderPipeline() {
   els.nodes.replaceChildren(...p.nodes.map((n) => {
     const st = nodeState(n);
     const tid = boundTerminal(n.id);
-    const div = h('div', `pipe-node s-${st}${p.notify && n.off ? ' off' : ''}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
+    const div = h('div', `pipe-node s-${st}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
     div.dataset.id = n.id;
     div.style.left = `${n.x}px`;
     div.style.top = `${n.y}px`;
     const info = tid ? agents.get(tid).info : null;
-    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}${p.notify && n.off ? ' · 빠짐' : ''}`;
+    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
     // the session: its name, or its folder when it is named after the step
     const sessName = info ? displayName(info) : '';
     const sessText = !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
@@ -1052,12 +1041,10 @@ function openNode(n) {
 
 function nodeMenu(n) {
   const tid = boundTerminal(n.id);
-  const p = currentPipe();
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
     ...(n.claude && !sessionOpen(n) ? [{ label: 'Claude 세션 다시 열기', action: () => reopenSession(n) }] : []),
     ...(!claudeRunning(n) ? [{ label: n.agent ? `Claude 시작 (${n.agent})` : 'Claude 시작', action: () => startNodeClaude(n) }] : []),
-    ...(p && p.notify ? [{ label: n.off ? '알리기에 다시 넣기' : '알리기에서 잠시 빼기', action: () => setNodeOff(n, !n.off) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
   ];
@@ -1185,13 +1172,6 @@ function renderProps(p) {
   memo.rows = 4;
   memo.value = n.memo || '';
   memo.addEventListener('input', () => { n.memo = memo.value; savePipes(); });
-  const notify = h('label', 'pp-check');
-  const box = document.createElement('input');
-  box.type = 'checkbox';
-  box.checked = !n.off;
-  box.addEventListener('change', () => setNodeOff(n, !box.checked));
-  notify.append(box, 'Claude에게 알리기');
-  notify.hidden = !p.notify;
   const del = h('button', 'btn pp-del', '노드 삭제');
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
@@ -1201,7 +1181,7 @@ function renderProps(p) {
   agent.placeholder = '예: omni-pipeline:lead (비우면 그냥 claude)';
   agent.spellcheck = false;
   agent.addEventListener('input', () => { const v = agent.value.trim(); if (v) n.agent = v; else delete n.agent; savePipes(); });
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), notify, contextPreview(p, n), del);
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), del);
 }
 
 // The node's Claude session, read-only (selectable to copy), and a way to
@@ -1227,28 +1207,6 @@ function claudeInfo(n) {
   actions.append(button(n.claude ? '새로 시작' : 'Claude 시작', ViewLogic.startLines(startPlace(n), api.platform, n.agent), () => startNodeClaude(n)));
   box.append(actions);
   return box;
-}
-
-// What this node's Claude is told (ViewLogic.pipelineContext), as it would go
-// now: whether it goes on its own, and the text, folded.
-function contextPreview(p, n) {
-  const auto = p.notify && !n.off;
-  const text = ViewLogic.pipelineContext(p, n.id, nodeSessionOf, true);
-  const box = document.createElement('details');
-  box.className = 'pp-preview';
-  box.open = pipe.previewOpen === true;
-  box.addEventListener('toggle', () => { pipe.previewOpen = box.open; });
-  box.append(h('summary', null, `Claude에게 가는 내용 · ${text.length}자`),
-    h('div', 'pp-ro muted', auto ? '자동 전달: 켜짐 (바뀐 뒤 첫 프롬프트에 한 번)' : '자동 전달: 꺼짐 (/omni:pipeline 으로 부를 때만)'),
-    h('pre', 'pp-preview-text', text));
-  return box;
-}
-
-// Takes a node out of "Claude에게 알리기" for a while, or puts it back.
-function setNodeOff(n, off) {
-  if (off) n.off = true; else delete n.off;
-  savePipes();
-  if (pipe.view === 'pipeline') renderPipeline();
 }
 
 function refreshNodeLabel(n) {
@@ -1413,13 +1371,6 @@ function nodeNamesOf(tid) {
 for (const b of pipe.els.switchBtns) b.addEventListener('click', () => setView(b.dataset.view));
 pipe.els.edit.addEventListener('click', () => setPipeEditing(true));
 pipe.els.openAll.addEventListener('click', openAllSessions);
-pipe.els.notify.addEventListener('click', () => {
-  const p = currentPipe();
-  if (!p) return;
-  p.notify = !p.notify;
-  savePipes();
-  renderPipeline();
-});
 pipe.els.done.addEventListener('click', () => setPipeEditing(false));
 pipe.els.add.addEventListener('click', addNode);
 pipe.els.delEdge.addEventListener('click', deleteSelectedEdge);
@@ -2160,6 +2111,335 @@ cfgEls.refresh.addEventListener('click', () => {
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
 
+// ---------- automation rules (자동화 tab) ----------
+// "When <hook event> (and <condition>) in <these terminals>, do <action>",
+// written by the user. The main process runs them on hook events
+// (src/rules.js, RuleLogic); this page keeps them (localStorage, with hit
+// counts), sends them compiled to terminal ids whenever those change, and
+// does the work that is the page's: fill another terminal's input, mark the
+// sidebar. A terminal picked as scope or target is kept by name (ids change
+// every run) and, for this run, by id (sessionStorage), so it stays the same
+// terminal while its name follows its folder; groups are kept by id.
+const RULES_KEY = 'rules';
+const RULE_BIND_KEY = 'ruleBind';
+// Prompts sent by rules alone, one after another without a person typing,
+// before the next is only filled in: two Claudes handing work back and forth
+// would otherwise run (and spend tokens) without end.
+const MAX_AUTO_CHAIN = 3;
+const ZAP_MS = 4000;
+let rules = [];
+try { rules = JSON.parse(readPref(RULES_KEY, '[]')); } catch { rules = []; }
+if (!Array.isArray(rules)) rules = [];
+// Pipelines had their own "Claude에게 알리기" switch: on in any, the same as
+// the rule that replaced it.
+if (readPref(RULES_KEY, null) === null && pipelines.some((p) => p.notify)) {
+  rules.push({ ...newRule(RuleLogic.TEMPLATES.find((t) => t.action.kind === 'pipeline')) });
+  writePref(RULES_KEY, JSON.stringify(rules));
+}
+const rulesEls = { list: $('#rl-list'), empty: $('#rl-empty'), add: $('#rl-add'), templates: $('#rl-templates') };
+const ruleBind = readSession(RULE_BIND_KEY); // rule id -> { scope, target }: terminal ids
+let ruleOpen = null; // id of the rule open in the editor
+let rulesKey = '';
+const autoDepth = new Map(); // terminal id -> rule-sent prompts in a row
+const zapTimers = new Map();
+
+function newRule(from = null) {
+  const t = from || { name: '새 규칙', event: 'prompt', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'context', text: '' }, freq: 'every' };
+  return { ...JSON.parse(JSON.stringify(t)), id: `r-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, enabled: true, hits: 0, lastAt: 0 };
+}
+const saveRules = () => { writePref(RULES_KEY, JSON.stringify(rules)); rulesSync(); };
+const terminalsNamed = (name) => [...agents].filter(([, a]) => displayName(a.info) === name).map(([id]) => id);
+// The terminals rule `r` means by `which` ('scope', 'target'): the one picked
+// this run while it is open, else those with the saved name.
+function ruleTerminals(r, which, name) {
+  const bound = ruleBind[r.id] && ruleBind[r.id][which];
+  return agents.has(bound) ? [bound] : name ? terminalsNamed(name) : [];
+}
+function bindRule(r, which, tid) {
+  ruleBind[r.id] = { ...ruleBind[r.id], [which]: tid };
+  writeSession(RULE_BIND_KEY, ruleBind);
+}
+// The saved name follows the picked terminal's name, for the next run.
+function followNames() {
+  let changed = false;
+  for (const r of rules) {
+    const b = ruleBind[r.id] || {};
+    if (r.scope && r.scope.kind === 'terminal' && agents.has(b.scope) && displayName(agents.get(b.scope).info) !== r.scope.name) {
+      r.scope.name = displayName(agents.get(b.scope).info);
+      changed = true;
+    }
+    if (r.action.kind === 'fill' && agents.has(b.target) && displayName(agents.get(b.target).info) !== r.action.target) {
+      r.action.target = displayName(agents.get(b.target).info);
+      changed = true;
+    }
+  }
+  if (changed) writePref(RULES_KEY, JSON.stringify(rules));
+}
+
+// The rules as the main process takes them, plus terminal names and the
+// pipeline texts; sent only when something in them changed.
+function rulesSync() {
+  followNames();
+  const compiled = rules.map((r) => ({
+    id: r.id,
+    enabled: r.enabled,
+    event: r.event,
+    cond: r.cond,
+    terminals: !r.scope || r.scope.kind === 'all' ? null
+      : r.scope.kind === 'group' ? [...agents.keys()].filter((t) => groupOf[t] === r.scope.id) : ruleTerminals(r, 'scope', r.scope.name),
+    action: { ...r.action, target: r.action.kind === 'fill' ? ruleTerminals(r, 'target', r.action.target)[0] || null : null },
+    freq: r.freq,
+  }));
+  const names = Object.fromEntries([...agents].map(([id, a]) => [id, displayName(a.info)]));
+  const pipeline = rules.some((r) => r.enabled && r.action.kind === 'pipeline') ? pipelineTexts() : {};
+  const state = { rules: compiled, names, pipeline };
+  const key = JSON.stringify(state);
+  if (key === rulesKey) return;
+  rulesKey = key;
+  api.setRules(state);
+}
+
+// ⚡ on the terminal a rule ran for: a few seconds, or until it is shown
+// when the rule's action is to mark it.
+function markRuleSource(id, keep) {
+  const a = agents.get(id);
+  if (!a) return;
+  a.item.classList.add('rule-zap');
+  if (keep && id !== activeId) a.item.classList.add('rule-mark');
+  clearTimeout(zapTimers.get(id));
+  zapTimers.set(id, setTimeout(() => a.item.classList.remove('rule-zap'), ZAP_MS));
+}
+
+// Puts a rule's text in terminal `target`'s input, and sends it when the
+// rule says so: only to a Claude ready for input (as prompt shortcuts), and
+// only up to MAX_AUTO_CHAIN rule-sent prompts in a row.
+async function ruleFill(rule, source, target, text, send) {
+  const a = agents.get(target);
+  if (!a) return;
+  const block = ViewLogic.promptBlock(a.info);
+  if (block) { rule.lastSkip = block === 'waiting' ? '승인 대기 중이라 넣지 않음' : 'Claude가 없어 넣지 않음'; return; }
+  const depth = (autoDepth.get(source) || 0) + 1;
+  const sendNow = send && depth <= MAX_AUTO_CHAIN;
+  rule.lastSkip = send && !sendNow ? `자동으로 ${MAX_AUTO_CHAIN}번 이어 보내서 이번엔 넣기만 함` : '';
+  api.write(target, ViewLogic.promptInput(text, a.term.modes.bracketedPasteMode));
+  if (!sendNow) return;
+  await sleep(120);
+  api.write(target, '\r');
+  autoDepth.set(target, depth);
+}
+
+// A person typed in terminal `id`: its next prompt is theirs. Escape
+// sequences alone are the terminal answering the program, not typing.
+function userTyped(id, data) {
+  if (!data.startsWith('\x1b')) autoDepth.delete(id);
+}
+
+api.onRuleFire(({ ruleId, source, kind, target, text, send }) => {
+  const rule = rules.find((r) => r.id === ruleId);
+  if (!rule) return;
+  rule.hits = (rule.hits || 0) + 1;
+  rule.lastAt = Date.now();
+  markRuleSource(source, kind === 'highlight');
+  const done = () => { writePref(RULES_KEY, JSON.stringify(rules)); if (rulesVisible()) renderRules(); };
+  if (kind === 'fill') ruleFill(rule, source, target, text, send).finally(done);
+  else done();
+});
+
+function rulesVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'rules';
+}
+
+const clock = (t) => new Date(t).toTimeString().slice(0, 5);
+
+function renderRules() {
+  const { list, empty } = rulesEls;
+  // Hit counts redraw the list: keep what is being typed in the editor.
+  if (list.contains(document.activeElement) && document.activeElement.matches('input[type="text"], input:not([type]), textarea')) return;
+  empty.hidden = rules.length > 0;
+  list.replaceChildren(...rules.map((r) => {
+    const li = h('li', `rl-item${r.enabled ? '' : ' off'}${ruleOpen === r.id ? ' open' : ''}`);
+    const sw = h('button', 'rl-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-checked', String(r.enabled));
+    sw.title = r.enabled ? '켜짐 (누르면 끔)' : '꺼짐 (누르면 켬)';
+    sw.addEventListener('click', () => { r.enabled = !r.enabled; saveRules(); renderRules(); });
+    const main = h('button', 'rl-main');
+    main.type = 'button';
+    main.append(h('div', 'rl-name ellipsis', r.name), h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
+    main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
+    const hits = h('div', 'rl-hits', r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '아직 없음');
+    const row = h('div', 'rl-row');
+    row.append(sw, main, hits);
+    li.append(row);
+    if (r.lastSkip) li.append(h('div', 'rl-skip', r.lastSkip));
+    if (ruleOpen === r.id) li.append(ruleEditor(r));
+    return li;
+  }));
+}
+
+function ruleEditor(r) {
+  const ed = h('div', 'rl-ed');
+  const changed = (redraw) => { saveRules(); if (redraw) renderRules(); else { const s = ed.closest('.rl-item')?.querySelector('.rl-sent'); if (s) s.textContent = RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?'); } };
+  const field = (label, ...els) => { const l = h('div', 'rl-field'); l.append(h('span', 'rl-k', label), ...els); return l; };
+  const select = (options, value, onChange) => {
+    const s = document.createElement('select');
+    s.className = 'pp-in';
+    for (const [v, text] of options) s.append(new Option(text, v));
+    s.value = value;
+    s.addEventListener('change', () => onChange(s.value));
+    return s;
+  };
+  const input = (value, placeholder, onInput, cls = 'pp-in') => {
+    const i = h('input', cls);
+    i.value = value || '';
+    i.placeholder = placeholder;
+    i.spellcheck = false;
+    i.addEventListener('input', () => onInput(i.value));
+    return i;
+  };
+
+  const name = input(r.name, '이름', (v) => { r.name = v.trim() || '규칙'; changed(); });
+  name.maxLength = 60;
+
+  const when = select(Object.entries(RuleLogic.EVENTS).map(([k, v]) => [k, v.label]), r.event, (v) => {
+    r.event = v;
+    if (!RuleLogic.ACTIONS[r.action.kind].events.includes(v)) r.action = { kind: Object.keys(RuleLogic.ACTIONS).find((k) => RuleLogic.ACTIONS[k].events.includes(v)), text: r.action.text || '' };
+    changed(true);
+  });
+
+  // 조건: none / text / regex, and the text when there is one.
+  const condKinds = [['none', '없음'], ['text', '글 포함'], ['regex', '정규식']];
+  const seg = h('div', 'search-mode rl-seg');
+  for (const [k, label] of condKinds) {
+    const b = h('button', null, label);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String((r.cond.kind || 'none') === k));
+    b.addEventListener('click', () => { r.cond = { kind: k, value: k === 'none' ? '' : r.cond.value || '' }; changed(true); });
+    seg.append(b);
+  }
+  const condHint = h('div', 'rl-note');
+  const condCheck = () => {
+    let bad = false;
+    if (r.cond.kind === 'regex' && r.cond.value) { try { new RegExp(r.cond.value); } catch { bad = true; } }
+    condHint.textContent = bad ? '정규식이 올바르지 않아 맞는 것이 없습니다' : RULE_SUBJECT[r.event] || '';
+    condHint.classList.toggle('bad', bad);
+  };
+  const condValue = input(r.cond.value, r.cond.kind === 'regex' ? '예: git push|migrate' : '예: 배포', (v) => { r.cond.value = v; condCheck(); changed(); }, 'pp-in mono');
+  condValue.hidden = r.cond.kind === 'none';
+  condCheck();
+
+  // A terminal as a choice: an open one by id (`t:<id>`), a saved name
+  // with none open by it (`n:<name>`).
+  const terminalOpts = (prefix, which, name) => {
+    const opts = [...agents].map(([id, a]) => [`t:${id}`, `${prefix}${displayName(a.info)}`]);
+    const now = ruleTerminals(r, which, name)[0];
+    if (name && !now) opts.push([`n:${name}`, `${prefix}${name} (열려 있지 않음)`]);
+    if (!name && !now) opts.push(['n:', `${prefix}(고르세요)`]);
+    return [opts, now ? `t:${now}` : `n:${name || ''}`];
+  };
+  const pickTerminal = (v, which, setName) => {
+    if (v.startsWith('t:') && agents.has(v.slice(2))) { bindRule(r, which, v.slice(2)); setName(displayName(agents.get(v.slice(2)).info)); } else setName(v.slice(2));
+  };
+
+  // 어디서: every terminal, a group, or one terminal.
+  const [tOpts, tVal] = terminalOpts('터미널: ', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
+  const scopeOpts = [['all', '모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `그룹: ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal')];
+  if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '그룹: (고르세요)']);
+  const scopeVal = r.scope.kind === 'group' ? `g:${r.scope.id}` : r.scope.kind === 'terminal' ? tVal : 'all';
+  const where = select(scopeOpts, scopeVal, (v) => {
+    if (v === 'all') r.scope = { kind: 'all' };
+    else if (v.startsWith('g:')) r.scope = { kind: 'group', id: v.slice(2) };
+    else pickTerminal(v, 'scope', (name) => { r.scope = { kind: 'terminal', name }; });
+    changed(true);
+  });
+
+  // 무엇을, and what it needs.
+  const what = select(Object.entries(RuleLogic.ACTIONS).filter(([, a]) => a.events.includes(r.event)).map(([k, a]) => [k, a.label]), r.action.kind, (v) => {
+    r.action = { ...r.action, kind: v };
+    changed(true);
+  });
+  const parts = [field('이름', name), field('언제', when), field('조건', seg, condValue, condHint), field('어디서', where), field('무엇을', what)];
+  const kind = r.action.kind;
+  if (kind === 'fill') {
+    const [opts, val] = terminalOpts('', 'target', r.action.target);
+    const target = select(opts, val, (v) => { pickTerminal(v, 'target', (name) => { r.action.target = name; }); changed(true); });
+    const send = h('label', 'rl-check');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = r.action.send === true;
+    box.addEventListener('change', () => { r.action.send = box.checked; changed(true); });
+    send.append(box, '넣고 바로 보내기');
+    parts.push(field('받을 터미널', target, send, h('div', 'rl-note', r.action.send
+      ? `- 그 터미널의 Claude가 바로 일을 시작합니다\n- 사람이 입력하지 않은 채 ${MAX_AUTO_CHAIN}번 이어지면 그다음은 넣기만 합니다`
+      : '- 입력창에 넣기만 합니다. 보내기는 직접 Enter')));
+  }
+  if (['context', 'block', 'ask', 'fill'].includes(kind)) {
+    const text = document.createElement('textarea');
+    text.className = 'pp-in';
+    text.rows = 3;
+    text.value = r.action.text || '';
+    text.placeholder = kind === 'context' ? 'Claude에게 함께 보낼 글' : kind === 'fill' ? '넣을 글' : 'Claude에게 보여 줄 이유';
+    text.addEventListener('input', () => { r.action.text = text.value; changed(); });
+    parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : '이유', text,
+      h('div', 'rl-note', `쓸 수 있는 값: ${RuleLogic.VARS.map((v) => `{${v}}`).join(' ')}`)));
+  }
+  if (kind === 'pipeline') parts.push(h('div', 'rl-note', '- 연결된 파이프라인 노드의 이름·메모와 앞뒤 노드를 붙입니다\n- 노드에 연결된 터미널에만'));
+  if (kind !== 'block' && kind !== 'ask') {
+    parts.push(field('빈도', select(Object.entries(RuleLogic.FREQS), r.freq, (v) => { r.freq = v; changed(true); })));
+  }
+  if (['context', 'pipeline'].includes(kind)) parts.push(h('div', 'rl-note', '- 붙인 글만큼 그 세션의 토큰을 씁니다'));
+
+  // 시험: the condition against the last events this app run saw.
+  const out = h('ol', 'rl-test');
+  const test = h('button', 'btn', '최근 기록으로 시험');
+  test.type = 'button';
+  test.addEventListener('click', async () => {
+    const recent = (await api.rulesRecent()).filter((e) => e.hook === RuleLogic.EVENTS[r.event].hook).slice(-5).reverse();
+    if (!recent.length) { out.replaceChildren(h('li', 'muted', `아직 「${RuleLogic.EVENTS[r.event].label}」 기록이 없습니다`)); return; }
+    out.replaceChildren(...recent.map((e) => {
+      const ok = RuleLogic.condHolds(r.cond, e.subject);
+      const li = h('li', ok ? 'ok' : 'no');
+      li.append(h('span', 'rl-test-mark', ok ? '맞음' : '아님'), h('span', 'rl-test-subj ellipsis', e.subject || '(내용 없음)'));
+      if (ok && r.action.text) li.append(h('div', 'rl-test-out', RuleLogic.fillText(r.action.text, e.vars)));
+      li.title = `${clock(e.at)} · ${(agents.get(e.terminal) && displayName(agents.get(e.terminal).info)) || e.vars.terminal}`;
+      return li;
+    }));
+  });
+  const del = h('button', 'btn pp-del', '규칙 삭제');
+  del.type = 'button';
+  del.addEventListener('click', () => {
+    if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
+    rules = rules.filter((x) => x !== r);
+    ruleOpen = null;
+    saveRules();
+    renderRules();
+  });
+  const foot = h('div', 'rl-foot');
+  foot.append(test, del);
+  ed.append(...parts, foot, out);
+  return ed;
+}
+
+// What a condition is checked against, per event.
+const RULE_SUBJECT = {
+  prompt: '사용자가 보낸 글에서 찾습니다',
+  pre: '도구 이름과 명령(또는 파일 경로)에서 찾습니다. 예: Bash git push',
+  post: '도구 이름과 명령(또는 파일 경로)에서 찾습니다',
+  wait: '승인을 기다리는 도구 이름과 명령에서 찾습니다',
+  stop: 'Claude의 마지막 답에서 찾습니다',
+  compact: '조건 없이 매번입니다',
+};
+
+rulesEls.add.addEventListener('click', () => { const r = newRule(); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); });
+rulesEls.templates.addEventListener('click', () => {
+  const b = rulesEls.templates.getBoundingClientRect();
+  openMenu(b.left, b.bottom + 2, RuleLogic.TEMPLATES.map((t) => ({
+    label: t.name,
+    action: () => { const r = newRule(t); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); },
+  })));
+});
+
 // ---------- inspector: activity | Claude config ----------
 // The right panel. Ctrl+Shift+I or the top-bar button opens and closes it;
 // its left edge sets the width (double-click: default). The open state, the
@@ -2173,7 +2453,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = ['config', 'git', 'files', 'review'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
+let inspectorTab = ['config', 'git', 'files', 'review', 'rules'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -2197,11 +2477,12 @@ function setInspectorTab(tab) {
   if (tab !== 'preview') writePref('inspectorTab', tab); // the preview tab exists only in a narrow window
   for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab === 'activity';
+  cfgEls.refresh.hidden = tab === 'activity' || tab === 'rules';
   if (tab === 'config' && cfgStale) loadConfig(0);
   if (tab === 'git' && gitStale) loadGit(0);
   if (tab === 'files' && treeStale) loadTree(0);
   if (tab === 'review') loadReview();
+  if (tab === 'rules') renderRules();
   syncPreview();
 }
 
