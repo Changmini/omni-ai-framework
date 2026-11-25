@@ -821,8 +821,44 @@ function pipeRefresh() {
     pipeFrame = 0;
     if (pipe.view === 'pipeline' && !pipe.dragging) renderPipeline();
     renderStrip();
+    rememberSessions();
     syncPipelineContext();
   });
+}
+
+// Each node keeps the last Claude session of its terminal (saved with the
+// pipeline), so it can be reopened after the app restarts (reopenSession).
+function rememberSessions() {
+  let changed = false;
+  for (const p of pipelines) {
+    for (const n of p.nodes) {
+      const tid = boundTerminal(n.id);
+      const s = tid && agents.get(tid).info.claude && agents.get(tid).info.claude.session;
+      if (!s) continue;
+      const saved = { id: s.id, name: s.name || null, cwd: s.cwd || null, wsl: s.wsl || null };
+      if (JSON.stringify(n.claude) === JSON.stringify(saved)) continue;
+      n.claude = saved;
+      changed = true;
+    }
+  }
+  if (changed) writePref(PIPE_KEY, JSON.stringify(pipelines));
+}
+
+// Whether the node's saved session is the one running in its terminal now.
+const sessionOpen = (n) => {
+  const tid = boundTerminal(n.id);
+  const s = tid && agents.get(tid).info.claude && agents.get(tid).info.claude.session;
+  return Boolean(s && n.claude && s.id === n.claude.id);
+};
+
+// A new terminal named after the node, in the saved session's WSL distro and
+// folder, running claude --resume (as a "new terminal" shortcut runs), then
+// bound to the node.
+async function reopenSession(n) {
+  const lines = ViewLogic.resumeLines(n.claude, api.platform);
+  if (!lines.length) return;
+  const tid = await typeShortcut({ newTerminal: true, name: n.name }, lines);
+  if (tid && agents.has(tid)) bindNode(n.id, tid);
 }
 
 // Terminal id -> what its Claude is told: `auto` for pipelines with notify
@@ -963,6 +999,7 @@ function nodeMenu(n) {
   const p = currentPipe();
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
+    ...(n.claude && !sessionOpen(n) ? [{ label: 'Claude 세션 다시 열기', action: () => reopenSession(n) }] : []),
     ...(p && p.notify ? [{ label: n.off ? '알리기에 다시 넣기' : '알리기에서 잠시 빼기', action: () => setNodeOff(n, !n.off) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
@@ -1102,7 +1139,26 @@ function renderProps(p) {
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
   const field = (label, el) => { const l = h('label', 'pp-field'); l.append(h('span', null, label), el); return l; };
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('세션', sess), field('메모', memo), notify, del);
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), claudeInfo(n), field('메모', memo), notify, del);
+}
+
+// The node's Claude session, read-only (selectable to copy), and a way to
+// reopen it when it is not the one running in its terminal.
+function claudeInfo(n) {
+  const box = h('div', 'pp-claude');
+  box.append(h('span', 'pp-label', 'Claude 세션'));
+  if (!n.claude) { box.append(h('div', 'pp-ro muted', '아직 없음')); return box; }
+  const row = (label, value, mono) => { const r = h('div', 'pp-ro-row'); r.append(h('span', 'pp-ro-k', label), h('span', `pp-ro${mono ? ' mono' : ''}`, value)); return r; };
+  box.append(row('이름', n.claude.name || '—'), row('id', n.claude.id, true), row('폴더', `${n.claude.cwd || '—'}${n.claude.wsl ? ` (WSL ${n.claude.wsl})` : ''}`, true));
+  if (sessionOpen(n)) box.append(h('div', 'pp-ro muted', '연결된 터미널에서 실행 중'));
+  else {
+    const open = h('button', 'vbtn pp-reopen', '이 세션 다시 열기');
+    open.type = 'button';
+    open.title = `새 터미널에서 실행: ${ViewLogic.resumeLines(n.claude, api.platform).join(' → ')}`;
+    open.addEventListener('click', () => reopenSession(n));
+    box.append(open);
+  }
+  return box;
 }
 
 // Takes a node out of "Claude에게 알리기" for a while, or puts it back.
@@ -1682,6 +1738,7 @@ async function typeShortcut(sc, lines) {
     }
   }
   agents.get(id)?.term.focus();
+  return id;
 }
 
 function renderShortcuts() {

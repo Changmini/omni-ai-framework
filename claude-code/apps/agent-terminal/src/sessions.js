@@ -342,6 +342,8 @@ class SessionManager {
       s.primarySid = sid;
       s.others.delete(sid);
     }
+    // Claude's folder before any hook told it (to reopen the session there).
+    if (sid === s.primarySid && !s.claude.cwd && typeof data.cwd === 'string' && data.cwd) s.claude = { ...s.claude, cwd: data.cwd };
     this.emitAgent(s);
   }
 
@@ -969,8 +971,15 @@ class SessionManager {
       tasks: s.tasks,
       focusable: Boolean(view.status && s.primaryPane && (s.primarySocket || s.tmuxSocket)),
       context: view.status ? this.contextOf(s, s.primarySid) : null,
-      // The main claude session, from its first hook or status line (before any prompt).
-      session: s.primarySid ? { id: s.primarySid, name: s.sessionNames.get(s.primarySid) || null } : null,
+      // The main claude session, from its first hook or status line (before
+      // any prompt): its folder in claude's own terms, and the WSL distro it
+      // runs in, to reopen it (claude --resume) where it was.
+      session: s.primarySid ? {
+        id: s.primarySid,
+        name: s.sessionNames.get(s.primarySid) || null,
+        cwd: s.claude.cwd || null,
+        wsl: s.wsl ? s.wsl.distro : null,
+      } : null,
     };
   }
 

@@ -498,6 +498,22 @@
     ].join('\n');
   }
 
+  // The lines that reopen a saved Claude session (`saved`: { id, cwd, wsl })
+  // in a new terminal on `platform`: into its WSL distro, to its folder, then
+  // claude --resume. The wrapper still adds the app's settings. [] when the
+  // id is not one claude makes (a uuid), so nothing odd is ever typed.
+  function resumeLines(saved, platform) {
+    if (!saved || !/^[A-Za-z0-9-]{1,100}$/.test(String(saved.id || ''))) return [];
+    const posix = (p) => `'${String(p).replace(/'/g, "'\\''")}'`;
+    const ps = (p) => `'${String(p).replace(/'/g, "''")}'`;
+    const wsl = platform === 'win32' && saved.wsl ? String(saved.wsl) : null;
+    const lines = [];
+    if (wsl) lines.push(/^[\w.@+-]+$/.test(wsl) ? `wsl -d ${wsl}` : 'wsl');
+    if (saved.cwd) lines.push(`cd ${platform === 'win32' && !wsl ? ps(saved.cwd) : posix(saved.cwd)}`);
+    lines.push(`claude --resume ${saved.id}`);
+    return lines;
+  }
+
   // The nodes in arrow order (for the one-line strip): sources first; a loop
   // is broken at the earliest remaining node.
   function pipelineOrder(p) {
@@ -575,6 +591,6 @@
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
-    pipelineContext, pipelineOrder, PREVIEW_MIN, TERMINAL_MIN,
+    pipelineContext, pipelineOrder, resumeLines, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));
