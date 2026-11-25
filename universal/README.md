@@ -15,17 +15,17 @@
 │   └─ [Project]  명령어 · 코드 스타일 · 아키텍처 · 주의사항   ← 프로젝트가 채움
 └── .agents/
     ├── skills/                       # Agent Skills 공개 표준
-    │   ├── planning-changes/         # 탐색 → 계획 → 구현 → 검증 → 리뷰
+    │   ├── leading-changes/          # 팀장: 인터뷰 → 스펙 → 구현·리뷰 맡김 → 차이 판단
+    │   ├── implementing-specs/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
+    │   ├── reviewing-changes/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
     │   ├── verifying-changes/        # 프로젝트 검사 실행, 증거 보고
-    │   ├── reviewing-changes/        # reviewer 역할로 독립 리뷰
-    │   ├── writing-specs/            # 인터뷰 후 스펙 작성 (수동 호출 전용)
     │   ├── writing-documents/        # 템플릿·스타일로 문서 작성
     │   └── authoring-skills/         # 새 스킬·역할 작성 (체크리스트, 템플릿)
     │       (각 스킬에 evals/evals.json 3건)
-    ├── agents/                       # 서브 에이전트 역할 정의 (자체 완결 프롬프트)
-    │   ├── explorer.md               # 범위가 정해진 코드 조사
-    │   ├── planner.md                # 구현 계획 작성
-    │   └── reviewer.md               # 새 컨텍스트에서 반박 리뷰
+    ├── agents/                       # 역할 정의 (자체 완결 프롬프트, 역할마다 대응 스킬)
+    │   ├── lead.md                   # 팀장: 사용자와 대화하는 세션, 코드는 쓰지 않음
+    │   ├── implementer.md            # 구현: 스펙만 읽고 시작, 결과는 커밋·diff
+    │   └── reviewer.md               # 리뷰어: 읽기 전용, 구현 과정을 모름
     ├── docs/                         # 문서 디자인
     │   ├── STYLE.md                  # 구조·근거 표시·날짜·링크 규칙
     │   └── templates/                # spec · plan · decision · review

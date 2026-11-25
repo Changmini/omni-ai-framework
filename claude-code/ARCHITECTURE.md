@@ -50,25 +50,25 @@
 
 [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) 기준이며 `scripts/validate.py`가 자동 검사합니다.
 
-- `name`: 64자 이하, 소문자·숫자·하이픈, `anthropic`/`claude` 금지, 동명사형 권장 (`planning-changes`, `verifying-changes`)
+- `name`: 64자 이하, 소문자·숫자·하이픈, `anthropic`/`claude` 금지, 동명사형 권장 (`leading-changes`, `verifying-changes`)
 - `description`: 1,024자 이하, 3인칭, **무엇을 하는지 + 언제 쓰는지**
 - 본문 500줄 이하, 참조 파일은 SKILL.md에서 한 단계만 (`authoring-skills/template.md`, `checklist.md`)
-- 복잡한 작업은 복사 가능한 체크리스트 + 검증 → 수정 → 반복 루프 (`planning-changes`, `verifying-changes`)
-- 부수효과가 있거나 사용자 주도여야 하는 워크플로는 `disable-model-invocation: true` (`writing-specs`)
+- 복잡한 작업은 복사 가능한 체크리스트 + 검증 → 수정 → 반복 루프 (`leading-changes`, `verifying-changes`)
+- 부수효과가 있거나 사용자 주도여야 하는 워크플로는 `disable-model-invocation: true`
 
 ## 5. 워크플로 스킬의 근거
 
 | 스킬/에이전트 | 공식 권장 사항 |
 | --- | --- |
-| `planning-changes` | "Explore first, then plan, then code" — 탐색·계획·구현·커밋 4단계 |
+| `lead` · `leading-changes` | "Let Claude interview you" — 대화를 들은 팀장이 인터뷰 후 SPEC을 직접 씀 |
+| `implementer` · `implementing-specs` | 새 세션이 SPEC만 읽고 시작 — 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서화된 완료 기준 |
+| `reviewer` · `reviewing-changes` | "Add an adversarial review step" — 구현 과정을 모르는 새 컨텍스트가 SPEC과 diff만 보고 차이만 보고 |
 | `verifying-changes` | "Give Claude a way to verify its work", "Have Claude show evidence rather than asserting success" |
-| `writing-specs` | "Let Claude interview you" — AskUserQuestion으로 인터뷰 후 SPEC.md, 새 세션에서 구현 |
-| `adversarial-reviewer` | "Add an adversarial review step" — 새 컨텍스트 서브에이전트가 diff만 보고 검토, 정확성·요구사항 관련 지적만 |
 | `authoring-skills` | Skill authoring best practices 체크리스트 |
 
 출처: [Best practices](https://code.claude.com/docs/en/best-practices)
 
-서브에이전트는 "Grant the fewest tools needed" 원칙에 따라 `Write`, `Edit`를 막은 읽기 전용입니다.
+서브에이전트 도구는 "Grant the fewest tools needed" 원칙을 따릅니다: 리뷰어는 Read·Grep·Glob만, 구현자는 파일 편집과 Bash까지입니다.
 
 ## 6. 설정 계층과 템플릿 설정
 

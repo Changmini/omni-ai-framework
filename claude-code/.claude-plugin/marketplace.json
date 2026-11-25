@@ -8,7 +8,7 @@
     {
       "name": "omni-core",
       "source": "./plugins/omni-core",
-      "description": "Explore-plan-implement-verify workflow skills, spec interviews, skill authoring, and an adversarial review subagent"
+      "description": "Verification, skill authoring and work-notes skills, and a git-status SessionStart hook"
     },
     {
       "name": "omni-guardrails",
@@ -18,7 +18,7 @@
     {
       "name": "omni-pipeline",
       "source": "./plugins/omni-pipeline",
-      "description": "Goal definition (defining-work-goal) and the plan \u2192 critic review \u2192 build \u2192 code review pipeline with planner, rationale-critic, builder, reviewer and spec-writer agents"
+      "description": "Goal definition (defining-work-goal) and the lead \u2192 SPEC \u2192 implementer \u2192 reviewer pipeline: lead, implementer and reviewer agents, each with its skill"
     },
     {
       "name": "omni-jira",

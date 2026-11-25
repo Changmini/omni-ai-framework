@@ -4,21 +4,20 @@ Status: draft | approved · Owner: <name> · Date: <YYYY-MM-DD>
 
 <One paragraph: the problem, who has it, and the outcome this spec commits to.>
 
-## Scope
-- In: ...
-- Out: ...
+## Requirements
+<What must be true when this is done, one per line. Behavior a user or caller sees, including edge cases.>
+- R1: ...
 
-## Behavior
-<What a user or caller sees. One subsection per scenario if needed.>
+## Constraints
+<Limits the implementation must keep: interfaces that must not change, security, performance, dependencies.>
+- Out of scope: ...
 
-## Design
-<Files, modules, and interfaces involved; data flow; new dependencies.>
+## Done when
+<The checks that end the implementation and decide the review. Each is a command or an observation anyone can repeat.>
+- [ ] ...
 
-## Edge cases and failure modes
-- ...
-
-## Verification
-<Commands or end-to-end steps that prove the feature works. Each must be runnable.>
+## Design notes
+<Files, modules, and interfaces involved; decisions made with the user and why.>
 
 ## Open questions
 - None
