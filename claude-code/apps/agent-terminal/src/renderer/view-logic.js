@@ -500,20 +500,33 @@
     ].join('\n');
   }
 
-  // The lines that reopen a saved Claude session (`saved`: { id, cwd, wsl })
-  // in a new terminal on `platform`: into its WSL distro, to its folder, then
-  // claude --resume. The wrapper still adds the app's settings. [] when the
-  // id is not one claude makes (a uuid), so nothing odd is ever typed.
-  function resumeLines(saved, platform) {
-    if (!saved || !/^[A-Za-z0-9-]{1,100}$/.test(String(saved.id || ''))) return [];
+  // The lines that run `claude <args>` in a new terminal on `platform`, at
+  // `where` ({ cwd, wsl }): into its WSL distro, to its folder, then claude.
+  // The app's claude wrapper still adds its settings and plugin.
+  function claudeLines(where, platform, args) {
     const posix = (p) => `'${String(p).replace(/'/g, "'\\''")}'`;
     const ps = (p) => `'${String(p).replace(/'/g, "''")}'`;
-    const wsl = platform === 'win32' && saved.wsl ? String(saved.wsl) : null;
+    const wsl = platform === 'win32' && where && where.wsl ? String(where.wsl) : null;
     const lines = [];
     if (wsl) lines.push(/^[\w.@+-]+$/.test(wsl) ? `wsl -d ${wsl}` : 'wsl');
-    if (saved.cwd) lines.push(`cd ${platform === 'win32' && !wsl ? ps(saved.cwd) : posix(saved.cwd)}`);
-    lines.push(`claude --resume ${saved.id}`);
+    if (where && where.cwd) lines.push(`cd ${platform === 'win32' && !wsl ? ps(where.cwd) : posix(where.cwd)}`);
+    lines.push(args ? `claude ${args}` : 'claude');
     return lines;
+  }
+
+  // Reopens a saved Claude session (`saved`: { id, cwd, wsl }) where it ran.
+  // [] when the id is not one claude makes (a uuid), so nothing odd is typed.
+  function resumeLines(saved, platform) {
+    if (!saved || !/^[A-Za-z0-9-]{1,100}$/.test(String(saved.id || ''))) return [];
+    return claudeLines(saved, platform, `--resume ${saved.id}`);
+  }
+
+  // Starts a new Claude for a node at `where`, as its agent when it names one
+  // (`claude --agent omni-pipeline:lead`); an agent name that is not a plain
+  // (plugin:)name is left out rather than typed.
+  function startLines(where, platform, agent) {
+    const a = String(agent || '').trim();
+    return claudeLines(where, platform, /^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)*$/.test(a) ? `--agent ${a}` : '');
   }
 
   // The recommended development pipeline, as the omni-pipeline plugin runs it
@@ -531,9 +544,9 @@
       id: newId(),
       name: '권장 개발 파이프라인',
       nodes: [
-        { id: lead, name: '팀장', x: 60, y: 160, memo: '대화는 여기서만 한다. 요구가 모호하면 "SPEC 을 쓸 수 있을 때까지 나를 인터뷰해"라고 시킨다. 대화를 직접 들은 세션이 SPEC 을 쓰니 요약 손실이 없다. 팀장은 코드를 짜지 않고 계획·판단·리뷰 처리에 집중한다. SPEC 에는 무엇을 만드는지, 지킬 제약, 완료 기준을 적는다. 핵심은 완료 기준이다: 구현은 언제 멈출지, 리뷰어는 무엇으로 판정할지 여기서 안다. 결정이 바뀌면 팀장이 바로 반영한다. SPEC 에 없는 결정은 다른 세션에겐 없는 결정이다. 리뷰어의 차이 보고를 받으면 구현에 수정을 맡길지, SPEC 이 틀렸으니 사용자에게 다시 물을지 판단한다. 결과가 길면 파일로 남기고 경로만 넘긴다(전화 게임 방지). 에이전트: omni-pipeline:lead' },
-        { id: impl, name: '구현', x: 340, y: 60, memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 줘서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 에이전트: omni-pipeline:implementer' },
-        { id: review, name: '리뷰어', x: 620, y: 160, memo: '구현 과정을 모르는 게 장점이다. 코드를 만든 추론을 보지 않았으니 그 논리에 끌려가지 않는다. 입력은 SPEC 과 코드 변경뿐, 도구는 Read·Grep·Glob 만 준다. "스타일은 넘기고 정확성에 영향을 주는 누락만 보고해"처럼 범위를 정해 준다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
+        { id: lead, name: '팀장', x: 60, y: 160, agent: 'omni-pipeline:lead', memo: '대화는 여기서만 한다. 요구가 모호하면 "SPEC 을 쓸 수 있을 때까지 나를 인터뷰해"라고 시킨다. 대화를 직접 들은 세션이 SPEC 을 쓰니 요약 손실이 없다. 팀장은 코드를 짜지 않고 계획·판단·리뷰 처리에 집중한다. SPEC 에는 무엇을 만드는지, 지킬 제약, 완료 기준을 적는다. 핵심은 완료 기준이다: 구현은 언제 멈출지, 리뷰어는 무엇으로 판정할지 여기서 안다. 결정이 바뀌면 팀장이 바로 반영한다. SPEC 에 없는 결정은 다른 세션에겐 없는 결정이다. 리뷰어의 차이 보고를 받으면 구현에 수정을 맡길지, SPEC 이 틀렸으니 사용자에게 다시 물을지 판단한다. 결과가 길면 파일로 남기고 경로만 넘긴다(전화 게임 방지). 에이전트: omni-pipeline:lead' },
+        { id: impl, name: '구현', x: 340, y: 60, agent: 'omni-pipeline:implementer', memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 줘서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 에이전트: omni-pipeline:implementer' },
+        { id: review, name: '리뷰어', x: 620, y: 160, agent: 'omni-pipeline:reviewer', memo: '구현 과정을 모르는 게 장점이다. 코드를 만든 추론을 보지 않았으니 그 논리에 끌려가지 않는다. 입력은 SPEC 과 코드 변경뿐, 도구는 Read·Grep·Glob 만 준다. "스타일은 넘기고 정확성에 영향을 주는 누락만 보고해"처럼 범위를 정해 준다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
       ],
       edges: [{ from: lead, to: impl }, { from: impl, to: review }, { from: lead, to: review }, { from: review, to: lead }],
     };
@@ -616,6 +629,6 @@
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
-    pipelineContext, pipelineOrder, recommendedPipeline, resumeLines, PREVIEW_MIN, TERMINAL_MIN,
+    pipelineContext, pipelineOrder, recommendedPipeline, resumeLines, startLines, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));

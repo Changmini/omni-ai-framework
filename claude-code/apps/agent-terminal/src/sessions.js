@@ -273,7 +273,7 @@ class SessionManager {
     if (dir === s.cwd && branch === s.branch) return;
     s.cwd = dir;
     s.branch = branch;
-    this.emit('session:meta', { id, cwd: s.cwd, branch: s.branch });
+    this.emit('session:meta', { id, cwd: s.cwd, branch: s.branch, wsl: s.wsl ? s.wsl.distro : null });
   }
 
   // Skills, plugins, hooks, subagents and MCP servers Claude would load in
@@ -1072,6 +1072,7 @@ class SessionManager {
       name: s.name,
       cwd: s.cwd,
       branch: s.branch,
+      wsl: s.wsl ? s.wsl.distro : null, // the WSL distro the shell runs in (Windows)
       command: s.command,
       status: s.tracker.status,
       error: s.tracker.error,

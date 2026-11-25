@@ -783,7 +783,7 @@ const pipe = {
     root: $('#pipeline'), title: $('#pipe-title'), pick: $('#pipe-pick'), edit: $('#pipe-edit'), editTools: $('#pipe-edit-tools'),
     add: $('#pipe-add'), delEdge: $('#pipe-del-edge'), done: $('#pipe-done'), canvas: $('#pipe-canvas'), world: $('#pipe-world'),
     edges: $('#pipe-edges'), nodes: $('#pipe-nodes'), props: $('#pipe-props'), empty: $('#pipe-empty'), strip: $('#pipe-strip'),
-    notify: $('#pipe-notify'),
+    notify: $('#pipe-notify'), openAll: $('#pipe-open-all'),
     switchBtns: [...document.querySelectorAll('#view-switch button')],
   },
 };
@@ -873,19 +873,61 @@ async function reopenSession(n) {
   if (tid && agents.has(tid)) bindNode(n.id, tid);
 }
 
+// Whether a Claude runs in the node's terminal now.
+const claudeRunning = (n) => Boolean(nodeSessionOf(n.id) && nodeSessionOf(n.id).claude);
+
+// Where a new Claude for the node starts: its last session's folder, else
+// that of the terminal in view (its Claude's folder when one runs there).
+function startPlace(n) {
+  if (n.claude && n.claude.cwd) return { cwd: n.claude.cwd, wsl: n.claude.wsl || null };
+  const a = agents.get(activeId);
+  if (!a) return null;
+  const s = a.info.claude && a.info.claude.session;
+  return { cwd: (s && s.cwd) || a.info.cwd || null, wsl: (s && s.wsl) || a.info.wsl || null };
+}
+
+// A new terminal named after the node running a new Claude as its agent
+// (claude --agent <agent>), bound to the node.
+async function startNodeClaude(n) {
+  const tid = await typeShortcut({ newTerminal: true, name: n.name }, ViewLogic.startLines(startPlace(n), api.platform, n.agent));
+  if (tid && agents.has(tid)) bindNode(n.id, tid);
+}
+
+// Every node of the pipeline without a running Claude: its saved session
+// reopened, else its agent started; nodes with neither are left alone. One
+// after another, as each terminal's shell must be ready before typing.
+const openable = (n) => !claudeRunning(n) && Boolean(n.claude || n.agent);
+let openingAll = false;
+async function openAllSessions() {
+  const p = currentPipe();
+  if (!p || openingAll) return;
+  openingAll = true;
+  pipeRefresh();
+  try {
+    for (const n of p.nodes.filter(openable)) {
+      if (n.claude) await reopenSession(n); else await startNodeClaude(n);
+    }
+  } finally {
+    openingAll = false;
+    pipeRefresh();
+  }
+}
+
 // Terminal id -> what its Claude is told: `auto` for pipelines with notify
 // on, `demand` (the /omni:pipeline skill) for every bound node. To the main
 // process only when changed; it decides what reaches Claude and when
 // (pipeline-context.js).
 let pipeContextKey = '';
+// A node's session as ViewLogic.pipelineContext takes it.
+function nodeSessionOf(nodeId) {
+  const tid = boundTerminal(nodeId);
+  if (!tid) return null;
+  const c = agents.get(tid).info.claude;
+  const s = c && c.session;
+  return { claude: s && agents.get(tid).info.status !== 'exited' ? { id: s.id, name: s.name } : null };
+}
 function syncPipelineContext() {
-  const sessionOf = (nodeId) => {
-    const tid = boundTerminal(nodeId);
-    if (!tid) return null;
-    const c = agents.get(tid).info.claude;
-    const s = c && c.session;
-    return { claude: s && agents.get(tid).info.status !== 'exited' ? { id: s.id, name: s.name } : null };
-  };
+  const sessionOf = nodeSessionOf;
   const maps = { auto: {}, demand: {} };
   const add = (map, tid, text) => { if (text) map[tid] = map[tid] ? `${map[tid]}\n\n${text}` : text; };
   for (const p of pipelines) {
@@ -907,6 +949,8 @@ function renderPipeline() {
   const { els } = pipe;
   if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '파이프라인'; // not while renaming
   els.notify.hidden = !p;
+  els.openAll.hidden = !p || !p.nodes.some(openable);
+  els.openAll.disabled = openingAll;
   els.notify.setAttribute('aria-checked', String(Boolean(p && p.notify)));
   els.edit.hidden = !p || pipe.editing;
   els.editTools.hidden = !pipe.editing;
@@ -1012,6 +1056,7 @@ function nodeMenu(n) {
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
     ...(n.claude && !sessionOpen(n) ? [{ label: 'Claude 세션 다시 열기', action: () => reopenSession(n) }] : []),
+    ...(!claudeRunning(n) ? [{ label: n.agent ? `Claude 시작 (${n.agent})` : 'Claude 시작', action: () => startNodeClaude(n) }] : []),
     ...(p && p.notify ? [{ label: n.off ? '알리기에 다시 넣기' : '알리기에서 잠시 빼기', action: () => setNodeOff(n, !n.off) }] : []),
     { sep: true },
     { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
@@ -1151,7 +1196,12 @@ function renderProps(p) {
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
   const field = (label, el) => { const l = h('label', 'pp-field'); l.append(h('span', null, label), el); return l; };
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), claudeInfo(n), field('메모', memo), notify, del);
+  const agent = h('input', 'pp-in mono');
+  agent.value = n.agent || '';
+  agent.placeholder = '예: omni-pipeline:lead (비우면 그냥 claude)';
+  agent.spellcheck = false;
+  agent.addEventListener('input', () => { const v = agent.value.trim(); if (v) n.agent = v; else delete n.agent; savePipes(); });
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), notify, contextPreview(p, n), del);
 }
 
 // The node's Claude session, read-only (selectable to copy), and a way to
@@ -1159,17 +1209,38 @@ function renderProps(p) {
 function claudeInfo(n) {
   const box = h('div', 'pp-claude');
   box.append(h('span', 'pp-label', 'Claude 세션'));
-  if (!n.claude) { box.append(h('div', 'pp-ro muted', '아직 없음')); return box; }
-  const row = (label, value, mono) => { const r = h('div', 'pp-ro-row'); r.append(h('span', 'pp-ro-k', label), h('span', `pp-ro${mono ? ' mono' : ''}`, value)); return r; };
-  box.append(row('이름', n.claude.name || '—'), row('id', n.claude.id, true), row('폴더', `${n.claude.cwd || '—'}${n.claude.wsl ? ` (WSL ${n.claude.wsl})` : ''}`, true));
-  if (sessionOpen(n)) box.append(h('div', 'pp-ro muted', '연결된 터미널에서 실행 중'));
+  const button = (text, lines, action) => {
+    const b = h('button', 'vbtn pp-reopen', text);
+    b.type = 'button';
+    b.title = `새 터미널에서 실행: ${lines.join(' → ')}`;
+    b.addEventListener('click', action);
+    return b;
+  };
+  if (!n.claude) box.append(h('div', 'pp-ro muted', '아직 없음'));
   else {
-    const open = h('button', 'vbtn pp-reopen', '이 세션 다시 열기');
-    open.type = 'button';
-    open.title = `새 터미널에서 실행: ${ViewLogic.resumeLines(n.claude, api.platform).join(' → ')}`;
-    open.addEventListener('click', () => reopenSession(n));
-    box.append(open);
+    const row = (label, value, mono) => { const r = h('div', 'pp-ro-row'); r.append(h('span', 'pp-ro-k', label), h('span', `pp-ro${mono ? ' mono' : ''}`, value)); return r; };
+    box.append(row('이름', n.claude.name || '—'), row('id', n.claude.id, true), row('폴더', `${n.claude.cwd || '—'}${n.claude.wsl ? ` (WSL ${n.claude.wsl})` : ''}`, true));
   }
+  if (claudeRunning(n)) { box.append(h('div', 'pp-ro muted', sessionOpen(n) ? '연결된 터미널에서 실행 중' : '연결된 터미널에서 다른 Claude 가 실행 중')); return box; }
+  const actions = h('div', 'pp-actions');
+  if (n.claude) actions.append(button('이 세션 다시 열기', ViewLogic.resumeLines(n.claude, api.platform), () => reopenSession(n)));
+  actions.append(button(n.claude ? '새로 시작' : 'Claude 시작', ViewLogic.startLines(startPlace(n), api.platform, n.agent), () => startNodeClaude(n)));
+  box.append(actions);
+  return box;
+}
+
+// What this node's Claude is told (ViewLogic.pipelineContext), as it would go
+// now: whether it goes on its own, and the text, folded.
+function contextPreview(p, n) {
+  const auto = p.notify && !n.off;
+  const text = ViewLogic.pipelineContext(p, n.id, nodeSessionOf, true);
+  const box = document.createElement('details');
+  box.className = 'pp-preview';
+  box.open = pipe.previewOpen === true;
+  box.addEventListener('toggle', () => { pipe.previewOpen = box.open; });
+  box.append(h('summary', null, `Claude에게 가는 내용 · ${text.length}자`),
+    h('div', 'pp-ro muted', auto ? '자동 전달: 켜짐 (바뀐 뒤 첫 프롬프트에 한 번)' : '자동 전달: 꺼짐 (/omni:pipeline 으로 부를 때만)'),
+    h('pre', 'pp-preview-text', text));
   return box;
 }
 
@@ -1341,6 +1412,7 @@ function nodeNamesOf(tid) {
 
 for (const b of pipe.els.switchBtns) b.addEventListener('click', () => setView(b.dataset.view));
 pipe.els.edit.addEventListener('click', () => setPipeEditing(true));
+pipe.els.openAll.addEventListener('click', openAllSessions);
 pipe.els.notify.addEventListener('click', () => {
   const p = currentPipe();
   if (!p) return;
