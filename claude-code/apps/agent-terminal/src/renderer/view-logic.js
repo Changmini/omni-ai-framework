@@ -514,19 +514,26 @@
     return lines;
   }
 
-  // Reopens a saved Claude session (`saved`: { id, cwd, wsl }) where it ran.
-  // [] when the id is not one claude makes (a uuid), so nothing odd is typed.
-  function resumeLines(saved, platform) {
+  // `--agent <name>` for a plain (plugin:)name; anything else is left out
+  // rather than typed.
+  const agentArg = (agent) => {
+    const a = String(agent || '').trim();
+    return /^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)*$/.test(a) ? `--agent ${a}` : '';
+  };
+
+  // Reopens a saved Claude session (`saved`: { id, cwd, wsl }) where it ran,
+  // as `agent` again: a resumed session keeps its conversation but not the
+  // agent's instructions unless --agent is given again (seen on Claude Code
+  // 2.1.331). [] when the id is not one claude makes (a uuid).
+  function resumeLines(saved, platform, agent) {
     if (!saved || !/^[A-Za-z0-9-]{1,100}$/.test(String(saved.id || ''))) return [];
-    return claudeLines(saved, platform, `--resume ${saved.id}`);
+    return claudeLines(saved, platform, [`--resume ${saved.id}`, agentArg(agent)].filter(Boolean).join(' '));
   }
 
   // Starts a new Claude for a node at `where`, as its agent when it names one
-  // (`claude --agent omni-pipeline:lead`); an agent name that is not a plain
-  // (plugin:)name is left out rather than typed.
+  // (`claude --agent omni-pipeline:lead`).
   function startLines(where, platform, agent) {
-    const a = String(agent || '').trim();
-    return claudeLines(where, platform, /^[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)*$/.test(a) ? `--agent ${a}` : '');
+    return claudeLines(where, platform, agentArg(agent));
   }
 
   // The recommended development pipeline, as the omni-pipeline plugin runs it
