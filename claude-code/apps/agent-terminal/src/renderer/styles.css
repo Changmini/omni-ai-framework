@@ -971,6 +971,13 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pp-h { margin: 0 0 4px; font-size: 13px; }
 .pp-field { display: block; margin-top: 8px; }
 .pp-field > span { display: block; color: var(--muted); margin-bottom: 3px; }
+.pp-claude { margin-top: 8px; }
+.pp-label { display: block; color: var(--muted); margin-bottom: 3px; }
+.pp-ro-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.pp-ro-k { color: var(--muted); font-size: 11.5px; }
+.pp-ro { overflow-wrap: anywhere; user-select: text; }
+.pp-ro.mono { font: 11.5px/1.45 var(--mono); }
+.pp-reopen { margin-top: 6px; color: var(--text); }
 .pp-check { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .pp-check[hidden] { display: none; }
 .pp-in {

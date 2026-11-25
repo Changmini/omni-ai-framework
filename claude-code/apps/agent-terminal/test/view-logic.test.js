@@ -327,3 +327,15 @@ test('pipelines: what the Claude of a node is told', () => {
   const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(400)), node('b', '화면')] };
   assert.match(pipelineContext(long, 'a', () => null), /메모: x{300}…/);
 });
+
+test('pipelines: lines that reopen a saved Claude session', () => {
+  const { resumeLines } = require('../src/renderer/view-logic');
+  const id = '9dcfb3a3-3265-4bc8-a267-350314271fd4';
+  assert.deepStrictEqual(resumeLines({ id, cwd: "/home/user/it's app" }, 'linux'), [`cd '/home/user/it'\\''s app'`, `claude --resume ${id}`]);
+  assert.deepStrictEqual(resumeLines({ id, cwd: "C:\\work\\it's" }, 'win32'), [`cd 'C:\\work\\it''s'`, `claude --resume ${id}`]);
+  assert.deepStrictEqual(resumeLines({ id, cwd: '/home/user/sample-app', wsl: 'Ubuntu-24.04' }, 'win32'), ['wsl -d Ubuntu-24.04', "cd '/home/user/sample-app'", `claude --resume ${id}`]);
+  assert.deepStrictEqual(resumeLines({ id, cwd: '/x', wsl: 'odd name' }, 'win32')[0], 'wsl'); // default distro rather than a strange name
+  assert.deepStrictEqual(resumeLines({ id }, 'linux'), [`claude --resume ${id}`]); // folder unknown
+  assert.deepStrictEqual(resumeLines({ id: 'x; rm -rf ~', cwd: '/x' }, 'linux'), []); // never typed
+  assert.deepStrictEqual(resumeLines(null, 'linux'), []);
+});
