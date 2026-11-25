@@ -352,3 +352,13 @@ test('pipelines: the recommended pipeline (lead, implementer, reviewer)', () => 
   assert.deepStrictEqual(pipelineOrder(p).map(name), ['팀장', '구현', '리뷰어']);
   assert.strictEqual(new Set([p.id, ...p.nodes.map((x) => x.id)]).size, 4);
 });
+
+test('pipelines: lines that start a node Claude as its agent', () => {
+  const { startLines, recommendedPipeline } = require('../src/renderer/view-logic');
+  assert.deepStrictEqual(startLines({ cwd: '/home/user/sample-app' }, 'linux', 'omni-pipeline:lead'), ["cd '/home/user/sample-app'", 'claude --agent omni-pipeline:lead']);
+  assert.deepStrictEqual(startLines({ cwd: '/home/user/sample-app', wsl: 'Ubuntu' }, 'win32', 'reviewer'), ['wsl -d Ubuntu', "cd '/home/user/sample-app'", 'claude --agent reviewer']);
+  assert.deepStrictEqual(startLines({ cwd: 'C:\\work' }, 'win32', ''), ["cd 'C:\\work'", 'claude']); // no agent: plain claude
+  assert.deepStrictEqual(startLines(null, 'linux', 'x; rm -rf ~'), ['claude']); // an odd name is never typed
+  let n = 0;
+  assert.deepStrictEqual(recommendedPipeline(() => `r${n++}`).nodes.map((x) => x.agent), ['omni-pipeline:lead', 'omni-pipeline:implementer', 'omni-pipeline:reviewer']);
+});

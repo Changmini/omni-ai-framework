@@ -86,7 +86,7 @@ test('hook events drive the claude view, team and tasks', () => {
   m.onHookEvent(id, { hook_event_name: 'PreToolUse', tool_name: 'Bash' });
   let view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
   assert.deepStrictEqual([view.status, view.tool], ['working', 'Bash']);
-  assert.deepStrictEqual(events.find(([c]) => c === 'session:meta')[1], { id, cwd: '/repo', branch: 'main' });
+  assert.deepStrictEqual(events.find(([c]) => c === 'session:meta')[1], { id, cwd: '/repo', branch: 'main', wsl: null });
 
   m.onHookEvent(id, { hook_event_name: 'TaskCreated', task_id: '1', task_subject: 'x' });
   view = events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
@@ -410,6 +410,7 @@ test('the status line tells the session id and name before any hook', () => {
   const { m, events } = setup();
   const { id } = m.create({ cwd: '/repo' });
   const view = () => events.filter(([c]) => c === 'session:agent').at(-1)[1].claude;
+  assert.strictEqual(m.list()[0].wsl, null); // the shell is not inside WSL
   m.onStatusLine(id, { model: { id: 'x' } }); // no session: nothing
   assert.strictEqual(events.filter(([c]) => c === 'session:agent').length, 0);
   m.onStatusLine(id, { session_id: 's1', cwd: '/repo/app' }); // claude just started
