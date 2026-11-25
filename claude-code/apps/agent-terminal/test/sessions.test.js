@@ -413,15 +413,17 @@ test('the status line tells the session id and name before any hook', () => {
   m.onStatusLine(id, { model: { id: 'x' } }); // no session: nothing
   assert.strictEqual(events.filter(([c]) => c === 'session:agent').length, 0);
   m.onStatusLine(id, { session_id: 's1', cwd: '/repo/app' }); // claude just started
-  assert.deepStrictEqual(view().session, { id: 's1', name: null, cwd: '/repo/app', wsl: null });
+  assert.deepStrictEqual(view().session, { id: 's1', name: null, cwd: '/repo/app', wsl: null, prompted: false });
   assert.strictEqual(view().status, null);
+  m.onHookEvent(id, { hook_event_name: 'Notification', notification_type: 'idle_prompt', session_id: 's1' }); // waited at the prompt
+  assert.strictEqual(view().session.prompted, false); // still nothing to resume
   m.onStatusLine(id, { session_id: 's1', session_name: ' sample-ui ' }); // /rename
-  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui', cwd: '/repo/app', wsl: null });
+  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui', cwd: '/repo/app', wsl: null, prompted: false });
   m.onHookEvent(id, { hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/repo' }); // hooks tell the folder from then on
-  assert.deepStrictEqual([view().status, view().session], ['working', { id: 's1', name: 'sample-ui', cwd: '/repo', wsl: null }]);
+  assert.deepStrictEqual([view().status, view().session], ['working', { id: 's1', name: 'sample-ui', cwd: '/repo', wsl: null, prompted: true }]);
   // Another claude reporting into the same terminal (tmux) does not take over.
   m.onStatusLine(id, { session_id: 's2', session_name: 'other', cwd: '/elsewhere' });
-  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui', cwd: '/repo', wsl: null });
+  assert.deepStrictEqual(view().session, { id: 's1', name: 'sample-ui', cwd: '/repo', wsl: null, prompted: true });
   m.onHookEvent(id, { hook_event_name: 'SessionEnd', session_id: 's1' });
   assert.strictEqual(view().session, null);
 });
