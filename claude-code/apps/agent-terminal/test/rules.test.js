@@ -105,7 +105,7 @@ test('rules: what the page sends is checked', () => {
   assert.strictEqual(compile({ event: 'prompt', action: { kind: 'run-anything' } }), null);
   const c = compile({ id: 1, enabled: 'yes', event: 'pre', cond: { kind: 'eval', value: 'x' }, action: { kind: 'ask', send: 1 }, freq: 'often' });
   assert.deepStrictEqual(c, {
-    id: '', enabled: false, event: 'pre', cond: { kind: 'none', value: 'x' }, terminals: null,
+    id: '', enabled: false, event: 'pre', cond: { kind: 'none', value: 'x' }, terminals: null, agent: null,
     action: { kind: 'ask', text: '', target: null, send: false }, freq: 'every',
   });
 });
@@ -119,4 +119,24 @@ test('rule templates: the guard conditions hit what they name and spare the rest
   for (const s of ['Bash npm install lodash', 'Bash npm i', 'Bash pip install requests']) assert.ok(holds('의존성 설치 확인', s), s);
   for (const s of ['Bash npm ci', 'Bash npm run build']) assert.ok(!holds('의존성 설치 확인', s), s);
   assert.ok(holds('수정 뒤 시험 상기', 'Edit /a.js') && !holds('수정 뒤 시험 상기', 'Read /a.js'));
+});
+
+test('rules: an agent scope follows the agent, in any terminal, and its subagents', () => {
+  assert.ok(RuleLogic.agentMatches('omni-pipeline:implementer', 'omni-pipeline:implementer'));
+  assert.ok(RuleLogic.agentMatches('omni-pipeline:implementer', 'implementer')); // plain name, plugin agent
+  assert.ok(!RuleLogic.agentMatches('implementer', 'omni-pipeline:implementer'));
+  assert.ok(!RuleLogic.agentMatches('reviewer', 'implementer'));
+  assert.ok(!RuleLogic.agentMatches(undefined, 'implementer'));
+  const { r } = setup([
+    rule({ id: 'c', agent: 'implementer', action: { kind: 'context', text: '구현 규칙' } }),
+    rule({ id: 'b', event: 'pre', agent: 'implementer', cond: { kind: 'text', value: 'git push' }, action: { kind: 'block', text: '구현은 push 금지' } }),
+  ]);
+  assert.deepStrictEqual(r.reply('2', { ...prompt('a'), agent_type: 'omni-pipeline:implementer' }), { additionalContext: '구현 규칙' });
+  assert.strictEqual(r.reply('1', { ...prompt('a'), agent_type: 'reviewer' }), null);
+  assert.strictEqual(r.reply('1', prompt('a')), null); // plain claude
+  const push = { hook_event_name: 'PreToolUse', session_id: 's1', tool_name: 'Bash', tool_input: { command: 'git push' } };
+  assert.strictEqual(r.reply('1', { ...push, agent_type: 'lead' }), null);
+  // A subagent of that type in a lead's session: blocked, not given text.
+  assert.deepStrictEqual(r.reply('1', { ...push, agent_type: 'implementer', agent_id: 'x1' }), { permissionDecision: 'deny', permissionDecisionReason: '구현은 push 금지' });
+  assert.match(RuleLogic.describe({ ...rule(), scope: { kind: 'agent', name: 'implementer' } }), /· 에이전트 implementer →/);
 });

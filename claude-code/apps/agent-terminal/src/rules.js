@@ -33,6 +33,7 @@ function compile(r) {
     event: r.event,
     cond: { kind: ['text', 'regex'].includes(cond.kind) ? cond.kind : 'none', value: str(cond.value, 500) },
     terminals: Array.isArray(r.terminals) ? r.terminals.slice(0, MAX_TERMINALS).map((t) => str(String(t), 20)) : null,
+    agent: str(r.agent, 200).trim() || null,
     action: { kind: a.kind, text: str(a.text, MAX_TEXT), target: a.target == null ? null : str(String(a.target), 20), send: a.send === true },
     freq: RuleLogic.FREQS[r.freq] ? r.freq : 'every',
   };

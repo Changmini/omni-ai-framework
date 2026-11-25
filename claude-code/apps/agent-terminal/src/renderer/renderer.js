@@ -2186,7 +2186,9 @@ function rulesSync() {
     event: r.event,
     cond: r.cond,
     terminals: !r.scope || r.scope.kind === 'all' ? null
-      : r.scope.kind === 'group' ? [...agents.keys()].filter((t) => groupOf[t] === r.scope.id) : ruleTerminals(r, 'scope', r.scope.name),
+      : r.scope.kind === 'group' ? [...agents.keys()].filter((t) => groupOf[t] === r.scope.id)
+        : r.scope.kind === 'agent' ? (r.scope.name ? null : []) : ruleTerminals(r, 'scope', r.scope.name),
+    agent: r.scope && r.scope.kind === 'agent' ? r.scope.name || null : null,
     action: { ...r.action, target: r.action.kind === 'fill' ? ruleTerminals(r, 'target', r.action.target)[0] || null : null },
     freq: r.freq,
   }));
@@ -2354,24 +2356,37 @@ function ruleEditor(r) {
     if (v.startsWith('t:') && agents.has(v.slice(2))) { bindRule(r, which, v.slice(2)); setName(displayName(agents.get(v.slice(2)).info)); } else setName(v.slice(2));
   };
 
-  // 어디서: every terminal, a group, or one terminal.
+  // 어디서: every terminal, a group, one terminal, or an agent.
   const [tOpts, tVal] = terminalOpts('터미널: ', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
-  const scopeOpts = [['all', '모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `그룹: ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal')];
+  const scopeOpts = [['all', '모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `그룹: ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal'), ['agent', '에이전트…']];
   if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '그룹: (고르세요)']);
-  const scopeVal = r.scope.kind === 'group' ? `g:${r.scope.id}` : r.scope.kind === 'terminal' ? tVal : 'all';
+  const scopeVal = r.scope.kind === 'group' ? `g:${r.scope.id}` : r.scope.kind === 'terminal' ? tVal : r.scope.kind === 'agent' ? 'agent' : 'all';
   const where = select(scopeOpts, scopeVal, (v) => {
     if (v === 'all') r.scope = { kind: 'all' };
+    else if (v === 'agent') r.scope = { kind: 'agent', name: '' };
     else if (v.startsWith('g:')) r.scope = { kind: 'group', id: v.slice(2) };
     else pickTerminal(v, 'scope', (name) => { r.scope = { kind: 'terminal', name }; });
     changed(true);
   });
+  const whereParts = [where];
+  if (r.scope.kind === 'agent') {
+    // Names to pick from: the pipelines' agents and the subagents seen now.
+    const list = document.createElement('datalist');
+    list.id = `rl-agents-${r.id}`;
+    const known = new Set(pipelines.flatMap((p) => p.nodes.map((n) => n.agent).filter(Boolean)));
+    for (const a of agents.values()) for (const ag of (a.info.claude && a.info.claude.agents) || []) if (ag.type) known.add(ag.type);
+    for (const n of known) list.append(new Option(n));
+    const agentName = input(r.scope.name, '예: omni-pipeline:implementer', (v) => { r.scope.name = v.trim(); changed(); }, 'pp-in mono');
+    agentName.setAttribute('list', list.id);
+    whereParts.push(agentName, list, h('div', 'rl-note', '- claude --agent <이름> 으로 띄운 세션\n- 그 이름의 서브에이전트 (막기·확인만)\n- 어느 터미널이든 상관없음'));
+  }
 
   // 무엇을, and what it needs.
   const what = select(Object.entries(RuleLogic.ACTIONS).filter(([, a]) => a.events.includes(r.event)).map(([k, a]) => [k, a.label]), r.action.kind, (v) => {
     r.action = { ...r.action, kind: v };
     changed(true);
   });
-  const parts = [field('이름', name), field('언제', when), field('조건', seg, condValue, condHint), field('어디서', where), field('무엇을', what)];
+  const parts = [field('이름', name), field('언제', when), field('조건', seg, condValue, condHint), field('어디서', ...whereParts), field('무엇을', what)];
   const kind = r.action.kind;
   if (kind === 'fill') {
     const [opts, val] = terminalOpts('', 'target', r.action.target);

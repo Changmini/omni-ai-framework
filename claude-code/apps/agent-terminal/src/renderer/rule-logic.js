@@ -88,13 +88,25 @@
     return false;
   }
 
+  // Whether hook event agent_type `type` is agent `name`: the session
+  // started with `claude --agent <name>` (every hook of it carries the name)
+  // or a subagent of that type (verified on Claude Code 2.1.332). A plain
+  // name also matches a plugin's agent of that name ("plugin:name").
+  function agentMatches(type, name) {
+    const t = String(type || '');
+    const n = String(name || '').trim();
+    return Boolean(t && n) && (t === n || (!n.includes(':') && t.endsWith(`:${n}`)));
+  }
+
   // Whether `rule` (compiled: `terminals` is null for all, else a list of
-  // terminal ids) fires for hook event `ev` of terminal `terminalId`.
+  // terminal ids; `agent` null for any agent) fires for hook event `ev` of
+  // terminal `terminalId`.
   function fires(rule, ev, terminalId) {
     if (!rule || !rule.enabled) return false;
     if (EVENT_OF_HOOK[ev.hook_event_name] !== rule.event) return false;
     if (!ACTIONS[rule.action && rule.action.kind] || !ACTIONS[rule.action.kind].events.includes(rule.event)) return false;
     if (rule.terminals && !rule.terminals.includes(String(terminalId))) return false;
+    if (rule.agent && !agentMatches(ev.agent_type, rule.agent)) return false;
     return condHolds(rule.cond, subject(ev));
   }
 
@@ -104,7 +116,8 @@
     const cond = rule.cond && rule.cond.kind !== 'none' && rule.cond.value
       ? ` · ${rule.cond.kind === 'regex' ? '정규식' : '내용에'} 「${rule.cond.value}」` : '';
     const scope = !rule.scope || rule.scope.kind === 'all' ? '모든 터미널'
-      : rule.scope.kind === 'group' ? `그룹 ${groupName(rule.scope.id)}` : `터미널 ${rule.scope.name}`;
+      : rule.scope.kind === 'group' ? `그룹 ${groupName(rule.scope.id)}`
+        : rule.scope.kind === 'agent' ? `에이전트 ${rule.scope.name || '?'}` : `터미널 ${rule.scope.name}`;
     const a = rule.action || {};
     const what = a.kind === 'fill' ? `터미널 ${a.target || '?'} 입력창에 글 ${a.send ? '넣고 보내기' : '채우기'}`
       : (ACTIONS[a.kind] ? ACTIONS[a.kind].label : '?');
@@ -126,5 +139,5 @@
     { name: '파이프라인 노드 알리기', event: 'prompt', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'pipeline' }, freq: 'changed' },
   ];
 
-  return { EVENTS, EVENT_OF_HOOK, ACTIONS, FREQS, VARS, TEMPLATES, subject, vars, fillText, condHolds, fires, describe };
+  return { EVENTS, EVENT_OF_HOOK, ACTIONS, FREQS, VARS, TEMPLATES, subject, vars, fillText, condHolds, agentMatches, fires, describe };
 }));
