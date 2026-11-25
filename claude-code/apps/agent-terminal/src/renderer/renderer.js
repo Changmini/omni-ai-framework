@@ -2204,8 +2204,8 @@ function rulesSync() {
 function markRuleSource(id, keep) {
   const a = agents.get(id);
   if (!a) return;
-  a.item.classList.add('rule-zap');
-  if (keep && id !== activeId) a.item.classList.add('rule-mark');
+  if (!a.item.classList.contains('rule-zap')) a.item.classList.add('rule-zap');
+  if (keep && id !== activeId && !a.item.classList.contains('rule-mark')) a.item.classList.add('rule-mark');
   clearTimeout(zapTimers.get(id));
   zapTimers.set(id, setTimeout(() => a.item.classList.remove('rule-zap'), ZAP_MS));
 }
@@ -2234,15 +2234,27 @@ function userTyped(id, data) {
   if (!data.startsWith('\x1b')) autoDepth.delete(id);
 }
 
+// Hit counts are saved and shown at most every RULES_SHOW_MS: a rule on
+// every tool call fires several times a second while Claude works.
+const RULES_SHOW_MS = 500;
+let rulesShowTimer = 0;
+function showRuleHits() {
+  if (rulesShowTimer) return;
+  rulesShowTimer = setTimeout(() => {
+    rulesShowTimer = 0;
+    writePref(RULES_KEY, JSON.stringify(rules));
+    if (rulesVisible()) renderRules();
+  }, RULES_SHOW_MS);
+}
+
 api.onRuleFire(({ ruleId, source, kind, target, text, send }) => {
   const rule = rules.find((r) => r.id === ruleId);
   if (!rule) return;
   rule.hits = (rule.hits || 0) + 1;
   rule.lastAt = Date.now();
   markRuleSource(source, kind === 'highlight');
-  const done = () => { writePref(RULES_KEY, JSON.stringify(rules)); if (rulesVisible()) renderRules(); };
-  if (kind === 'fill') ruleFill(rule, source, target, text, send).finally(done);
-  else done();
+  if (kind === 'fill') ruleFill(rule, source, target, text, send).finally(showRuleHits);
+  else showRuleHits();
 });
 
 function rulesVisible() {

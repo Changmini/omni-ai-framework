@@ -109,3 +109,14 @@ test('rules: what the page sends is checked', () => {
     action: { kind: 'ask', text: '', target: null, send: false }, freq: 'every',
   });
 });
+
+test('rule templates: the guard conditions hit what they name and spare the rest', () => {
+  const holds = (name, subject) => RuleLogic.condHolds(RuleLogic.TEMPLATES.find((t) => t.name === name).cond, subject);
+  for (const s of ['Read /home/user/sample-app/.env', 'Bash cat .env.local', 'Read C:\\Users\\user\\.env', 'Read /home/user/.ssh/id_rsa', 'Bash cat server.pem']) assert.ok(holds('비밀 파일 막기', s), s);
+  for (const s of ['Read /home/user/sample-app/src/env.ts', 'Read /a/.envrc', 'Read /a/id_rsa.pub']) assert.ok(!holds('비밀 파일 막기', s), s);
+  for (const s of ['Bash git push origin main --force', 'Bash git push -f origin feature/sample', 'Bash git reset --hard HEAD~1']) assert.ok(holds('강제 푸시·하드 리셋 막기', s), s);
+  for (const s of ['Bash git push --force-with-lease', 'Bash git push origin feature/sample']) assert.ok(!holds('강제 푸시·하드 리셋 막기', s), s);
+  for (const s of ['Bash npm install lodash', 'Bash npm i', 'Bash pip install requests']) assert.ok(holds('의존성 설치 확인', s), s);
+  for (const s of ['Bash npm ci', 'Bash npm run build']) assert.ok(!holds('의존성 설치 확인', s), s);
+  assert.ok(holds('수정 뒤 시험 상기', 'Edit /a.js') && !holds('수정 뒤 시험 상기', 'Read /a.js'));
+});
