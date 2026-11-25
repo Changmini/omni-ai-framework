@@ -73,6 +73,16 @@ test('rules: block wins over ask before a tool, with the reasons', () => {
   assert.strictEqual(r.reply('1', { ...pre, tool_input: { command: 'ls' } }), null);
 });
 
+test('rules: tool calls of a subagent get blocks and asks, not text', () => {
+  const pre = { hook_event_name: 'PreToolUse', session_id: 's1', agent_id: 'sub', tool_name: 'Bash', tool_input: { command: 'rm -rf x' } };
+  const { r } = setup([
+    rule({ id: 'c', event: 'pre', action: { kind: 'context', text: '참고' } }),
+    rule({ id: 'b', event: 'pre', cond: { kind: 'text', value: 'rm ' }, action: { kind: 'block', text: 'rm 금지' } }),
+  ]);
+  assert.deepStrictEqual(r.reply('1', pre), { permissionDecision: 'deny', permissionDecisionReason: 'rm 금지' });
+  assert.strictEqual(r.reply('1', { ...pre, tool_input: { command: 'ls' } }), null);
+});
+
 test('rules: page work goes out as fire messages; recent events are kept', () => {
   const stop = { hook_event_name: 'Stop', session_id: 's1', last_assistant_message: '구현 끝' };
   const { r, fired } = setup([

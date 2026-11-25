@@ -36,7 +36,7 @@ function salvage(head) {
 // terminal sent them.
 // Answers are 2xx with an empty body, so hooks neither block nor change any
 // decision (PermissionRequest, TaskCompleted, ...). One exception: for
-// UserPromptSubmit, PreToolUse and PostToolUse outside subagents,
+// UserPromptSubmit, PreToolUse and PostToolUse (a subagent's too),
 // `onReply(terminalId, event)` may return hookSpecificOutput fields (the
 // automation rules, rules.js): additionalContext, which Claude Code adds to
 // Claude's context next to the prompt or the tool call, and, before a tool,
@@ -74,7 +74,7 @@ function startHookServer({ onEvent, onCwd = () => {}, onStatusLine = () => {}, o
       try { ev = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return done(200); }
       if (!ev || typeof ev !== 'object') return done(200);
       // claude-hook.sh (tmux) sends without waiting for the answer: nothing to add there.
-      const out = req.url === '/hook' && !ev.omni && REPLY_EVENTS.has(ev.hook_event_name) && !ev.agent_id
+      const out = req.url === '/hook' && !ev.omni && REPLY_EVENTS.has(ev.hook_event_name)
         ? onReply(terminalId, ev) : null;
       done(200, out ? JSON.stringify({ hookSpecificOutput: { ...out, hookEventName: ev.hook_event_name } }) : '');
       if (req.url === '/cwd') {

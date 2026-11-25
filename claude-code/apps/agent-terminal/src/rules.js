@@ -96,7 +96,10 @@ class Rules {
 
   // The hookSpecificOutput fields for hook event `ev` of terminal `id`
   // (UserPromptSubmit, PreToolUse, PostToolUse of the main session), or null.
-  // Texts for Claude are joined; a block wins over an ask.
+  // Texts for Claude are joined; a block wins over an ask. A subagent's tool
+  // call (agent_id, same session_id) gets the blocks and asks only: a
+  // command it runs is the session's command, while text for Claude is
+  // meant for the session the user talks to.
   reply(id, ev) {
     const v = this.vars(id, ev);
     if (!v) return null;
@@ -106,6 +109,7 @@ class Rules {
     for (const rule of this.rules) {
       if (!RuleLogic.ACTIONS[rule.action.kind].reply || !RuleLogic.fires(rule, ev, id)) continue;
       const kind = rule.action.kind;
+      if (ev.agent_id && kind !== 'block' && kind !== 'ask') continue;
       const text = kind === 'pipeline' ? this.pipeline.get(id) || '' : RuleLogic.fillText(rule.action.text, v).trim();
       if (kind === 'block' || kind === 'ask') {
         decision = decision === 'deny' || kind === 'block' ? 'deny' : 'ask';
