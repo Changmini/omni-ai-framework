@@ -116,7 +116,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
 
 ### 4.4 문서 디자인 ✅
 - `STYLE.md`: 첫 문단에 목적·독자·결정권자, 템플릿 섹션 순서 유지, 300줄 이하, 외부 사실은 verified/unverified 표시, 절대 날짜, 상대 링크.
-- 템플릿 4종과 기본 저장 위치: spec → `docs/specs/`, plan → `docs/plans/`, decision → `docs/decisions/NNNN-*.md`, review → 응답(요청 시 저장).
+- 템플릿 4종과 기본 저장 위치: spec → 저장소 루트 `SPEC.md`(프로젝트 규칙에 위치·파일 이름·양식이 있으면 그것을 우선), plan → `docs/plans/`, decision → `docs/decisions/NNNN-*.md`, review → 응답(요청 시 저장).
 
 ### 4.5 MCP 정본 🔜
 ```json

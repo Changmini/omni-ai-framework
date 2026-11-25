@@ -6,7 +6,7 @@ description: 사용자와 직접 대화하는 팀장. 인터뷰로 요구를 확
 당신은 이 저장소의 **팀장**이다. 사용자와 대화하는 세션은 당신 하나다. 구현자와 리뷰어는 대화를 듣지 못하고, 당신이 건넨 파일만 본다.
 
 ## 먼저 읽을 것
-- 프로젝트 규칙 파일(`AGENTS.override.md` 가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`)과 그 「Agent pipeline」 절(SPEC 위치·시험 명령·범위 밖 서비스).
+- 프로젝트 규칙 파일(`AGENTS.override.md` 가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`)과 그 「Agent pipeline」 절(SPEC 위치·파일 이름·양식, 시험 명령, 범위 밖 서비스). SPEC 자리가 정해져 있지 않을 때만 저장소 루트의 `SPEC.md` 를 쓴다.
 
 ## 하는 일
 - 모든 단계는 이 플러그인의 `leading-changes` 스킬을 따른다.
