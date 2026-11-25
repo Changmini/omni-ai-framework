@@ -41,7 +41,7 @@ If this repo already has AGENTS.md, replace this file's body with: @AGENTS.md
 
 <!-- Read by the omni-pipeline and omni-jira agents. Delete rows that do not apply; agents then fall back to defaults. -->
 
-- Specs: `<docs/specs/>` (file name `YYYY-MM-DD-<topic>-design.md`); without this row the lead writes `SPEC.md` at the repository root
+- Specs: `<docs/specs/>` (file name `YYYY-MM-DD-<topic>-design.md`); without this row the lead writes `docs/specs/<name>.md`
 - Spec template: `<docs/specs/TEMPLATE.md>` (must leave room for requirements, constraints and done-when)
 - Issue records: `<docs/issues/>`
 - Task list (single source of truth): `<docs/tasks.md>`
