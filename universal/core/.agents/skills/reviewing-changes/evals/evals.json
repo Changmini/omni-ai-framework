@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Review the export branch against docs/specs/export.md.",
+      "prompt": "Review the export branch against SPEC.md.",
       "expected_output": "Saves the branch diff to a file, runs the reviewer role with only the spec and that diff (read-only, no conversation), and reports gaps tied to spec items with file, line and a concrete failing input."
     },
     {
