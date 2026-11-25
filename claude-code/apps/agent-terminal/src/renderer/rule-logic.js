@@ -118,6 +118,11 @@
     { name: '위험 명령 확인', event: 'pre', cond: { kind: 'regex', value: 'git push|migrate' }, scope: { kind: 'all' }, action: { kind: 'ask', text: '이 명령은 실행 전에 확인합니다: {command}' }, freq: 'every' },
     { name: '키워드로 체크리스트', event: 'prompt', cond: { kind: 'text', value: '배포' }, scope: { kind: 'all' }, action: { kind: 'context', text: '배포 전 체크리스트: 시험 통과, 마이그레이션 확인, 롤백 방법.' }, freq: 'every' },
     { name: '승인 대기 표시', event: 'wait', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'highlight' }, freq: 'every' },
+    { name: '작업 끝 표시', event: 'stop', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'highlight' }, freq: 'every' },
+    { name: '비밀 파일 막기', event: 'pre', cond: { kind: 'regex', value: '(^|[\\\\/\\s])(\\.env(\\.[\\w-]+)?|id_rsa|id_ed25519|[\\w-]+\\.pem|credentials(\\.json)?)(\\s|$)' }, scope: { kind: 'all' }, action: { kind: 'block', text: '비밀 정보가 든 파일({file}{command})은 읽거나 고치지 않습니다. 필요하면 사용자에게 요청하세요.' }, freq: 'every' },
+    { name: '강제 푸시·하드 리셋 막기', event: 'pre', cond: { kind: 'regex', value: 'git\\s+push\\b.*\\s(--force|-f)(\\s|$)|git\\s+reset\\s+--hard' }, scope: { kind: 'all' }, action: { kind: 'block', text: '되돌리기 어려운 git 명령은 막혀 있습니다: {command}' }, freq: 'every' },
+    { name: '의존성 설치 확인', event: 'pre', cond: { kind: 'regex', value: '\\b(npm|pnpm|yarn|bun)\\s+(i|install|add)\\b|\\bpip3?\\s+install\\b|\\bcargo\\s+add\\b|\\bgo\\s+get\\b' }, scope: { kind: 'all' }, action: { kind: 'ask', text: '새 패키지 설치 전 확인: {command}' }, freq: 'every' },
+    { name: '수정 뒤 시험 상기', event: 'post', cond: { kind: 'regex', value: '^(Edit|Write|MultiEdit) ' }, scope: { kind: 'all' }, action: { kind: 'context', text: '파일을 고쳤으면 끝내기 전에 관련 시험·검사를 돌려 결과를 확인하세요.' }, freq: 'once' },
     { name: '파이프라인 노드 알리기', event: 'prompt', cond: { kind: 'none', value: '' }, scope: { kind: 'all' }, action: { kind: 'pipeline' }, freq: 'changed' },
   ];
 
