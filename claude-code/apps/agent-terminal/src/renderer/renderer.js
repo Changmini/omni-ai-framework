@@ -867,7 +867,7 @@ const sessionOpen = (n) => {
 // folder, running claude --resume (as a "new terminal" shortcut runs), then
 // bound to the node.
 async function reopenSession(n) {
-  const lines = ViewLogic.resumeLines(n.claude, api.platform);
+  const lines = ViewLogic.resumeLines(n.claude, api.platform, n.agent);
   if (!lines.length) return;
   const tid = await typeShortcut({ newTerminal: true, name: n.name }, lines);
   if (tid && agents.has(tid)) bindNode(n.id, tid);
@@ -1223,7 +1223,7 @@ function claudeInfo(n) {
   }
   if (claudeRunning(n)) { box.append(h('div', 'pp-ro muted', sessionOpen(n) ? '연결된 터미널에서 실행 중' : '연결된 터미널에서 다른 Claude 가 실행 중')); return box; }
   const actions = h('div', 'pp-actions');
-  if (n.claude) actions.append(button('이 세션 다시 열기', ViewLogic.resumeLines(n.claude, api.platform), () => reopenSession(n)));
+  if (n.claude) actions.append(button('이 세션 다시 열기', ViewLogic.resumeLines(n.claude, api.platform, n.agent), () => reopenSession(n)));
   actions.append(button(n.claude ? '새로 시작' : 'Claude 시작', ViewLogic.startLines(startPlace(n), api.platform, n.agent), () => startNodeClaude(n)));
   box.append(actions);
   return box;

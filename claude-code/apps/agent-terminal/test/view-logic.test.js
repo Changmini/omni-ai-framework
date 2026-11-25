@@ -336,6 +336,9 @@ test('pipelines: lines that reopen a saved Claude session', () => {
   assert.deepStrictEqual(resumeLines({ id, cwd: '/home/user/sample-app', wsl: 'Ubuntu-24.04' }, 'win32'), ['wsl -d Ubuntu-24.04', "cd '/home/user/sample-app'", `claude --resume ${id}`]);
   assert.deepStrictEqual(resumeLines({ id, cwd: '/x', wsl: 'odd name' }, 'win32')[0], 'wsl'); // default distro rather than a strange name
   assert.deepStrictEqual(resumeLines({ id }, 'linux'), [`claude --resume ${id}`]); // folder unknown
+  // As its agent again: a resumed session does not keep the agent's instructions on its own.
+  assert.deepStrictEqual(resumeLines({ id, cwd: '/x' }, 'linux', 'omni-pipeline:lead'), ["cd '/x'", `claude --resume ${id} --agent omni-pipeline:lead`]);
+  assert.deepStrictEqual(resumeLines({ id }, 'linux', 'x; rm -rf ~'), [`claude --resume ${id}`]); // odd agent left out
   assert.deepStrictEqual(resumeLines({ id: 'x; rm -rf ~', cwd: '/x' }, 'linux'), []); // never typed
   assert.deepStrictEqual(resumeLines(null, 'linux'), []);
 });
