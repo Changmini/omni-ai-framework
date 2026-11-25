@@ -90,7 +90,7 @@ omni-ai-framework/
 | 역할 | 에이전트 | 대응 스킬 | 핵심 |
 | --- | --- | --- | --- |
 | ① 팀장 | `omni-pipeline:lead` | `leading-changes` | 대화는 여기서만. 요구가 모호하면 인터뷰해 SPEC을 직접 씀(요약 손실 없음). 코드는 쓰지 않고 판단·리뷰 처리에 집중 |
-| ② SPEC | (파일) | — | 무엇을 만드는지·지킬 제약·**완료 기준**. 결정이 바뀌면 팀장이 바로 반영. SPEC에 없는 결정은 다른 세션엔 없는 결정. 위치·파일 이름·양식은 프로젝트 규칙(「Agent pipeline」 절의 Specs·Spec template)을 우선하고, 정해진 게 없을 때만 저장소 루트에 `SPEC.md`를 만듦 |
+| ② SPEC | (파일) | — | 무엇을 만드는지·지킬 제약·**완료 기준**. 결정이 바뀌면 팀장이 바로 반영. SPEC에 없는 결정은 다른 세션엔 없는 결정. 위치·파일 이름·양식은 프로젝트 규칙(「Agent pipeline」 절의 Specs·Spec template)을 우선하고, 정해진 게 없을 때만 `docs/specs/<이름>.md`를 만듦 |
 | ③ 구현 | `omni-pipeline:implementer` | `implementing-specs` | 새 컨텍스트에서 SPEC만 읽고 시작. 구현자마다 팀장이 지금 HEAD에서 만든 worktree. 결과는 커밋과 diff |
 | ④ 리뷰어 | `omni-pipeline:reviewer` | `reviewing-changes` | 도구는 Read·Grep·Glob만, 입력은 SPEC과 diff 파일뿐. 구현 추론을 보지 않아 그 논리에 끌려가지 않음 |
 | ⑤ 리뷰어 → 팀장 | — | — | 차이만 보고. 팀장이 구현 수정 / SPEC 수정(사용자에게 다시 질문) / 지적 기각을 판단. 길면 파일로 남기고 경로만 넘김 |

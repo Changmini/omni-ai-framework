@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Implement SPEC.md.",
+      "prompt": "Implement docs/specs/export.md.",
       "expected_output": "Starts the implementer role in a fresh context (or a separate pass) with only the spec path and a dedicated branch or worktree, and collects a report of commits and each 'done when' item."
     },
     {

@@ -987,7 +987,7 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; }
 .pp-del { margin-top: 12px; }
 .pp-del:hover { color: var(--err); border-color: var(--err); }
-.pipe-empty { flex: 1; display: grid; place-content: center; }
+.pipe-empty { flex: 1; display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .pipe-empty[hidden] { display: none; }
 .pipe-empty .vbtn { height: 32px; padding: 0 16px; font-size: 13px; color: var(--text); }
 /* the pipeline's steps over the terminal that is one of them */

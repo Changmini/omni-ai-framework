@@ -19,7 +19,7 @@
     {
       "id": 4,
       "prompt": "Write the spec for the export feature. Our AGENTS.md says specs go in docs/design/ as YYYY-MM-DD-<topic>.md using docs/design/TEMPLATE.md.",
-      "expected_output": "Writes the spec to docs/design/<date>-export.md in the project's template, not SPEC.md, and adds a 'done when' section only if that template has no place for it."
+      "expected_output": "Writes the spec to docs/design/<date>-export.md in the project's template, not docs/specs/, and adds a 'done when' section only if that template has no place for it."
     }
   ]
 }

@@ -136,7 +136,7 @@ Documents written for this repository follow `.agents/docs/STYLE.md` and start f
 
 | Document | Template | Default location |
 | --- | --- | --- |
-| Feature spec | `.agents/docs/templates/spec.md` | `SPEC.md` (repository root) |
+| Feature spec | `.agents/docs/templates/spec.md` | `docs/specs/<name>.md` |
 | Implementation plan | `.agents/docs/templates/plan.md` | `docs/plans/<name>.md` |
 | Decision record | `.agents/docs/templates/decision.md` | `docs/decisions/<NNNN>-<name>.md` |
 | Review report | `.agents/docs/templates/review.md` | reply to the user; save only if asked |
