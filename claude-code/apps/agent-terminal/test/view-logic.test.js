@@ -324,8 +324,8 @@ test('pipelines: what the Claude of a node is told', () => {
   assert.match(pipelineContext(off, 'c', (id) => sessions[id] || null, true), /이 세션은 「통합」 노드/); // asked with the skill
   assert.match(pipelineContext(off, 'b', (id) => sessions[id] || null), /- 다음 노드: 「통합」 — 잠시 빠짐\n/);
   // A long memo is cut.
-  const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(400)), node('b', '화면')] };
-  assert.match(pipelineContext(long, 'a', () => null), /메모: x{300}…/);
+  const long = { ...p, nodes: [node('a', '조사', 'x'.repeat(1100)), node('b', '화면')] };
+  assert.match(pipelineContext(long, 'a', () => null), /메모: x{1000}…/);
 });
 
 test('pipelines: lines that reopen a saved Claude session', () => {
@@ -348,7 +348,7 @@ test('pipelines: the recommended pipeline (lead, implementer, reviewer)', () => 
   assert.deepStrictEqual(p.nodes.map((x) => x.name), ['팀장', '구현', '리뷰어']);
   const name = (id) => p.nodes.find((x) => x.id === id).name;
   assert.deepStrictEqual(p.edges.map((e) => `${name(e.from)}→${name(e.to)}`), ['팀장→구현', '구현→리뷰어', '팀장→리뷰어', '리뷰어→팀장']);
-  assert.ok(p.nodes.every((x) => x.memo && x.memo.length <= 300)); // sent to Claude whole
+  assert.ok(p.nodes.every((x) => x.memo && x.memo.length <= 1000)); // sent to Claude whole
   assert.deepStrictEqual(pipelineOrder(p).map(name), ['팀장', '구현', '리뷰어']);
   assert.strictEqual(new Set([p.id, ...p.nodes.map((x) => x.id)]).size, 4);
 });
