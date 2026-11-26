@@ -29,7 +29,7 @@ omni-ai-framework/
     │   │   └── scripts/session-context.sh
     │   ├── omni-pipeline/            # 팀 개발 파이프라인 (팀장 → SPEC → 구현 → 리뷰)
     │   │   ├── agents/  lead · implementer · reviewer
-    │   │   └── skills/  leading-changes · implementing-specs · reviewing-changes (역할마다 하나) · defining-work-goal
+    │   │   └── skills/  leading-changes · implementing-specs · reviewing-changes (역할마다 하나)
     │   ├── omni-jira/                # Jira 담당자 제한 에이전트 (기본 꺼짐)
     │   │   ├── agents/jira-manager.md
     │   │   ├── hooks/hooks.json          # Atlassian MCP 도구 Pre/PostToolUse
@@ -61,7 +61,7 @@ omni-ai-framework/
 | --- | --- | --- | --- |
 | `omni-core` | 이 저장소 | `plugins/omni-core` | 검증·스킬 작성·작업 참고 그림 스킬 3개, git 상태 SessionStart 훅 |
 | `omni-guardrails` | 이 저장소 | `plugins/omni-guardrails` | 위험 Bash 명령 차단·확인 PreToolUse 훅 |
-| `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 에이전트 3개(lead, implementer, reviewer)와 역할마다 대응하는 스킬(leading-changes, implementing-specs, reviewing-changes), 목표·시작·종료 정의 스킬 |
+| `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 에이전트 3개(lead, implementer, reviewer)와 역할마다 대응하는 스킬(leading-changes, implementing-specs, reviewing-changes) |
 | `omni-jira` (**기본 꺼짐**) | 이 저장소 | `plugins/omni-jira` | 설정한 담당자의 이슈만 고치는 `jira-manager` 에이전트 + 담당자 확인 훅 |
 | `superpowers` | [obra/superpowers](https://github.com/obra/superpowers) · MIT | `5bf4e78` (v6.4.1, Anthropic 공식 마켓플레이스가 고정한 커밋과 동일) | 브레인스토밍, 계획 작성·실행, TDD, 체계적 디버깅, 서브에이전트 주도 개발, 코드 리뷰 요청·수용 등 스킬 15개 + `using-superpowers`를 주입하는 SessionStart 훅 |
 | `playwright-cli` | [microsoft/playwright-cli](https://github.com/microsoft/playwright-cli) · Apache-2.0 | `b85c7a7` (`skills/playwright-cli`) | 브라우저 자동화·웹 테스트 스킬. `playwright-cli` 명령을 쓰며, 없으면 스킬이 `npx playwright cli` 또는 `npm install -g @playwright/cli@latest`로 대체 (Node.js 18+ 필요) |
@@ -101,8 +101,8 @@ omni-ai-framework/
   - **분업**: SPEC의 바꿀 곳이 소스 파일 6개 이상·모듈 3개 이상이거나, 동시에 나눌 수 있는 작업 묶음이 있을 때 → 구현자에게 맡기고 리뷰어가 검증
   - 처음(범위 조사 뒤)에는 혼자인지 SPEC이 필요한지만, SPEC 승인 뒤에 리뷰 포함인지 분업인지 정합니다. 끝내기 전에 실제 diff로 다시 판정해, 혼자로 했는데 커졌으면 리뷰를 붙입니다. 기준 숫자는 프로젝트 「Agent pipeline」 절에서 바꿀 수 있습니다.
   - SPEC 쓰는 법(절 구성, 시나리오, 완료 기준, 예시)은 `skills/leading-changes/spec-guide.md`에 있습니다.
-- `defining-work-goal`은 작업의 목표·시작·종료를 정해 SPEC 맨 앞에 두고, 단계가 바뀔 때마다 다시 보게 합니다.
-- **프로젝트별 값**: 에이전트 지침에는 특정 프로젝트의 경로·명령을 넣지 않았습니다. SPEC 위치, 작업 목록 문서, 시험·타입 검사 명령, 기록 집계 명령, 구조 문서, DB 문서, 범위 밖 서비스는 프로젝트 `CLAUDE.md`의 **「Agent pipeline」 절**에 적습니다(템플릿에 빈칸으로 들어 있음). 적지 않은 항목은 에이전트가 기본값을 쓰거나 저장소 설정 파일에서 찾습니다.
+- **SPEC 에 대화를 그대로**: 팀장은 사용자 답과 지나가며 한 말을 요약하지 않고 SPEC 「요청과 대화」 절에 인용하고, 승인 전에 메시지마다 SPEC 에 자리가 있는지 대조합니다. 구현자·리뷰어는 이 절로 대화를 대신 읽습니다.
+- **프로젝트별 값**: 에이전트 지침에는 특정 프로젝트의 경로·명령을 넣지 않았습니다. SPEC 위치, 구성 기준, 프로젝트만의 위험한 곳, 인터뷰에서 꼭 물을 것, SPEC 추가 절, 시험·검사 명령, 리뷰 관점, 범위 밖 서비스는 프로젝트 `CLAUDE.md`의 **「Agent pipeline」 절**에 적습니다(템플릿에 빈칸으로 들어 있음). 적지 않은 항목은 기본값을 씁니다. 절이 없으면 팀장이 조사 결과로 초안을 보여 주고, 작업이 끝날 때 남길 만한 줄을 제안합니다. 승인한 줄만 적힙니다.
 - 공통 규칙 파일 순서: `AGENTS.override.md`가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`.
 
 ## Jira 담당자 제한 (`omni-jira`)
@@ -230,7 +230,6 @@ done
 | 검증 | `/omni-core:verifying-changes` (작업 후 자동 사용) |
 | 새 스킬 만들기 | `/omni-core:authoring-skills <설명>` |
 | 작업 참고 그림 | "결제 흐름을 그림으로 보여줘", "이 워크플로우 한눈에" (Claude가 자동 사용, `/omni-core:preview-notes`로도 호출) |
-| 작업 목표·시작·종료 정의 | `/omni-pipeline:defining-work-goal` 또는 "목표와 시작·종료를 정리해봐" |
 | Jira 정리 | "jira-manager로 내 이슈 상태 정리해줘" (omni-jira를 켠 경우) |
 | 아이디어 구체화 | `/superpowers:brainstorming` |
 | 버그 원인 추적 | `/superpowers:systematic-debugging` |

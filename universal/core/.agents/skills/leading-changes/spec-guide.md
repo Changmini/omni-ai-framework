@@ -1,21 +1,12 @@
 # Writing the spec
 
-The implementer and the reviewer never hear the conversation; they read only this file. Write it so that someone who missed the conversation can implement and judge the change from it alone.
-
-Contents
-
-1. Location and name
-2. Sections
-3. How to write each section
-4. Good and bad sentences
-5. Checklist
-6. Full example
+The implementer and the reviewer never hear the conversation; they read only this file. One test applies: **could someone who missed the conversation implement and judge the change from this file alone?** Do not shorten what the conversation settled.
 
 ## 1. Location and name
 
-1. **Project rules come first.** If the "Project" section of `AGENTS.md`, or a rules or docs file it points to, names where specs go, a file-name pattern, or a layout, use them.
-2. **Otherwise** write `docs/specs/<name>.md`, `<name>` being a short kebab-case name for the change (for example `partial-cancel`), starting from `.agents/docs/templates/spec.md`. If that file already belongs to another change, pick another name.
-3. If the project's layout has no place for a required section (requirements, scenarios, constraints, out of scope, files to change, done when, decisions), add it at the end.
+1. If the project settings ("Project → Change pipeline" in `AGENTS.md`) name where specs go, a file-name pattern, or a layout, use them.
+2. Otherwise write `docs/specs/<name>.md`, `<name>` being a short kebab-case name (for example `partial-cancel`), starting from `.agents/docs/templates/spec.md`. If that file belongs to another change, pick another name.
+3. If the project's layout has no place for a required section, add it at the end. Put the project's "extra spec sections" (for example screen states, API request and response examples) before "Constraints".
 
 ## 2. Sections
 
@@ -24,6 +15,7 @@ Contents
 Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
 ## Background and goal
+## Request and conversation
 ## Requirements
 ## Scenarios
 ## Constraints
@@ -36,91 +28,57 @@ Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
 ## 3. How to write each section
 
-### Header
+**Header**: status stays `draft` until the user approves. Fill in the setup after the second call.
 
-- Status stays `draft` until the user approves; then `approved` with the date.
-- Fill in the setup after the second call (step 4).
+**Background and goal**: one paragraph: what is wrong today, and what is true once this change is done. No implementation details.
 
-### Background and goal
+**Request and conversation**: the implementer and the reviewer read the conversation here. **Quote; do not summarize.** Do not edit or shorten the user's words; replace only personal data (names, paths, accounts) with sample values.
 
-One paragraph: what is wrong today, and what is true once this change is done. No implementation details.
+- Request: every user message that shaped the request, in order.
+- Questions and answers (Q1, Q2, ...): the question, the options offered, the answer verbatim, and where it went (R, S, K numbers). When a decision changes, keep the line and add "(changed → Q7)".
+- Said in passing: preferences, dislikes, example situations, worries the user raised unasked, quoted, with where each went (or "not used: reason").
+- Terms: the user's words next to the code's names where they differ.
+- Facts from the survey: code facts a decision relied on, with `file:line`.
 
-### Requirements (R1, R2, ...)
+**Requirements (R1, R2, ...)**: one observable behavior each, with input, result, and errors, using the names callers see (functions, commands, screens). When a mockup or screen is the source, one line per label, column, field, button, and state. Never renumber; mark dropped ones "(dropped: reason)".
 
-- One observable behavior per requirement, stated as a fact ("... does ...").
-- State the input, the result, and the errors, using the names callers see (functions, commands, screens).
-- Never renumber. When a requirement is dropped, keep the line as "(dropped: reason)": the implementer and the reviewer refer to the numbers.
+**Scenarios (S1, S2, ...)**: `state → action → result`, at least one per requirement, covering normal (the most common use), edge (zero, empty, maximum, duplicates, the same instant, exactly the threshold), and error (invalid input, a missing target, a forbidden state) cases. For errors, say whether **nothing changes**. Tag each with its requirements.
 
-### Scenarios (S1, S2, ...)
+**Constraints**: public interfaces that must not change, the project rules that apply (**copied in**), limits on performance, security, compatibility.
 
-The requirements as concrete situations: `state → action → result`. At least one per requirement, and all three kinds:
+**Out of scope**: what this change deliberately does not do, so the reviewer does not report it as missing.
 
-- **Normal**: the most common use.
-- **Edge**: zero, empty, maximum, the same value twice, the same instant, exactly the threshold.
-- **Error**: invalid input, a missing target, a forbidden state, and whether **nothing changes** when it fails.
+**Files to change**: one line per file, `<path> — <what>`, tests marked `(tests)`. End with `n source files, m modules` (the second call uses it). If the work can be split, list groups, `Group A (R1–R3): ...`; groups never touch the same file.
 
-Tag each scenario with the requirements it covers.
+**Done when (D1, D2, ...)**: one check each, decidable by a command or an observation, tagged with requirements and scenarios; every requirement and scenario is covered. The last item is the project's full test and lint command.
 
-### Constraints
+**Decisions (K1, K2, ...)**: what was settled, why, and why other options were dropped, with the question number behind it.
 
-What must not change and the rules to keep:
-
-- Existing public interfaces (function arguments and results, APIs, file and message formats)
-- The project rules that apply to this change, **copied in** (for example "a status change publishes one event", "money is whole units"), so the implementer sees them even without reading the rules file
-- Limits on performance, security, compatibility
-
-### Out of scope
-
-What this change deliberately does not do, so the reviewer does not report it as missing.
-
-### Files to change
-
-- One line per file: `<path> — <what: new / add a function / change>`. Include test files, marked `(tests)`.
-- End with a total: `n source files, m modules`. The second call (with review or split) is decided from this line.
-- If the work can be split between implementers, list it in groups: `Group A (R1–R3): ...`, `Group B (R4–R5): ...`. Groups never touch the same file.
-
-### Done when (D1, D2, ...)
-
-- One check per checkbox, decidable by a command or an observation.
-- Tag each with its requirements and scenarios. Every requirement and scenario must be covered by some item.
-- The last item is the project's full test and lint command.
-- This section tells the implementer when to stop and the reviewer what to judge by.
-
-### Decisions (K1, K2, ...)
-
-What the interview and the survey settled, and why, including why other options were dropped, so the reviewer does not have to ask "why this way?".
-
-### Open questions
-
-Must be **none** before approval. If any remain, go back to the interview instead of asking for approval.
+**Open questions**: none before approval; otherwise go back to the interview.
 
 ## 4. Good and bad sentences
 
 | Bad | Why | Good |
 | --- | --- | --- |
 | Partial cancellation is supported | Says nothing about what happens | R1: `cancel_items(order_id, sku, qty)` lowers that item's line by qty and releases qty of reserved stock |
-| Errors are handled properly | Cannot be decided | R4: qty of 0 or less, or above the line's quantity, is rejected as invalid input, and the order and stock stay unchanged |
-| It must be fast | No measure | Constraint: one `page_orders` call over 1,000 orders takes under 0.1 s (test "page performance") |
+| Errors are handled properly | Cannot be decided | R4: qty of 0 or less, or above the line's quantity, is rejected as invalid input; order and stock stay unchanged |
+| The user does not want a confirmation dialog | A summary loses the reason and the scope | Said in passing: "Cancel should apply at once; another confirm dialog annoys the customer" → out of scope (for the screen work) |
 | It works | Cannot be a "done when" item | D3: `<test command> <order tests>` passes |
-| Coupons are taken into account | How? | S3: an order with coupon TEN (minimum 3,000) drops to 2,000 → no discount, total 2,000 (R2) |
 
 ## 5. Checklist
 
-Go through it before showing the spec. Fix every "no".
-
 - [ ] Someone who missed the conversation could implement from this file alone.
-- [ ] Every requirement has scenarios, and there are normal, edge, and error ones.
-- [ ] Every error scenario says whether anything changes.
-- [ ] The project rules that apply are copied into the constraints.
+- [ ] Every user message since the request has a place in the spec; answers and things said in passing are quoted.
+- [ ] Every requirement has scenarios, with normal, edge, and error ones; every error scenario says whether anything changes.
+- [ ] The project rules that apply are in the constraints; the project's extra spec sections are present.
 - [ ] "Files to change" ends with the file and module totals.
-- [ ] Every requirement and scenario is covered by a "done when" item, and every item is decidable by a command or an observation.
-- [ ] Everything decided in conversation is in "Decisions".
+- [ ] Every requirement and scenario is covered by a "done when" item, each decidable by a command or an observation.
+- [ ] No requirement forces an implementation choice; if one is needed, it is a decision with its reason.
 - [ ] There are no open questions.
-- [ ] No requirement forces an implementation choice (a data structure, an algorithm); if one is needed, it is a decision with its reason.
 
 ## 6. Full example
 
-The spec of one sample project. Read its file names and `<test command>` as your project's (for example `python3 -m unittest`, `./gradlew test`).
+The spec of one sample project. Read its file names and `<test command>` as your project's.
 
 ```markdown
 # Partial order cancellation — spec
@@ -129,6 +87,29 @@ Status: approved · Date: 2026-11-26 · Setup: with review
 ## Background and goal
 Today only a whole order can be cancelled, so removing one item means cancelling and re-creating the order.
 After this change, part of an item's quantity can be cancelled on an open order.
+
+## Request and conversation
+### Request
+- "Don't cancel the whole order, let me take out just a few items. Customers calling because they added one item by mistake is the most common case."
+
+### Questions and answers
+- Q1: An order holds the same item on two lines. Which line shrinks? Options: the first line first (recommended) / in proportion / reject
+  Answer: "First line first. Those orders hardly happen." → K1
+- Q2: What happens to the order when its last line goes? Options: cancel the order (recommended) / reject / keep an empty order
+  Answer: "No empty orders left behind. Cancel it." → R3, K2
+- Q3: Paid orders too? Options: open orders only (recommended) / partial refunds as well
+  Answer: "Refunds next time. Open orders only for now." → R4, out of scope
+
+### Said in passing
+- "Cancel should apply at once; another confirm dialog annoys the customer" → out of scope (this change has no screen)
+- "Orders with coupons are always the trouble" → S2, constraints (money rule)
+
+### Terms
+- "take out a few items" → `OrderService.cancel_items`
+
+### Facts from the survey
+- Creating an order does not merge equal items into one line (orders.py:28)
+- `inventory.release(sku, qty)` already exists (inventory.py:41)
 
 ## Requirements
 - R1: `OrderService.cancel_items(order_id, sku, qty)` lowers that item's line by qty and releases qty of reserved stock.
@@ -140,10 +121,9 @@ After this change, part of an item's quantity can be cancelled on an open order.
 ## Scenarios
 - S1 (normal): A ×3, B ×1 → cancel A ×2 → A ×1, B ×1; A has 1 reserved; total 3,500 (R1, R2, R5)
 - S2 (edge): coupon TEN (10%, minimum 3,000) on A ×2, B ×1 (4,500) → cancel B ×1 → total 2,000, discount 0 (R2)
-- S3 (edge): A ×1, B ×1 → cancel B ×1 → one line left, A (R3)
-- S4 (edge): A ×2 → cancel A ×1 twice → status cancelled, event order.cancelled exactly once (R3)
-- S5 (error): A ×2 → cancel A ×3 / ×0 / ×-1 / C ×1 → invalid input; order and stock unchanged (R4)
-- S6 (error): a paid order → cancel → order error (R4)
+- S3 (edge): A ×2 → cancel A ×1 twice → status cancelled, event order.cancelled exactly once (R3)
+- S4 (error): A ×2 → cancel A ×3 / ×0 / ×-1 / C ×1 → invalid input; order and stock unchanged (R4)
+- S5 (error): a paid order → cancel → order error, unchanged (R4)
 
 ## Constraints
 - The arguments and results of create_order, pay, cancel, get_order, list_orders do not change.
@@ -151,8 +131,9 @@ After this change, part of an item's quantity can be cancelled on an open order.
 - Project rule: money is whole units; discounts round down.
 
 ## Out of scope
-- Partial refunds of paid orders
+- Partial refunds of paid orders (Q3)
 - Merging lines of the same item
+- A cancel screen and its confirmation dialog
 
 ## Files to change
 - orders.py — add cancel_items
@@ -160,14 +141,14 @@ After this change, part of an item's quantity can be cancelled on an open order.
 - Total: 1 source file, 1 module (inventory only gets its existing release called)
 
 ## Done when
-- [ ] D1 S1–S3 pass — `<test command> <partial cancel tests>` (R1, R2, R3, R5)
-- [ ] D2 S4: order.cancelled published exactly once (R3, constraints)
-- [ ] D3 S5–S6: rejected, order and stock unchanged (R4)
+- [ ] D1 S1–S2 pass — `<test command> <partial cancel tests>` (R1, R2, R5)
+- [ ] D2 S3: order.cancelled published exactly once (R3, constraints)
+- [ ] D3 S4–S5: rejected, order and stock unchanged (R4)
 - [ ] D4 existing checks — `<test command>` all pass
 
 ## Decisions
-- K1: for an item on two lines, the first line shrinks first. Creating an order does not merge equal items today, so this is rare; the user chose it.
-- K2: cancelling the last line cancels the order rather than failing, so no empty open order can exist.
+- K1: for an item on two lines, the first line shrinks first (Q1). Such orders are rare (orders.py:28); shrinking in proportion was dropped because it leaves fractions of money.
+- K2: cancelling the last line cancels the order rather than failing (Q2), so no empty open order can exist.
 
 ## Open questions
 - None

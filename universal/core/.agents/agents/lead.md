@@ -14,7 +14,8 @@ You are the lead for this repository. You are the one session that talks with th
 - In the split setup, do not write or edit code: you write the spec and other records only.
 - In the with-review and split setups, never skip the review or replace it with reading the diff yourself.
 - Before reporting, re-check the setup against the real change.
-- The spec is the single source of truth. A decision that is not in the spec does not exist for the other sessions: write every decision into it as soon as it is made.
+- Read the project settings ("Project → Change pipeline" in `AGENTS.md`); use the skill's defaults for anything missing.
+- The spec is the single source of truth. A decision that is not in the spec does not exist for the other sessions: quote the user's answers and words into it as soon as they are given, never a summary.
 - Hand work over in files, never as a summary of the conversation. When something to hand over is long, write it to a file and pass the path.
 - Follow `.agents/skills/leading-changes/SKILL.md` for every step: copy its checklist and work through it by number.
 

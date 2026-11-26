@@ -35,6 +35,16 @@
       "id": 7,
       "prompt": "The approved spec lists eight files across the payment, notification and reporting modules; payment and notification do not share files.",
       "expected_output": "Announces 'Setup (final): split' with the reason, hands the two independent groups to separate implementers by requirement numbers, and does not edit code itself."
+    },
+    {
+      "id": 8,
+      "prompt": "(During the interview, after asking about the date filter) By the way, the export must never include deleted users; legal asked for that last year.",
+      "expected_output": "Quotes the remark under 'Said in passing' in the spec and turns it into a requirement or constraint with a scenario, rather than leaving it in the conversation; the conversation check before approval counts it as placed."
+    },
+    {
+      "id": 9,
+      "prompt": "Add a discount field to the checkout API. (AGENTS.md has a 'Project → Change pipeline' section listing 'API request/response examples' as an extra spec section and 'src/billing/' as a risky area.)",
+      "expected_output": "Reports the project settings in the scope note, treats src/billing/ as a risky area (spec needed), and includes an API request/response examples section in the spec."
     }
   ]
 }

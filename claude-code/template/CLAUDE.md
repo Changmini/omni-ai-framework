@@ -43,12 +43,14 @@ If this repo already has AGENTS.md, replace this file's body with: @AGENTS.md
 
 - Specs: `<docs/specs/>` (file name `YYYY-MM-DD-<topic>-design.md`); without this row the lead writes `docs/specs/<name>.md`
 - Spec template: `<docs/specs/TEMPLATE.md>` (must leave room for requirements, constraints and done-when)
-- Issue records: `<docs/issues/>`
 - Task list (single source of truth): `<docs/tasks.md>`
-- Record index command (regenerate / check): `<command --write>` / `<command --check>`
 - Test command, backend: `<command> <test nodes>`
 - Test command, frontend: `<command> <test file>`
 - Type check (ask before running): `<command>`
 - Structure document (layout and boundary rules): `<docs/STRUCTURE.md>`
-- Database: init scripts `<path>`, schema document `<path>`
 - Out of scope (never modify): `<services or directories>`
+- Setup thresholds: solo up to `<2>` source files; split from `<6>` source files or `<3>` modules
+- Risky areas (added to the common list): `<paths or topics>`
+- Always ask in the interview: `<questions>`
+- Extra spec sections: `<e.g. Screen states, API request/response examples>`
+- Extra review focus: `<e.g. accessibility, query count>`

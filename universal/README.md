@@ -15,7 +15,7 @@
 │   └─ [Project]  명령어 · 코드 스타일 · 아키텍처 · 주의사항   ← 프로젝트가 채움
 └── .agents/
     ├── skills/                       # Agent Skills 공개 표준
-    │   ├── leading-changes/          # 팀장: 범위 조사 → 구성 고르기 → 스펙(spec-guide.md) → 구현·리뷰 → 차이 판단 → 실제 변경으로 재판정
+    │   ├── leading-changes/          # 팀장: 프로젝트 설정·범위 조사 → 구성 고르기 → 대화를 인용한 스펙(spec-guide.md) → 구현·리뷰 → 차이 판단 → 재판정 → 설정 제안
     │   ├── implementing-specs/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
     │   ├── reviewing-changes/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
     │   ├── verifying-changes/        # 프로젝트 검사 실행, 증거 보고
