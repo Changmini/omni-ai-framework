@@ -9,7 +9,7 @@
 | [`claude-code/`](claude-code/) | **Claude Code 전용** 플러그인 마켓플레이스 + 프로젝트 템플릿 | [설치](claude-code/README.md#설치-claude-code-폴더를-마켓플레이스로-등록) |
 | [`apps/agent-terminal/`](apps/agent-terminal/) | **Omni Agent Terminal**: 여러 Claude Code 세션을 한 창에서 지켜보고 오가는 데스크톱 앱(Electron) | [실행](apps/agent-terminal/README.md) |
 
-`claude-code/`는 `universal/` 설계를 Claude Code에 맞춘 구현입니다. 데스크톱 앱은 `claude-code/`의 플러그인 없이도 동작하고, 일부 기능(HTML 미리보기 그림, 권장 파이프라인의 에이전트)만 그 플러그인을 씁니다.
+`claude-code/`는 `universal/` 설계를 Claude Code에 맞춘 구현입니다. 데스크톱 앱은 `claude-code/`의 플러그인 없이도 동작하고, 일부 기능(HTML 미리보기 그림, 권장 개발 보드의 에이전트)만 그 플러그인을 씁니다.
 
 ## 구조
 

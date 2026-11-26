@@ -759,7 +759,7 @@ renderGroups();
 // session whose state it shows live, and arrows between them. It shows how
 // the user arranged their sessions and what each is doing; it implies no
 // order of work and starts, advances or enforces nothing. The automation
-// rule "파이프라인 노드 정보 붙이기" can tell a bound session's Claude its
+// rule "노드 정보 붙이기" can tell a bound session's Claude its
 // node, memo and the nodes one arrow away (rulesSync). Pipelines (nodes,
 // arrows, memos) are kept in localStorage; which terminal a node is bound to
 // only for this run (sessionStorage), as terminal groups are.
@@ -779,7 +779,7 @@ if (!Array.isArray(pipelines)) pipelines = [];
 // The memo was saved as `prompt` before: same text, new key.
 for (const p of pipelines) for (const n of p.nodes || []) if (n.memo === undefined && 'prompt' in n) { n.memo = n.prompt || ''; delete n.prompt; }
 // The recommended pipeline comes with the app, once: deleting it sticks (the
-// "새 파이프라인" menu and the empty screen can add it again).
+// "새 보드" menu and the empty screen can add it again).
 const PIPE_SEEDED_KEY = 'pipelineSeeded';
 let pipeCur = readPref(PIPE_CUR_KEY, '');
 const pipeBind = readSession(PIPE_BIND_KEY); // node id -> terminal id
@@ -802,9 +802,12 @@ if (readPref(PIPE_SEEDED_KEY, '') !== '1') {
   writePref(PIPE_CUR_KEY, pipeCur);
   writePref(PIPE_SEEDED_KEY, '1');
 }
-// The recommended pipeline shipped before subagent nodes: 구현 and 리뷰어 run
+// Pipelines are shown as "보드"; the recommended one keeps its shipped name
+// in step. Then the one shipped before subagent nodes: 구현 and 리뷰어 run
 // inside 팀장's session (ViewLogic.subagentsInRecommended).
-if (pipelines.map(ViewLogic.subagentsInRecommended).some(Boolean)) writePref(PIPE_KEY, JSON.stringify(pipelines));
+let pipesChanged = false;
+for (const p of pipelines) if (p.name === '권장 개발 파이프라인') { p.name = '권장 개발 보드'; pipesChanged = true; }
+if (pipelines.map(ViewLogic.subagentsInRecommended).some(Boolean) || pipesChanged) writePref(PIPE_KEY, JSON.stringify(pipelines));
 const currentPipe = () => pipelines.find((p) => p.id === pipeCur) || pipelines[0] || null;
 const boundTerminal = (nodeId) => (agents.has(pipeBind[nodeId]) ? pipeBind[nodeId] : null);
 const nodeById = (id) => pipelines.flatMap((p) => p.nodes).find((n) => n.id === id) || null;
@@ -957,7 +960,7 @@ function pipelineTexts() {
 function renderPipeline() {
   const p = currentPipe();
   const { els } = pipe;
-  if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '파이프라인'; // not while renaming
+  if (!els.title.querySelector('input')) els.title.textContent = p ? p.name : '보드'; // not while renaming
   els.openAll.hidden = !p || !p.nodes.some(openable);
   els.openAll.disabled = openingAll;
   els.edit.hidden = !p || pipe.editing;
@@ -1317,7 +1320,7 @@ function deleteSelectedEdge() {
 
 // A new, empty pipeline, opened for editing with its name ready to type.
 function createPipeline() {
-  const p = { id: newPipeId(), name: '새 파이프라인', nodes: [], edges: [] };
+  const p = { id: newPipeId(), name: '새 보드', nodes: [], edges: [] };
   pipelines.push(p);
   pipeCur = p.id;
   writePref(PIPE_CUR_KEY, pipeCur);
@@ -1371,11 +1374,11 @@ function pipelineMenu() {
   return [
     ...pipelines.map((x) => ({ label: x.name, hint: x.id === (p && p.id) ? '보는 중' : '', action: () => { pipeCur = x.id; writePref(PIPE_CUR_KEY, pipeCur); pipe.sel = null; setPipeEditing(false); renderStrip(); } })),
     ...(pipelines.length ? [{ sep: true }] : []),
-    { label: '＋ 새 파이프라인', sub: [{ label: '⬜ 빈 그래프', action: createPipeline }, { label: '⭐ 권장 개발 파이프라인', action: addRecommendedPipeline }] },
+    { label: '＋ 새 보드', sub: [{ label: '⬜ 빈 그래프', action: createPipeline }, { label: '⭐ 권장 개발 보드', action: addRecommendedPipeline }] },
     ...(p ? [
       { label: '✏️ 이름 바꾸기', action: renamePipeline },
       { label: '🗑 삭제', action: () => {
-        if (!window.confirm(`파이프라인 "${p.name}"을(를) 삭제할까요? 터미널은 그대로 둡니다.`)) return;
+        if (!window.confirm(`보드 "${p.name}"을(를) 삭제할까요? 터미널은 그대로 둡니다.`)) return;
         pipelines = pipelines.filter((x) => x.id !== p.id);
         savePipes();
         pipeCur = pipelines[0] ? pipelines[0].id : '';
@@ -1400,7 +1403,7 @@ function renderStrip() {
   const byId = new Map(p.nodes.map((n) => [n.id, n]));
   const title = h('button', 'strip-title', p.name);
   title.type = 'button';
-  title.title = '파이프라인 보기 (Ctrl+Shift+G)';
+  title.title = '보드 보기 (Ctrl+Shift+G)';
   title.addEventListener('click', () => setView('pipeline'));
   const parts = [title];
   // No arrows here: neighbours in this line need not be linked in the graph.
@@ -2185,6 +2188,8 @@ const ZAP_MS = 4000;
 let rules = [];
 try { rules = JSON.parse(readPref(RULES_KEY, '[]')); } catch { rules = []; }
 if (!Array.isArray(rules)) rules = [];
+// The rule this app made under its earlier name, in step with "보드".
+for (const r of rules) if (r && r.name === '파이프라인 노드 알리기') r.name = '보드 노드 알리기';
 // Pipelines had their own "Claude에게 알리기" switch: on in any, the same as
 // the rule that replaced it.
 if (readPref(RULES_KEY, null) === null && pipelines.some((p) => p.notify)) {
