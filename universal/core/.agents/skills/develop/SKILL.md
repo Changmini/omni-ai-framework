@@ -47,7 +47,7 @@ File names in the examples come from one sample project; read `<test command>` a
 
    | Setting | Used in step | Default |
    | --- | --- | --- |
-   | Spec location and layout | 3 | `docs/specs/<name>.md`, layout in spec-guide.md |
+   | Spec location and layout | 3 | The order in spec-guide.md section 1: rule files, then existing documents, then `docs/specs/<name>.md` |
    | Setup thresholds | 2, 4, 9 | Solo 1–2 source files; split from 6 source files or 3 modules |
    | Risky areas (added) | 2, 4, 9 | The common list in setup-guide.md 3-3 |
    | Always ask in the interview | 3 | None |
@@ -206,7 +206,7 @@ Left: none
 - If any "done when" item is unchecked, do not report done; name the missing evidence.
 - Commit or push only when the user asks.
 
-**Propose settings** only when this change found something the next one will need: one or two lines for the project settings (a risky area found late, a question to ask every time, a check command, an added spec section). If the settings have grown long, also propose lines to merge or drop. Write only the lines the user approves.
+**Propose settings** only when this change found something the next one will need: one or two lines for the project settings (a risky area found late, a question to ask every time, a check command, the spec location and layout found, an added spec section). If the settings have grown long, also propose lines to merge or drop. Write only the lines the user approves.
 
 ```
 Proposed setting: add risky area "stock count calculation (inventory)" — found late, at step 9
