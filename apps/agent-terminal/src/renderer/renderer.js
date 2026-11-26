@@ -1202,7 +1202,7 @@ function renderProps(p) {
   });
   const memo = document.createElement('textarea');
   memo.className = 'pp-in';
-  memo.rows = 4;
+  memo.rows = 12;
   memo.value = n.memo || '';
   memo.addEventListener('input', () => { n.memo = memo.value; savePipes(); });
   const del = h('button', 'btn pp-del', '🗑 삭제');
