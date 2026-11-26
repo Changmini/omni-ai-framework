@@ -10,11 +10,11 @@ argument-hint: "[SPEC 경로]"
 
 1. 넘길 것을 준비한다.
    - 승인된 SPEC 의 절대 경로.
-   - 구현자마다 worktree 하나를 지금 HEAD 에서 만든다: `git worktree add <저장소 옆 경로> -b <브랜치>`. 서브에이전트의 `isolation: worktree` 는 지금 브랜치가 아니라 기본 브랜치에서 갈라지므로 쓰지 않는다.
+   - 구현자마다 worktree 하나를 지금 HEAD 에서 **프로젝트 폴더 안에** 만든다: `mkdir -p .worktrees && printf '*\n' > .worktrees/.gitignore` 뒤 `git worktree add .worktrees/<브랜치 이름> -b <브랜치>`. 폴더 안의 `.gitignore`(`*`) 가 그 폴더를 git 과 검색에서 빼므로, 프로젝트의 `.gitignore` 나 `.git/` 안 파일(권한 승인이 필요한 곳)은 건드리지 않는다. 프로젝트 밖(저장소 옆 폴더)에 두면 그 안의 명령이 작업 폴더 밖으로 잡혀 권한 승인에 막힌다. 서브에이전트의 `isolation: worktree` 는 지금 브랜치가 아니라 기본 브랜치에서 갈라지므로 쓰지 않는다.
    - 구현자가 여럿이면 같은 파일을 건드리지 않게 SPEC 을 나눠 맡긴다(요구 번호로).
    - 수정 차례라면, 고칠 차이 목록 파일.
 2. `omni-pipeline:implementer` 에이전트를 띄운다(Agent, `subagent_type: omni-pipeline:implementer`). 프롬프트에는 위 경로들만 넣는다. 대화나 팀장의 메모는 넣지 않는다. 정의에 model 이 있으므로 Agent 호출에 model 을 넘기지 않는다.
 3. 보고를 확인한다.
    - 「완료 기준」 항목마다 충족 근거, 또는 미충족 이유가 있는가.
    - 「SPEC 문제」는 코드로 덮지 말고 팀장이 판단한다(`develop` 8단계 「차이 처리」).
-4. 브랜치를 `spec-check` 로 넘긴다. 리뷰가 끝나 받아들이면 브랜치 병합과 `git worktree remove` 는 사용자 지시에 따라 한다.
+4. 브랜치를 `spec-check` 로 넘긴다. 리뷰가 끝나 받아들이면 브랜치 병합과 `git worktree remove .worktrees/<브랜치 이름>` 은 사용자 지시에 따라 한다.
