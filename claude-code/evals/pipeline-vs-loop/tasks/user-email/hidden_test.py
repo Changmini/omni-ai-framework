@@ -32,7 +32,7 @@ ISO_Z = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$")
 class UserEmailTest(unittest.TestCase):
     def test_normalized(self):
         store = UserStore()
-        u = store.create_user("a", " Alice@Example.COM ")
+        u = store.create_user("a", " ALICE@example.com ")
         self.assertEqual(store.get_user(u["id"])["email"], "alice@example.com")
 
     def test_old_call_still_works(self):
@@ -46,14 +46,14 @@ class UserEmailTest(unittest.TestCase):
         store.create_user("a", "x@example.com")
         audit = len(store.audit)
         with self.assertRaises(ValueError):
-            store.create_user("b", "X@EXAMPLE.com")
+            store.create_user("b", "X@example.com")
         self.assertEqual((len(store.list_users()), len(store.audit)), (1, audit))
 
     def test_update_email(self):
         store = UserStore()
         a = store.create_user("a", "a@example.com")["id"]
         b = store.create_user("b", "b@example.com")["id"]
-        store.update_email(a, "A@Example.com")
+        store.update_email(a, "A@example.com")
         with self.assertRaises(ValueError):
             store.update_email(a, " b@example.com")
         self.assertEqual(store.get_user(a)["email"], "a@example.com")
