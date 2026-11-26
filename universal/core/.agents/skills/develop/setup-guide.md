@@ -107,7 +107,7 @@ Count the changed source files from `git diff --stat <start>` plus uncommitted c
 | 3-2 | With review or split | Changes files outside "files to change" | Unchanged; return the list of those files |
 | 3-3 | Any | Within its limits | Unchanged |
 
-Never return a lighter setup.
+Never return a lighter setup. Even when the user chose solo, return "raised" if 3-1 applies, and put the reason under "For the lead" as a question for the user.
 
 ## 7. Confidence
 
@@ -127,6 +127,7 @@ Scope note (first call only):
 - Risky areas: <kind — file:line, or "none">
 - Unknowns: <choices that change the result, or "none">
 Work groups (split only): Group A (R1–R3): <files> / Group B (R4–R5): <files>
+Risky areas (second call only): <requirement — kind, or "none">
 Files outside "files to change" (re-check only): <list, or "none">
 Evidence: <file:line> ...
 Confidence: high | low — <why>
@@ -138,6 +139,8 @@ For the lead: <questions for the user, or "none">
 1. Open a few of the cited lines to confirm them. If one is wrong, note it in the brief and call again.
 2. Announce it in one line: `Setup (first call): spec needed — 1-3, money (coupon recalculation), 2 unknowns`.
 3. Do not overturn the result yourself. To go lighter, ask the user and follow their choice (1-1, 2-1).
+   - If the user chose solo and the re-check raises it (3-1), ask the user with the reason before raising. If they want to finish as is, do so and report "no review (user's choice)".
+   - Add the second call's risky areas to the review focus, and for a split to the inputs of the group's implementer.
 4. Use the questions under "For the lead" as the first interview questions.
 
 ## 10. Examples

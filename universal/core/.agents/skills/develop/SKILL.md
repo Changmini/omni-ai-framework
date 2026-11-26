@@ -119,7 +119,7 @@ Show the spec path and a summary (requirements and scenarios, files to change, `
 If the user chose the setup, follow it. Otherwise run the router again, the same way as step 2.
 
 - Give: "Decision: second call", the approved spec path, and whether the interview and survey have made this session long enough that a fresh start is better.
-- You get back: with review or split, the rule, and for a split the work groups (requirement numbers and files).
+- You get back: with review or split, the rule, for a split the work groups (requirement numbers and files), and the risky areas per requirement (add them to the step 7 review focus).
 - Announce it in one line, `Setup (final): with review — 2-5, 2 source files, 2 modules`, and fill in the spec header's setup.
 
 ## 5. Implement
@@ -184,7 +184,7 @@ The first and second calls were estimates. Before finishing, run the router agai
 
 | Router result | Do |
 | --- | --- |
-| Raised to with review (solo outgrew its limits) | Write a short spec from what was decided (spec-guide.md) and add step 7. Tell the user |
+| Raised to with review (solo outgrew its limits) | Write a short spec from what was decided (spec-guide.md) and add step 7. Tell the user; if the user had chosen solo, ask first and follow the answer |
 | Unchanged, with files outside "files to change" | Give a reason for each or revert it. If the scope widens, update the spec and review again |
 | Unchanged | Step 10 |
 
