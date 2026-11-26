@@ -88,14 +88,19 @@ omni-ai-framework/
 
 | 역할 | 에이전트 | 대응 스킬 | 핵심 |
 | --- | --- | --- | --- |
-| ① 팀장 | `omni-pipeline:lead` | `leading-changes` | 대화는 여기서만. 요구가 모호하면 인터뷰해 SPEC을 직접 씀(요약 손실 없음). 코드는 쓰지 않고 판단·리뷰 처리에 집중 |
+| ① 팀장 | `omni-pipeline:lead` | `leading-changes` | 대화는 여기서만. 변경마다 구성(혼자·리뷰 포함·분업)을 정해진 기준으로 고르고 알림. 요구가 모호하면 인터뷰해 SPEC을 직접 씀(요약 손실 없음). 분업에서는 코드를 쓰지 않고 판단·리뷰 처리에 집중 |
 | ② SPEC | (파일) | — | 무엇을 만드는지·지킬 제약·**완료 기준**. 결정이 바뀌면 팀장이 바로 반영. SPEC에 없는 결정은 다른 세션엔 없는 결정. 위치·파일 이름·양식은 프로젝트 규칙(「Agent pipeline」 절의 Specs·Spec template)을 우선하고, 정해진 게 없을 때만 `docs/specs/<이름>.md`를 만듦 |
 | ③ 구현 | `omni-pipeline:implementer` | `implementing-specs` | 새 컨텍스트에서 SPEC만 읽고 시작. 구현자마다 팀장이 지금 HEAD에서 만든 worktree. 결과는 커밋과 diff |
 | ④ 리뷰어 | `omni-pipeline:reviewer` | `reviewing-changes` | 도구는 Read·Grep·Glob만, 입력은 SPEC과 diff 파일뿐. 구현 추론을 보지 않아 그 논리에 끌려가지 않음 |
 | ⑤ 리뷰어 → 팀장 | — | — | 차이만 보고. 팀장이 구현 수정 / SPEC 수정(사용자에게 다시 질문) / 지적 기각을 판단. 길면 파일로 남기고 경로만 넘김 |
 
 - **팀장으로 시작**: 메인 세션 자체를 팀장으로 띄우려면 `claude --agent omni-pipeline:lead`(Claude Code 2.1.331에서 확인). 평소 세션에서는 `/omni-pipeline:leading-changes <요청>` 또는 "개발 파이프라인으로 진행해줘".
-- **이 구조가 필요 없는 경우**: 한두 파일만 고치는 작은 작업은 팀장 세션에서 바로 하는 게 빠릅니다(새 세션은 맥락을 다시 모아야 함). 구현자가 하나이고 단계마다 직접 확인한다면 리뷰어 대신 `/code-review` 한 번이면 충분합니다. 근거: [Claude Code 모범사례](https://code.claude.com/docs/en/best-practices)
+- **구성 고르기**: 팀장은 변경마다 세 구성 중 하나를 고르고 `구성: … — 이유` 한 줄로 알립니다. 구현자를 따로 띄우면 새 세션이 맥락을 다시 모아 비용·시간이 더 들어서, 필요한 때만 분업합니다. 근거: [Claude Code 모범사례](https://code.claude.com/docs/en/best-practices), [When to fold subagents into your main agent loop](https://claude.com/blog/building-agents-when-to-fold-subagents-into-your-main-agent-loop)
+  - **혼자**: 바뀔 소스 파일 1~2개, 모르는 것·위험한 곳(금액, 데이터 삭제·이전, 인증·권한, 공개 인터페이스, 동시성) 없음 → SPEC 없이 바로 구현
+  - **리뷰 포함**: 그 밖 → SPEC을 쓰고 팀장이 직접 구현한 뒤 리뷰어가 검증
+  - **분업**: SPEC의 바꿀 곳이 소스 파일 6개 이상·모듈 3개 이상이거나, 동시에 나눌 수 있는 작업 묶음이 있을 때 → 구현자에게 맡기고 리뷰어가 검증
+  - 처음(범위 조사 뒤)에는 혼자인지 SPEC이 필요한지만, SPEC 승인 뒤에 리뷰 포함인지 분업인지 정합니다. 끝내기 전에 실제 diff로 다시 판정해, 혼자로 했는데 커졌으면 리뷰를 붙입니다. 기준 숫자는 프로젝트 「Agent pipeline」 절에서 바꿀 수 있습니다.
+  - SPEC 쓰는 법(절 구성, 시나리오, 완료 기준, 예시)은 `skills/leading-changes/spec-guide.md`에 있습니다.
 - `defining-work-goal`은 작업의 목표·시작·종료를 정해 SPEC 맨 앞에 두고, 단계가 바뀔 때마다 다시 보게 합니다.
 - **프로젝트별 값**: 에이전트 지침에는 특정 프로젝트의 경로·명령을 넣지 않았습니다. SPEC 위치, 작업 목록 문서, 시험·타입 검사 명령, 기록 집계 명령, 구조 문서, DB 문서, 범위 밖 서비스는 프로젝트 `CLAUDE.md`의 **「Agent pipeline」 절**에 적습니다(템플릿에 빈칸으로 들어 있음). 적지 않은 항목은 에이전트가 기본값을 쓰거나 저장소 설정 파일에서 찾습니다.
 - 공통 규칙 파일 순서: `AGENTS.override.md`가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`.

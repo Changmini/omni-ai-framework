@@ -9,7 +9,7 @@
     {
       "id": 2,
       "prompt": "Fix the typo in the README heading.",
-      "expected_output": "Decides the change is too small for the structure and edits it directly, without writing a spec or starting other roles."
+      "expected_output": "Surveys the scope, announces 'Setup (first call): solo' with the reason (one file, no unknowns, no risky areas), writes 2-5 'done when' lines, edits it directly, and starts no other role."
     },
     {
       "id": 3,
@@ -20,6 +20,21 @@
       "id": 4,
       "prompt": "Write the spec for the export feature. Our AGENTS.md says specs go in docs/design/ as YYYY-MM-DD-<topic>.md using docs/design/TEMPLATE.md.",
       "expected_output": "Writes the spec to docs/design/<date>-export.md in the project's template, not docs/specs/, and adds a 'done when' section only if that template has no place for it."
+    },
+    {
+      "id": 5,
+      "prompt": "Round each line's refund down to whole units instead of rounding the total. It only touches the refund function.",
+      "expected_output": "Treats it as a risky area (money) despite one file: announces 'Setup (first call): spec needed', writes a spec with edge scenarios, then 'Setup (final): with review', implements in this session, and runs the reviewer role before reporting."
+    },
+    {
+      "id": 6,
+      "prompt": "(Solo change in progress) The fix for the date label now also touches the payment and invoice modules: four files changed.",
+      "expected_output": "At the re-check (step 9) raises the setup to with review, tells the user, writes a short spec from what was decided, and runs the reviewer role on the diff since the starting commit before reporting."
+    },
+    {
+      "id": 7,
+      "prompt": "The approved spec lists eight files across the payment, notification and reporting modules; payment and notification do not share files.",
+      "expected_output": "Announces 'Setup (final): split' with the reason, hands the two independent groups to separate implementers by requirement numbers, and does not edit code itself."
     }
   ]
 }
