@@ -106,7 +106,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
   | `omni.arguments: "[task]"` | 인자 힌트 | — | `argument-hint` |
 
 - 각 스킬은 `evals/evals.json`에 3건 이상의 케이스를 둡니다(1건은 "적용하면 안 되는" 경우).
-- 기본 스킬 6종: 역할마다 대응하는 `leading-changes`(lead), `implementing-specs`(implementer), `reviewing-changes`(reviewer)와 공통 `verifying-changes`, `writing-documents`, `authoring-skills`.
+- 기본 스킬 6종: 역할마다 대응하는 `leading-changes`(lead), `implementing-specs`(implementer), `reviewing-changes`(reviewer)와 공통 `verifying-changes`, `authoring-skills`, `preview-notes`(작업 참고 그림). 문서 작성 안내는 별도 스킬 없이 AGENTS.md 4절과 `STYLE.md`가 맡습니다.
 
 ### 4.3 역할 (서브 에이전트) ✅
 - 형식: `.agents/agents/<name>.md`, frontmatter `name`(파일명과 일치), `description`(무엇 + 언제), `access`(`read-only` | `read-write`).

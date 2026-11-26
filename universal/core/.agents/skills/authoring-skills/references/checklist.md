@@ -6,7 +6,7 @@ Sources: Agent Skills specification (agentskills.io, github.com/agentskills/agen
 - [ ] Frontmatter starts on line 1 between `---` lines and is valid YAML
 - [ ] Only standard fields: `name`, `description`, optional `license`, `compatibility`, `metadata`, `allowed-tools`
 - [ ] `name`: 1–64 characters, `a-z`, `0-9`, `-`; no leading, trailing, or double hyphen; equals the folder name
-- [ ] `name` contains no vendor or product names; uses a gerund (`writing-documents`)
+- [ ] `name` contains no vendor or product names; uses a gerund (`reviewing-changes`)
 - [ ] `description`: 1–1024 characters, third person, says what it does and when to use it, key trigger words first
 - [ ] Framework extensions go in `metadata` with the `omni.` prefix: `omni.invocation: manual`, `omni.arguments: "[...]"`
 

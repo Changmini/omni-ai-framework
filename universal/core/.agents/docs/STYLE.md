@@ -4,8 +4,8 @@ Rules for every document written in this repository, by people or agents.
 
 ## Structure
 - The first paragraph says what the document is for, who reads it, and who decides.
-- Use the template for the document type (`.agents/docs/templates/`). Keep its section order.
-- One topic per section. Use tables for comparisons and option lists, numbered lists for steps.
+- Use the template for the document type (`.agents/docs/templates/`). Keep its section order and fill every section; write "None" for an empty one unless the template marks it optional.
+- One topic per section, and no section repeats another. Use tables for comparisons and option lists, numbered lists for steps.
 - Keep a document under 300 lines. Split by topic and link instead of growing one file.
 - A document longer than 100 lines starts with a short table of contents.
 

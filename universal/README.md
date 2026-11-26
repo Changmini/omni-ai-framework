@@ -19,7 +19,7 @@
     │   ├── implementing-specs/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
     │   ├── reviewing-changes/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
     │   ├── verifying-changes/        # 프로젝트 검사 실행, 증거 보고
-    │   ├── writing-documents/        # 템플릿·스타일로 문서 작성
+    │   ├── preview-notes/            # private/index.html에 쌓는 작업 참고 그림(판·절, scripts/notes.py)
     │   └── authoring-skills/         # 새 스킬·역할 작성 (체크리스트, 템플릿)
     │       (각 스킬에 evals/evals.json 3건)
     ├── agents/                       # 역할 정의 (자체 완결 프롬프트, 역할마다 대응 스킬)
@@ -69,7 +69,7 @@ AGENTS.md (매 작업 시작 시 읽음)
 | Codex, Cursor, Gemini CLI 등 | ✅ AGENTS.md 호환 목록에 있음 (Gemini CLI는 `context.fileName` 설정 필요) | 도구별 미확인 | agents.md 공식 저장소 |
 
 **실측 결과 (Claude Code, `CLAUDE.md` 없이 `AGENTS.md`만 둔 프로젝트):**
-- "PostgreSQL 결정을 기록해줘" → `writing-documents` 스킬 → `decision.md` 템플릿 → `STYLE.md` 순서로 읽었습니다. 그다음 `docs/decisions/0001-…md`에 템플릿 형식으로 저장하고, 외부 사실은 unverified로 표시했습니다.
+- "PostgreSQL 결정을 기록해줘" → `writing-documents` 스킬(측정 당시. 지금은 AGENTS.md 4절이 같은 안내) → `decision.md` 템플릿 → `STYLE.md` 순서로 읽었습니다. 그다음 `docs/decisions/0001-…md`에 템플릿 형식으로 저장하고, 외부 사실은 unverified로 표시했습니다.
 - "스테이징된 변경 리뷰해줘" → `reviewing-changes` 스킬 → `reviewer.md` 역할 순서로 읽었습니다. 서브 에이전트 대신 fallback(별도 패스)으로 리뷰해 `average([])`의 0 나누기 결함을 지정된 출력 형식으로 보고했습니다.
 
 Kimi는 이 환경에 계정이 없어 실행하지 못했고, 소스 코드와 공식 문서로만 확인했습니다.
