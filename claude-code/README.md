@@ -22,14 +22,14 @@ omni-ai-framework/
     │   ├── omni-core/                # 범용 워크플로 플러그인
     │   │   ├── .claude-plugin/plugin.json
     │   │   ├── skills/
-    │   │   │   ├── verifying-changes/    # 프로젝트 자체 테스트/린트/빌드 탐색·실행, 증거 보고
-    │   │   │   ├── authoring-skills/     # 공식 규칙에 맞는 새 스킬 작성 (template.md, checklist.md)
-    │   │   │   └── preview-notes/        # private/index.html을 판·절로 쌓는 작업 참고 그림 (Omni Agent Terminal 미리보기, scripts/notes.py)
+    │   │   │   ├── test/    # 프로젝트 자체 테스트/린트/빌드 탐색·실행, 증거 보고
+    │   │   │   ├── skill-maker/     # 공식 규칙에 맞는 새 스킬 작성 (template.md, checklist.md)
+    │   │   │   └── diagram/        # private/index.html을 판·절로 쌓는 작업 참고 그림 (Omni Agent Terminal 미리보기, scripts/notes.py)
     │   │   ├── hooks/hooks.json          # SessionStart: git 상태를 컨텍스트에 주입
     │   │   └── scripts/session-context.sh
     │   ├── omni-pipeline/            # 팀 개발 파이프라인 (팀장 → SPEC → 구현 → 리뷰)
-    │   │   ├── agents/  lead · implementer · reviewer
-    │   │   └── skills/  leading-changes · implementing-specs · reviewing-changes (역할마다 하나)
+    │   │   ├── agents/  lead · router · implementer · reviewer
+    │   │   └── skills/  develop · build · spec-check (역할마다 하나)
     │   ├── omni-jira/                # Jira 담당자 제한 에이전트 (기본 꺼짐)
     │   │   ├── agents/jira-manager.md
     │   │   ├── hooks/hooks.json          # Atlassian MCP 도구 Pre/PostToolUse
@@ -61,13 +61,13 @@ omni-ai-framework/
 | --- | --- | --- | --- |
 | `omni-core` | 이 저장소 | `plugins/omni-core` | 검증·스킬 작성·작업 참고 그림 스킬 3개, git 상태 SessionStart 훅 |
 | `omni-guardrails` | 이 저장소 | `plugins/omni-guardrails` | 위험 Bash 명령 차단·확인 PreToolUse 훅 |
-| `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 에이전트 3개(lead, implementer, reviewer)와 역할마다 대응하는 스킬(leading-changes, implementing-specs, reviewing-changes) |
+| `omni-pipeline` | 이 저장소 | `plugins/omni-pipeline` | 에이전트 4개(lead, router, implementer, reviewer)와 스킬(develop, build, spec-check). router 는 구성 판단만 함 |
 | `omni-jira` (**기본 꺼짐**) | 이 저장소 | `plugins/omni-jira` | 설정한 담당자의 이슈만 고치는 `jira-manager` 에이전트 + 담당자 확인 훅 |
 | `superpowers` | [obra/superpowers](https://github.com/obra/superpowers) · MIT | `5bf4e78` (v6.4.1, Anthropic 공식 마켓플레이스가 고정한 커밋과 동일) | 브레인스토밍, 계획 작성·실행, TDD, 체계적 디버깅, 서브에이전트 주도 개발, 코드 리뷰 요청·수용 등 스킬 15개 + `using-superpowers`를 주입하는 SessionStart 훅 |
 | `playwright-cli` | [microsoft/playwright-cli](https://github.com/microsoft/playwright-cli) · Apache-2.0 | `b85c7a7` (`skills/playwright-cli`) | 브라우저 자동화·웹 테스트 스킬. `playwright-cli` 명령을 쓰며, 없으면 스킬이 `npx playwright cli` 또는 `npm install -g @playwright/cli@latest`로 대체 (Node.js 18+ 필요) |
 
 - **외부 플러그인은 커밋(sha)으로 고정**합니다. 업스트림이 바뀌어도 자동으로 따라가지 않으므로, 검토한 뒤 `marketplace.json`의 `sha`를 올려서 업데이트합니다.
-- **겹치는 영역**: superpowers의 `writing-plans`·`verification-before-completion`·`requesting-code-review`·`writing-skills`는 omni-core의 `verifying-changes`·`authoring-skills`, omni-pipeline의 `leading-changes`·`reviewing-changes`와 역할이 비슷합니다. 둘 다 켜 두면 Claude가 상황에 따라 어느 쪽이든 고를 수 있습니다. 하나만 쓰려면 프로젝트 `.claude/settings.json`의 `enabledPlugins`에서 해당 항목을 `false`로 바꾸세요.
+- **겹치는 영역**: superpowers의 `writing-plans`·`verification-before-completion`·`requesting-code-review`·`writing-skills`는 omni-core의 `test`·`skill-maker`, omni-pipeline의 `develop`·`spec-check`와 역할이 비슷합니다. 둘 다 켜 두면 Claude가 상황에 따라 어느 쪽이든 고를 수 있습니다. 하나만 쓰려면 프로젝트 `.claude/settings.json`의 `enabledPlugins`에서 해당 항목을 `false`로 바꾸세요.
 - 이미 공식 마켓플레이스에서 `superpowers@claude-plugins-official`을 설치했다면 같은 스킬이 두 벌 로드됩니다. 한쪽을 끄세요.
 
 ## 팀 개발 파이프라인 (`omni-pipeline`)
@@ -88,20 +88,21 @@ omni-ai-framework/
 
 | 역할 | 에이전트 | 대응 스킬 | 핵심 |
 | --- | --- | --- | --- |
-| ① 팀장 | `omni-pipeline:lead` | `leading-changes` | 대화는 여기서만. 변경마다 구성(혼자·리뷰 포함·분업)을 정해진 기준으로 고르고 알림. 요구가 모호하면 인터뷰해 SPEC을 직접 씀(요약 손실 없음). 분업에서는 코드를 쓰지 않고 판단·리뷰 처리에 집중 |
+| ① 팀장 | `omni-pipeline:lead` | `develop` | 대화는 여기서만. 변경마다 router 가 정한 구성(혼자·리뷰 포함·분업)을 알리고 따름. 요구가 모호하면 인터뷰해 SPEC을 직접 씀(요약 손실 없음). 분업에서는 코드를 쓰지 않고 판단·리뷰 처리에 집중 |
+| 구성 판단 | `omni-pipeline:router` | (`develop` 의 `setup-guide.md`) | 대화를 모른 채 팀장이 넘긴 요청 정리문·SPEC·기준 커밋과 저장소만 보고, 요청 직후·SPEC 승인 뒤·보고 직전에 정해진 규칙으로 구성을 정함. 읽기만 함 |
 | ② SPEC | (파일) | — | 무엇을 만드는지·지킬 제약·**완료 기준**. 결정이 바뀌면 팀장이 바로 반영. SPEC에 없는 결정은 다른 세션엔 없는 결정. 위치·파일 이름·양식은 프로젝트 규칙(「Agent pipeline」 절의 Specs·Spec template)을 우선하고, 정해진 게 없을 때만 `docs/specs/<이름>.md`를 만듦 |
-| ③ 구현 | `omni-pipeline:implementer` | `implementing-specs` | 새 컨텍스트에서 SPEC만 읽고 시작. 구현자마다 팀장이 지금 HEAD에서 만든 worktree. 결과는 커밋과 diff |
-| ④ 리뷰어 | `omni-pipeline:reviewer` | `reviewing-changes` | 도구는 Read·Grep·Glob만, 입력은 SPEC과 diff 파일뿐. 구현 추론을 보지 않아 그 논리에 끌려가지 않음 |
+| ③ 구현 | `omni-pipeline:implementer` | `build` | 새 컨텍스트에서 SPEC만 읽고 시작. 구현자마다 팀장이 지금 HEAD에서 만든 worktree. 결과는 커밋과 diff |
+| ④ 리뷰어 | `omni-pipeline:reviewer` | `spec-check` | 도구는 Read·Grep·Glob만, 입력은 SPEC과 diff 파일뿐. 구현 추론을 보지 않아 그 논리에 끌려가지 않음 |
 | ⑤ 리뷰어 → 팀장 | — | — | 차이만 보고. 팀장이 구현 수정 / SPEC 수정(사용자에게 다시 질문) / 지적 기각을 판단. 길면 파일로 남기고 경로만 넘김 |
 
-- **팀장으로 시작**: 메인 세션 자체를 팀장으로 띄우려면 `claude --agent omni-pipeline:lead`(Claude Code 2.1.331에서 확인). 평소 세션에서는 `/omni-pipeline:leading-changes <요청>` 또는 "개발 파이프라인으로 진행해줘".
-- **구성 고르기**: 팀장은 변경마다 세 구성 중 하나를 고르고 `구성: … — 이유` 한 줄로 알립니다. 구현자를 따로 띄우면 새 세션이 맥락을 다시 모아 비용·시간이 더 들어서, 필요한 때만 분업합니다. 근거: [Claude Code 모범사례](https://code.claude.com/docs/en/best-practices), [When to fold subagents into your main agent loop](https://claude.com/blog/building-agents-when-to-fold-subagents-into-your-main-agent-loop)
+- **팀장으로 시작**: 메인 세션 자체를 팀장으로 띄우려면 `claude --agent omni-pipeline:lead`(Claude Code 2.1.331에서 확인). 평소 세션에서는 `/omni-pipeline:develop <요청>` 또는 "개발 파이프라인으로 진행해줘".
+- **구성 고르기**: 구성은 팀장이 짐작하지 않고 router 에이전트가 매번 같은 기준으로 정합니다(질문을 보고 길을 먼저 정하는 RAG 의 분기처럼). 팀장은 결과를 `구성: … — 맞은 규칙` 한 줄로 알립니다. 구현자를 따로 띄우면 새 세션이 맥락을 다시 모아 비용·시간이 더 들어서, 필요한 때만 분업합니다. 근거: [Claude Code 모범사례](https://code.claude.com/docs/en/best-practices), [When to fold subagents into your main agent loop](https://claude.com/blog/building-agents-when-to-fold-subagents-into-your-main-agent-loop)
   - **혼자**: 바뀔 소스 파일 1~2개, 모르는 것·위험한 곳(금액, 데이터 삭제·이전, 인증·권한, 공개 인터페이스, 동시성) 없음 → SPEC 없이 바로 구현
   - **리뷰 포함**: 그 밖 → SPEC을 쓰고 팀장이 직접 구현한 뒤 리뷰어가 검증
   - **분업**: SPEC의 바꿀 곳이 소스 파일 6개 이상·모듈 3개 이상이거나, 동시에 나눌 수 있는 작업 묶음이 있을 때 → 구현자에게 맡기고 리뷰어가 검증
   - 처음(범위 조사 뒤)에는 혼자인지 SPEC이 필요한지만, SPEC 승인 뒤에 리뷰 포함인지 분업인지 정합니다. 끝내기 전에 실제 diff로 다시 판정해, 혼자로 했는데 커졌으면 리뷰를 붙입니다. 기준 숫자는 프로젝트 「Agent pipeline」 절에서 바꿀 수 있습니다.
-  - SPEC 쓰는 법(절 구성, 시나리오, 완료 기준, 예시)은 `skills/leading-changes/spec-guide.md`에 있습니다.
-- **SPEC 에 대화를 그대로**: 팀장은 사용자 답과 지나가며 한 말을 요약하지 않고 SPEC 「요청과 대화」 절에 인용하고, 승인 전에 메시지마다 SPEC 에 자리가 있는지 대조합니다. 구현자·리뷰어는 이 절로 대화를 대신 읽습니다.
+  - 판단 규칙·세는 법·위험한 곳 찾는 단서·돌려주는 형식은 `skills/develop/setup-guide.md`, SPEC 쓰는 법은 `skills/develop/spec-guide.md`에 있습니다.
+- **SPEC 에 대화를 빠짐없이**: 팀장은 사용자 답과 따로 나온 요구를 SPEC 「요청과 확인 내용」 절에 동작 문장으로 정리해 적고(조건·이유·예는 줄이지 않고, 말 그대로·욕설·잡담·개인 정보는 뺌), 승인 전에 메시지마다 SPEC 에 자리가 있는지 대조합니다. 구현자·리뷰어는 이 절로 대화를 대신 읽습니다.
 - **프로젝트별 값**: 에이전트 지침에는 특정 프로젝트의 경로·명령을 넣지 않았습니다. SPEC 위치, 구성 기준, 프로젝트만의 위험한 곳, 인터뷰에서 꼭 물을 것, SPEC 추가 절, 시험·검사 명령, 리뷰 관점, 범위 밖 서비스는 프로젝트 `CLAUDE.md`의 **「Agent pipeline」 절**에 적습니다(템플릿에 빈칸으로 들어 있음). 적지 않은 항목은 기본값을 씁니다. 절이 없으면 팀장이 조사 결과로 초안을 보여 주고, 작업이 끝날 때 남길 만한 줄을 제안합니다. 승인한 줄만 적힙니다.
 - 공통 규칙 파일 순서: `AGENTS.override.md`가 있으면 최우선, 그다음 `AGENTS.md`·`CLAUDE.md`.
 
@@ -197,7 +198,7 @@ done
 - 확인: `claude plugin list`(설치된 플러그인, 범위, 버전), `claude plugin details omni-core@omni-ai-framework`(스킬 목록과 토큰 비용). 세션 안에서는 `/plugin`.
 - 한 플러그인만 이 프로젝트에 켜기: 프로젝트 폴더에서 `claude plugin install omni-core@omni-ai-framework --scope project`(모든 프로젝트는 `--scope user`).
 - 업데이트: `git -C ~/omni-ai-framework pull` 후 새 세션 또는 `/reload-plugins`. 로컬 폴더 마켓플레이스는 원본 폴더를 바로 읽으므로 `claude plugin update`는 "nothing to update"라고 답합니다. 클라우드용 복사본(C)은 `vendor-plugins.py`를 다시 실행해 커밋합니다.
-- Omni Agent Terminal의 HTML 미리보기에 쓰는 `preview-notes` 스킬 설치는 [앱 README](../apps/agent-terminal/README.md#그림-스킬-설치-omni-core-플러그인의-preview-notes)에 단계별로 있습니다.
+- Omni Agent Terminal의 HTML 미리보기에 쓰는 `diagram` 스킬 설치는 [앱 README](../apps/agent-terminal/README.md#그림-스킬-설치-omni-core-플러그인의-diagram)에 단계별로 있습니다.
 
 ### D. 조직 전체 강제 적용
 
@@ -224,23 +225,23 @@ done
 
 | 무엇 | 호출 |
 | --- | --- |
-| 큰 변경을 팀장으로 이끌기 (인터뷰 → SPEC → 구현 → 리뷰) | `/omni-pipeline:leading-changes <요청>` 또는 `claude --agent omni-pipeline:lead` |
-| SPEC 구현 맡기기 | `/omni-pipeline:implementing-specs <SPEC 경로>` |
-| SPEC 기준 리뷰 | `/omni-pipeline:reviewing-changes <SPEC 경로> <브랜치>` |
-| 검증 | `/omni-core:verifying-changes` (작업 후 자동 사용) |
-| 새 스킬 만들기 | `/omni-core:authoring-skills <설명>` |
-| 작업 참고 그림 | "결제 흐름을 그림으로 보여줘", "이 워크플로우 한눈에" (Claude가 자동 사용, `/omni-core:preview-notes`로도 호출) |
+| 큰 변경을 팀장으로 이끌기 (인터뷰 → SPEC → 구현 → 리뷰) | `/omni-pipeline:develop <요청>` 또는 `claude --agent omni-pipeline:lead` |
+| SPEC 구현 맡기기 | `/omni-pipeline:build <SPEC 경로>` |
+| SPEC 기준 리뷰 | `/omni-pipeline:spec-check <SPEC 경로> <브랜치>` |
+| 검증 | `/omni-core:test` (작업 후 자동 사용) |
+| 새 스킬 만들기 | `/omni-core:skill-maker <설명>` |
+| 작업 참고 그림 | "결제 흐름을 그림으로 보여줘", "이 워크플로우 한눈에" (Claude가 자동 사용, `/omni-core:diagram`로도 호출) |
 | Jira 정리 | "jira-manager로 내 이슈 상태 정리해줘" (omni-jira를 켠 경우) |
 | 아이디어 구체화 | `/superpowers:brainstorming` |
 | 버그 원인 추적 | `/superpowers:systematic-debugging` |
 | TDD | `/superpowers:test-driven-development` |
 | 브라우저 테스트 | `/playwright-cli:playwright-cli` 또는 "playwright-cli로 이 페이지 테스트해줘" |
 
-vendoring한 경우 네임스페이스 없이 `/leading-changes`처럼 호출합니다.
+vendoring한 경우 네임스페이스 없이 `/develop`처럼 호출합니다.
 
 ## 확장
 
-- **모든 프로젝트 공통** 스킬 → `plugins/omni-core/skills/<gerund-name>/SKILL.md` 추가 후 `plugin.json`의 `version` 올리기
+- **모든 프로젝트 공통** 스킬 → `plugins/omni-core/skills/<이름>/SKILL.md` 추가 후 `plugin.json`의 `version` 올리기
 - **특정 프로젝트 전용** 스킬 → 그 프로젝트의 `.claude/skills/`
 - 새 영역(예: 프런트엔드 전용)이 커지면 `plugins/omni-<domain>/`로 플러그인을 분리하고 `.claude-plugin/marketplace.json`에 항목 추가
 - **외부 플러그인 추가**: `marketplace.json`에 `url`(저장소 전체) 또는 `git-subdir`(하위 폴더) 소스로 항목을 추가하고 반드시 `sha`를 고정합니다. `description`에 출처와 라이선스를 적고, 템플릿 `enabledPlugins`에 넣을지 정합니다.

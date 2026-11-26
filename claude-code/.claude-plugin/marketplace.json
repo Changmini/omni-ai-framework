@@ -18,7 +18,7 @@
     {
       "name": "omni-pipeline",
       "source": "./plugins/omni-pipeline",
-      "description": "The lead \u2192 SPEC \u2192 implementer \u2192 reviewer pipeline: lead, implementer and reviewer agents, each with its skill"
+      "description": "The lead \u2192 SPEC \u2192 implementer \u2192 reviewer pipeline: lead, router, implementer and reviewer agents; the router picks the setup"
     },
     {
       "name": "omni-jira",

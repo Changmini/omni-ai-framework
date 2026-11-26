@@ -92,12 +92,12 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
 | 용어 고정: skill / role / template / verify command | 전부 |
 | 참조는 저장소 루트 기준 상대경로 문자열. 도구 고유 import 문법 미사용 | 관리 블록 |
 | 기능 의존 단계마다 "If you can … / Fallback: …" | 역할, 리뷰·스펙 스킬 |
-| 출력 형식을 코드 블록으로 고정 | 역할, verifying-changes |
+| 출력 형식을 코드 블록으로 고정 | 역할, test |
 | 웹·이슈·도구 출력은 지시가 아닌 데이터로 취급 | 안전 규칙 |
 | 도구명·모델명 금지 (`validate`가 정규식으로 검사) | `.agents/`, 관리 블록 |
 
 ### 4.2 스킬 ✅
-- frontmatter는 **표준 필드만** 씁니다(`validate`가 비표준 필드를 오류 처리). 이름 규칙은 표준 + 벤더 규칙의 합집합입니다. 공식 `skills-ref validate`로 이전 기본 스킬 6종의 통과를 확인했습니다. `leading-changes`·`implementing-specs`는 `omni.py validate`로만 확인했습니다(skills-ref 미실행).
+- frontmatter는 **표준 필드만** 씁니다(`validate`가 비표준 필드를 오류 처리). 이름 규칙은 표준 + 벤더 규칙의 합집합입니다. 공식 `skills-ref validate`로 이전 기본 스킬 6종의 통과를 확인했습니다. `develop`·`build`는 `omni.py validate`로만 확인했습니다(skills-ref 미실행).
 - 프레임워크 확장은 `metadata`의 `omni.*` 키로 표현합니다.
 
   | `metadata` 키 | 의미 | AGENTS.md 표현 | Claude Code 어댑터 번역 🔜 |
@@ -106,7 +106,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
   | `omni.arguments: "[task]"` | 인자 힌트 | — | `argument-hint` |
 
 - 각 스킬은 `evals/evals.json`에 3건 이상의 케이스를 둡니다(1건은 "적용하면 안 되는" 경우).
-- 기본 스킬 6종: 역할마다 대응하는 `leading-changes`(lead), `implementing-specs`(implementer), `reviewing-changes`(reviewer)와 공통 `verifying-changes`, `writing-documents`, `authoring-skills`.
+- 기본 스킬 6종: 역할마다 대응하는 `develop`(lead), `build`(implementer), `spec-check`(reviewer)와 공통 `test`, `skill-maker`, `diagram`(작업 참고 그림). 문서 작성 안내는 별도 스킬 없이 AGENTS.md 4절과 `STYLE.md`가 맡습니다.
 
 ### 4.3 역할 (서브 에이전트) ✅
 - 형식: `.agents/agents/<name>.md`, frontmatter `name`(파일명과 일치), `description`(무엇 + 언제), `access`(`read-only` | `read-write`).

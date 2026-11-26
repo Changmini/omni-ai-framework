@@ -115,7 +115,7 @@ Everything in this folder works only with Claude Code: a plugin marketplace plus
 
 - Third-party marketplace entries (`superpowers`, `playwright-cli`) must pin a full 40-character `sha` and name the upstream repository and license in `description`. Bump the sha only after reviewing the upstream diff, then rerun the install test in README "기본 탑재 플러그인".
 
-- Skills: gerund names (`verifying-changes`), third-person description stating what + when, body under 500 lines, reference files one level deep. Checklist: `plugins/omni-core/skills/authoring-skills/checklist.md`.
+- Skills: short plain names saying what the skill does (`test`, `develop`), third-person description stating what + when, body under 500 lines, reference files one level deep. Checklist: `plugins/omni-core/skills/skill-maker/checklist.md`.
 - Hook scripts must exit 0 with no output when they have no decision; use exit 2 or JSON `permissionDecision` only to block. Quote `"${CLAUDE_PLUGIN_ROOT}"` in commands.
 - Bump `version` in a plugin's `plugin.json` on every user-visible change; installed users stay pinned to the old version until it changes.
 - Add a test case to `tests/test-hooks.sh` for every guardrail pattern change.

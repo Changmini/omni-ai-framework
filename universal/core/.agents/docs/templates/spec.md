@@ -2,15 +2,15 @@
 
 Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
-<!-- How to fill each section, with good and bad sentences and a full example: .agents/skills/leading-changes/spec-guide.md -->
+<!-- How to fill each section, with good and bad sentences and a full example: .agents/skills/develop/spec-guide.md -->
 
 ## Background and goal
 <One paragraph: what is wrong today, and what is true once this change is done. No implementation details.>
 
-## Request and conversation
-<Quoted, not summarized. Request: the user's messages in order. Questions and answers: Q#, options, answer verbatim, where it went. Said in passing: quotes and where each went. Terms. Facts from the survey with file:line.>
-- Request: "..."
-- Q1: ... Answer: "..." → R1
+## Request and clarifications
+<Behavior statements, not the user's words; keep every condition, reason and example, drop profanity, small talk and personal data. Request: what and why. Clarified: Q#, what was settled, why, options dropped, where it went. Added requirements: statement, reason, where it went. Terms. Facts from the survey with file:line.>
+- Request: ...
+- Q1 ... → ... Reason: ... → R1
 
 ## Requirements
 <One observable behavior each: input, result, errors. Never renumber; mark dropped ones "(dropped: reason)".>

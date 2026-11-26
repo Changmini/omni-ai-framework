@@ -15,15 +15,16 @@
 │   └─ [Project]  명령어 · 코드 스타일 · 아키텍처 · 주의사항   ← 프로젝트가 채움
 └── .agents/
     ├── skills/                       # Agent Skills 공개 표준
-    │   ├── leading-changes/          # 팀장: 프로젝트 설정·범위 조사 → 구성 고르기 → 대화를 인용한 스펙(spec-guide.md) → 구현·리뷰 → 차이 판단 → 재판정 → 설정 제안
-    │   ├── implementing-specs/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
-    │   ├── reviewing-changes/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
-    │   ├── verifying-changes/        # 프로젝트 검사 실행, 증거 보고
-    │   ├── writing-documents/        # 템플릿·스타일로 문서 작성
-    │   └── authoring-skills/         # 새 스킬·역할 작성 (체크리스트, 템플릿)
+    │   ├── develop/          # 팀장: 프로젝트 설정·범위 조사 → 구성 고르기 → 대화를 빠짐없이 정리한 스펙(spec-guide.md), 구성 판단 기준(setup-guide.md) → 구현·리뷰 → 차이 판단 → 재판정 → 설정 제안
+    │   ├── build/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
+    │   ├── spec-check/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
+    │   ├── test/        # 프로젝트 검사 실행, 증거 보고
+    │   ├── diagram/            # private/index.html에 쌓는 작업 참고 그림(판·절, scripts/notes.py)
+    │   └── skill-maker/         # 새 스킬·역할 작성 (체크리스트, 템플릿)
     │       (각 스킬에 evals/evals.json 3건)
     ├── agents/                       # 역할 정의 (자체 완결 프롬프트, 역할마다 대응 스킬)
-    │   ├── lead.md                   # 팀장: 사용자와 대화하는 세션, 구성(혼자·리뷰 포함·분업)을 고름
+    │   ├── lead.md                   # 팀장: 사용자와 대화하는 세션, router가 정한 구성을 따름
+    │   ├── router.md                 # 구성 판단: 대화 없이 요청 정리문·스펙·기준 커밋만 보고 구성을 정함
     │   ├── implementer.md            # 구현: 스펙만 읽고 시작, 결과는 커밋·diff
     │   └── reviewer.md               # 리뷰어: 읽기 전용, 구현 과정을 모름
     ├── docs/                         # 문서 디자인
@@ -69,8 +70,8 @@ AGENTS.md (매 작업 시작 시 읽음)
 | Codex, Cursor, Gemini CLI 등 | ✅ AGENTS.md 호환 목록에 있음 (Gemini CLI는 `context.fileName` 설정 필요) | 도구별 미확인 | agents.md 공식 저장소 |
 
 **실측 결과 (Claude Code, `CLAUDE.md` 없이 `AGENTS.md`만 둔 프로젝트):**
-- "PostgreSQL 결정을 기록해줘" → `writing-documents` 스킬 → `decision.md` 템플릿 → `STYLE.md` 순서로 읽었습니다. 그다음 `docs/decisions/0001-…md`에 템플릿 형식으로 저장하고, 외부 사실은 unverified로 표시했습니다.
-- "스테이징된 변경 리뷰해줘" → `reviewing-changes` 스킬 → `reviewer.md` 역할 순서로 읽었습니다. 서브 에이전트 대신 fallback(별도 패스)으로 리뷰해 `average([])`의 0 나누기 결함을 지정된 출력 형식으로 보고했습니다.
+- "PostgreSQL 결정을 기록해줘" → `writing-documents` 스킬(측정 당시. 지금은 AGENTS.md 4절이 같은 안내) → `decision.md` 템플릿 → `STYLE.md` 순서로 읽었습니다. 그다음 `docs/decisions/0001-…md`에 템플릿 형식으로 저장하고, 외부 사실은 unverified로 표시했습니다.
+- "스테이징된 변경 리뷰해줘" → `spec-check` 스킬 → `reviewer.md` 역할 순서로 읽었습니다. 서브 에이전트 대신 fallback(별도 패스)으로 리뷰해 `average([])`의 0 나누기 결함을 지정된 출력 형식으로 보고했습니다.
 
 Kimi는 이 환경에 계정이 없어 실행하지 못했고, 소스 코드와 공식 문서로만 확인했습니다.
 
@@ -96,7 +97,7 @@ Python 3.9+ 표준 라이브러리만 사용합니다. 정책 스크립트는 ba
 
 ## 확장
 
-- **프로젝트 전용 스킬**: `.agents/skills/<동명사-이름>/SKILL.md` 추가 → `omni.py index` → `omni.py validate`. 작성 규칙은 `authoring-skills` 스킬에 있습니다.
+- **프로젝트 전용 스킬**: `.agents/skills/<이름>/SKILL.md` 추가 → `omni.py index` → `omni.py validate`. 작성 규칙은 `skill-maker` 스킬에 있습니다.
 - **역할 추가**: `.agents/agents/<name>.md` (frontmatter: `name`, `description`, `access`).
 - **하위 폴더 규칙**: 해당 폴더에 `AGENTS.md` 추가. 편집하는 파일에서 가장 가까운 파일이 우선합니다.
 - **명령 정책 연결**: 훅을 지원하는 도구는 `guard-command.sh`를 호출하는 얇은 shim을 두면 됩니다. 입력은 `{"command": "..."}`, 출력은 `{"decision": "deny"|"ask", "reason": "..."}`입니다. 훅이 없는 도구에서는 AGENTS.md 5절의 규칙과 git pre-commit, CI가 대신합니다.

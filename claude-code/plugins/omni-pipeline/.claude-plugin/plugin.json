@@ -2,7 +2,7 @@
   "name": "omni-pipeline",
   "displayName": "Omni Pipeline",
   "version": "0.5.0",
-  "description": "A lead → SPEC → implementer → reviewer pipeline: lead, implementer and reviewer agents, each with its skill (leading-changes, implementing-specs, reviewing-changes)",
+  "description": "A lead → SPEC → implementer → reviewer pipeline: lead, router, implementer and reviewer agents; the router picks the setup; skills develop, build, spec-check",
   "author": {
     "name": "changmini"
   },
