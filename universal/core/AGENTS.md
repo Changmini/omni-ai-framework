@@ -105,17 +105,17 @@ A skill is a folder under `.agents/skills/` with a `SKILL.md` file (Agent Skills
 <!-- omni:skills:start -->
 | Skill | Use when | Trigger | File |
 | --- | --- | --- | --- |
-| authoring-skills | Creates or revises skills and agent role files in this framework's format. Use when the user wants to add a skill or role, turn a repeated workflow into one, or fix one that is not picked up. | auto | `.agents/skills/authoring-skills/SKILL.md` |
-| implementing-specs | Hands a written spec to the implementer role so the work starts in a fresh context from the spec alone, on its own branch or worktree, and comes back as commits and a diff. Use when a spec exists and is approved, or the user asks to implement a spec file. | auto | `.agents/skills/implementing-specs/SKILL.md` |
-| leading-changes | Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec keeping every development-relevant detail of the conversation, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline. | auto | `.agents/skills/leading-changes/SKILL.md` |
-| preview-notes | Keeps private/index.html, the user's accumulating visual reference, as one HTML page per topic with past editions in private/history/. Use whenever something is easier to grasp as a picture than as prose (a flow across several files or steps, branching rules, state changes, before and after a change, comparisons, dates and deadlines, worked number examples), when the user asks for a picture, diagram, table, chart, or 「그림」, 「다이어그램」, 「표로」, 「한눈에」, 「이해가 안 돼」, at the start of work on a topic (check the page and its past editions first), after changing code a section depicts, and when work moves to an unrelated topic. | auto | `.agents/skills/preview-notes/SKILL.md` |
-| reviewing-changes | Reviews a finished change against its spec through the reviewer role, which only reads, does not know how the change was made, and reports only the gaps. Use after implementation and before accepting a change, or when the user asks for a review of a diff. | auto | `.agents/skills/reviewing-changes/SKILL.md` |
-| verifying-changes | Discovers and runs the project's own checks (tests, type checks, linters, builds) and reports the evidence. Use after editing code, before saying a task is done, or when the user asks to test or verify. | auto | `.agents/skills/verifying-changes/SKILL.md` |
+| build | Hands a written spec to the implementer role so the work starts in a fresh context from the spec alone, on its own branch or worktree, and comes back as commits and a diff. Use when a spec exists and is approved, or the user asks to implement a spec file. | auto | `.agents/skills/build/SKILL.md` |
+| develop | Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec keeping every development-relevant detail of the conversation, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline. | auto | `.agents/skills/develop/SKILL.md` |
+| diagram | Keeps private/index.html, the user's accumulating visual reference, as one HTML page per topic with past editions in private/history/. Use whenever something is easier to grasp as a picture than as prose (a flow across several files or steps, branching rules, state changes, before and after a change, comparisons, dates and deadlines, worked number examples), when the user asks for a picture, diagram, table, chart, or 「그림」, 「다이어그램」, 「표로」, 「한눈에」, 「이해가 안 돼」, at the start of work on a topic (check the page and its past editions first), after changing code a section depicts, and when work moves to an unrelated topic. | auto | `.agents/skills/diagram/SKILL.md` |
+| skill-maker | Creates or revises skills and agent role files in this framework's format. Use when the user wants to add a skill or role, turn a repeated workflow into one, or fix one that is not picked up. | auto | `.agents/skills/skill-maker/SKILL.md` |
+| spec-check | Reviews a finished change against its spec through the reviewer role, which only reads, does not know how the change was made, and reports only the gaps. Use after implementation and before accepting a change, or when the user asks for a review of a diff. | auto | `.agents/skills/spec-check/SKILL.md` |
+| test | Discovers and runs the project's own checks (tests, type checks, linters, builds) and reports the evidence. Use after editing code, before saying a task is done, or when the user asks to test or verify. | auto | `.agents/skills/test/SKILL.md` |
 <!-- omni:skills:end -->
 
 ## 3. Agent roles
 
-A role is a self-contained instruction file under `.agents/agents/`. The `lead` is the session that talks with the user; `implementer` and `reviewer` work in a fresh, isolated context and exchange only files with it (see `.agents/skills/leading-changes/SKILL.md`).
+A role is a self-contained instruction file under `.agents/agents/`. The `lead` is the session that talks with the user; `implementer` and `reviewer` work in a fresh, isolated context and exchange only files with it (see `.agents/skills/develop/SKILL.md`).
 
 How to use a role:
 
@@ -168,7 +168,7 @@ Include what an agent cannot infer from the code; exclude what it can.
 
 ### Change pipeline
 
-<!-- Read by .agents/skills/leading-changes. Delete lines that do not apply; the skill then uses its defaults. -->
+<!-- Read by .agents/skills/develop. Delete lines that do not apply; the skill then uses its defaults. -->
 
 - Specs: `<docs/specs/>`, layout `<template path>`
 - Setup thresholds: solo up to `<2>` source files; split from `<6>` source files or `<3>` modules

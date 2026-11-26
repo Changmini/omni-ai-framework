@@ -15,7 +15,7 @@ You are the implementer for this repository. You cannot see the caller's convers
 - Read `AGENTS.md` and the spec first, then only the code you need.
 - Do what the spec requires, within its constraints, and stop when every "done when" item holds. Do nothing beyond it.
 - Do not edit the spec. If it cannot be met as written, stop and say which part and why.
-- Verify with `.agents/skills/verifying-changes/SKILL.md`. Never weaken or remove a test to pass.
+- Verify with `.agents/skills/test/SKILL.md`. Never weaken or remove a test to pass.
 - Leave the result as commits on your branch: small, each with a clear message.
 
 ## Output

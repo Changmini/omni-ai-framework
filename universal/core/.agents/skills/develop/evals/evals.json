@@ -1,0 +1,50 @@
+{
+  "skill_name": "develop",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Users should be able to export their data. Interview me until you can write the spec.",
+      "expected_output": "Reads the relevant code, asks a few targeted questions at a time, then writes a spec from the template with checkable 'done when' items and asks for approval before any implementation."
+    },
+    {
+      "id": 2,
+      "prompt": "Fix the typo in the README heading.",
+      "expected_output": "Surveys the scope, announces 'Setup (first call): solo' with the reason (one file, no unknowns, no risky areas), writes 2-5 'done when' lines, edits it directly, and starts no other role."
+    },
+    {
+      "id": 3,
+      "prompt": "The reviewer says the export ignores the date filter, but the spec never mentions a date filter.",
+      "expected_output": "Treats it as a spec gap: asks the user whether the filter is required, updates the spec if so, and only then sends the gap back to the implementer."
+    },
+    {
+      "id": 4,
+      "prompt": "Write the spec for the export feature. Our AGENTS.md says specs go in docs/design/ as YYYY-MM-DD-<topic>.md using docs/design/TEMPLATE.md.",
+      "expected_output": "Writes the spec to docs/design/<date>-export.md in the project's template, not docs/specs/, and adds a 'done when' section only if that template has no place for it."
+    },
+    {
+      "id": 5,
+      "prompt": "Round each line's refund down to whole units instead of rounding the total. It only touches the refund function.",
+      "expected_output": "Treats it as a risky area (money) despite one file: announces 'Setup (first call): spec needed', writes a spec with edge scenarios, then 'Setup (final): with review', implements in this session, and runs the reviewer role before reporting."
+    },
+    {
+      "id": 6,
+      "prompt": "(Solo change in progress) The fix for the date label now also touches the payment and invoice modules: four files changed.",
+      "expected_output": "At the re-check (step 9) raises the setup to with review, tells the user, writes a short spec from what was decided, and runs the reviewer role on the diff since the starting commit before reporting."
+    },
+    {
+      "id": 7,
+      "prompt": "The approved spec lists eight files across the payment, notification and reporting modules; payment and notification do not share files.",
+      "expected_output": "Announces 'Setup (final): split' with the reason, hands the two independent groups to separate implementers by requirement numbers, and does not edit code itself."
+    },
+    {
+      "id": 8,
+      "prompt": "(During the interview, after asking about the date filter) By the way, the export must never include deleted users; legal asked for that last year.",
+      "expected_output": "Records the remark, with its reason, as a behavior statement under 'Added requirements' in the spec and turns it into a requirement or constraint with a scenario, rather than leaving it in the conversation; the conversation check before approval counts it as placed."
+    },
+    {
+      "id": 9,
+      "prompt": "Add a discount field to the checkout API. (AGENTS.md has a 'Project → Change pipeline' section listing 'API request/response examples' as an extra spec section and 'src/billing/' as a risky area.)",
+      "expected_output": "Reports the project settings in the scope note, treats src/billing/ as a risky area (spec needed), and includes an API request/response examples section in the spec."
+    }
+  ]
+}

@@ -283,9 +283,9 @@ claude.ai `사용량` 화면의 `현재 세션`(5시간 한도)과 같은 값입
 
 ## HTML 미리보기
 
-Claude에게 "결제 흐름을 다이어그램으로 그려줘", "응답 시간을 차트로 보여줘"처럼 그림을 부탁하면, Claude가 프로젝트의 `private/index.html`에 HTML·SVG·canvas로 그리고 앱이 그것을 **터미널 옆에** 바로 보여 줍니다. 대화를 이어 가며("DB 부분을 더 자세히") 그림이 바뀌는 것을 같이 봅니다. Claude는 omni-core 플러그인의 `preview-notes` 스킬로 이 파일을 **쌓아 가는 참고서**로 씁니다: 한 판(지금 다루는 개념)에 절을 더하거나 그 절만 고치고, 완전히 다른 주제로 넘어가면 지금 판을 `private/history/`로 옮기고 새 판을 엽니다(새 판 머리의 「지난 판」 목록에서 열어 봄). 앱이 바뀔 때마다 남기는 `private/.history/`(◀ ▶)와는 따로입니다.
+Claude에게 "결제 흐름을 다이어그램으로 그려줘", "응답 시간을 차트로 보여줘"처럼 그림을 부탁하면, Claude가 프로젝트의 `private/index.html`에 HTML·SVG·canvas로 그리고 앱이 그것을 **터미널 옆에** 바로 보여 줍니다. 대화를 이어 가며("DB 부분을 더 자세히") 그림이 바뀌는 것을 같이 봅니다. Claude는 omni-core 플러그인의 `diagram` 스킬로 이 파일을 **쌓아 가는 참고서**로 씁니다: 한 판(지금 다루는 개념)에 절을 더하거나 그 절만 고치고, 완전히 다른 주제로 넘어가면 지금 판을 `private/history/`로 옮기고 새 판을 엽니다(새 판 머리의 「지난 판」 목록에서 열어 봄). 앱이 바뀔 때마다 남기는 `private/.history/`(◀ ▶)와는 따로입니다.
 
-### 그림 스킬 설치 (omni-core 플러그인의 `preview-notes`)
+### 그림 스킬 설치 (omni-core 플러그인의 `diagram`)
 
 앱은 `private/index.html`을 보여 주기만 합니다. Claude가 이 파일에 그리는 법은 **그림을 볼 프로젝트에** omni-core 플러그인을 켜야 압니다. 컴퓨터마다 1~2단계는 한 번, 3단계는 프로젝트마다 합니다.
 
@@ -306,9 +306,9 @@ Claude에게 "결제 흐름을 다이어그램으로 그려줘", "응답 시간�
    ```bash
    echo 'private/' >> .gitignore
    ```
-5. 확인: `claude plugin details omni-core@omni-ai-framework`의 스킬 목록에 `preview-notes`가 있으면 됩니다. Claude 세션 안에서는 `/omni-core:preview-notes`로 직접 부를 수 있습니다.
+5. 확인: `claude plugin details omni-core@omni-ai-framework`의 스킬 목록에 `diagram`가 있으면 됩니다. Claude 세션 안에서는 `/omni-core:diagram`로 직접 부를 수 있습니다.
 
-- **클라우드 세션(claude.ai/code 등)**: 원격 세션은 플러그인을 설치하지 않습니다. 스킬을 프로젝트에 복사해 커밋하면 됩니다: `~/omni-ai-framework/claude-code/scripts/vendor-plugins.py <프로젝트> omni-core` → `<프로젝트>/.claude/skills/preview-notes/`가 생깁니다(세션 안에서는 `/preview-notes`).
+- **클라우드 세션(claude.ai/code 등)**: 원격 세션은 플러그인을 설치하지 않습니다. 스킬을 프로젝트에 복사해 커밋하면 됩니다: `~/omni-ai-framework/claude-code/scripts/vendor-plugins.py <프로젝트> omni-core` → `<프로젝트>/.claude/skills/diagram/`가 생깁니다(세션 안에서는 `/diagram`).
 - **업데이트**: 로컬 폴더로 등록한 마켓플레이스는 그 폴더를 바로 읽습니다. `git -C ~/omni-ai-framework pull` 후 Claude 세션을 새로 열거나 세션 안에서 `/reload-plugins`. (`claude plugin update`는 "업데이트할 것 없음"이라고 알려 줍니다.) 클라우드용 복사본은 `vendor-plugins.py`를 다시 실행해 커밋합니다.
 - 설치하지 않아도 앱의 미리보기는 동작합니다. 그때는 Claude에게 "private/index.html에 그려줘"라고 직접 말해야 하고, 판·절로 쌓는 규칙은 적용되지 않습니다.
 

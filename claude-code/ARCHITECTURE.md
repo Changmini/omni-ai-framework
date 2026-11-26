@@ -33,7 +33,7 @@
   - "A plugin marketplace is a directory or repository with a `.claude-plugin/marketplace.json` file" — [Create a marketplace](https://code.claude.com/docs/en/plugin-marketplaces)
 - 프로젝트별 → `template/`을 복사해 각 프로젝트가 채움 (`CLAUDE.md`, rules, 권한)
 
-플러그인 구성요소는 네임스페이스(`/omni-core:verifying-changes`)가 붙으므로 프로젝트 자체 스킬과 충돌하지 않습니다.
+플러그인 구성요소는 네임스페이스(`/omni-core:test`)가 붙으므로 프로젝트 자체 스킬과 충돌하지 않습니다.
 
 ## 3. 플러그인 레이아웃
 
@@ -50,21 +50,21 @@
 
 [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) 기준이며 `scripts/validate.py`가 자동 검사합니다.
 
-- `name`: 64자 이하, 소문자·숫자·하이픈, `anthropic`/`claude` 금지, 동명사형 권장 (`leading-changes`, `verifying-changes`)
+- `name`: 64자 이하, 소문자·숫자·하이픈, `anthropic`/`claude` 금지, 하는 일이 바로 보이는 짧은 영어 단어 (`develop`, `test`)
 - `description`: 1,024자 이하, 3인칭, **무엇을 하는지 + 언제 쓰는지**
-- 본문 500줄 이하, 참조 파일은 SKILL.md에서 한 단계만 (`authoring-skills/template.md`, `checklist.md`)
-- 복잡한 작업은 복사 가능한 체크리스트 + 검증 → 수정 → 반복 루프 (`leading-changes`, `verifying-changes`)
+- 본문 500줄 이하, 참조 파일은 SKILL.md에서 한 단계만 (`skill-maker/template.md`, `checklist.md`)
+- 복잡한 작업은 복사 가능한 체크리스트 + 검증 → 수정 → 반복 루프 (`develop`, `test`)
 - 부수효과가 있거나 사용자 주도여야 하는 워크플로는 `disable-model-invocation: true`
 
 ## 5. 워크플로 스킬의 근거
 
 | 스킬/에이전트 | 공식 권장 사항 |
 | --- | --- |
-| `lead` · `leading-changes` | "Let Claude interview you" — 대화를 들은 팀장이 인터뷰 후 SPEC을 직접 씀 |
-| `implementer` · `implementing-specs` | 새 세션이 SPEC만 읽고 시작 — 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서화된 완료 기준 |
-| `reviewer` · `reviewing-changes` | "Add an adversarial review step" — 구현 과정을 모르는 새 컨텍스트가 SPEC과 diff만 보고 차이만 보고 |
-| `verifying-changes` | "Give Claude a way to verify its work", "Have Claude show evidence rather than asserting success" |
-| `authoring-skills` | Skill authoring best practices 체크리스트 |
+| `lead` · `develop` | "Let Claude interview you" — 대화를 들은 팀장이 인터뷰 후 SPEC을 직접 씀 |
+| `implementer` · `build` | 새 세션이 SPEC만 읽고 시작 — 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서화된 완료 기준 |
+| `reviewer` · `spec-check` | "Add an adversarial review step" — 구현 과정을 모르는 새 컨텍스트가 SPEC과 diff만 보고 차이만 보고 |
+| `test` | "Give Claude a way to verify its work", "Have Claude show evidence rather than asserting success" |
+| `skill-maker` | Skill authoring best practices 체크리스트 |
 
 출처: [Best practices](https://code.claude.com/docs/en/best-practices)
 

@@ -2,7 +2,7 @@
 
 Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
-<!-- How to fill each section, with good and bad sentences and a full example: .agents/skills/leading-changes/spec-guide.md -->
+<!-- How to fill each section, with good and bad sentences and a full example: .agents/skills/develop/spec-guide.md -->
 
 ## Background and goal
 <One paragraph: what is wrong today, and what is true once this change is done. No implementation details.>

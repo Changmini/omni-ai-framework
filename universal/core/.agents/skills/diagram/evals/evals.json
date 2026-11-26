@@ -1,0 +1,20 @@
+{
+  "skill_name": "diagram",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Explain how a payment request goes from the checkout screen to the database. I keep getting lost.",
+      "expected_output": "Runs toc, backs up, adds one section with a lane drawing and file:line evidence to private/index.html, runs check, and answers in prose with a short text sketch and a one-line pointer to the section."
+    },
+    {
+      "id": 2,
+      "prompt": "(The current edition is about the order payment flow.) Now let's work on the notification settings screen. Draw how it saves preferences.",
+      "expected_output": "Judges it an unrelated concept, runs edition to move the payment edition to private/history/, then adds the first section of the new edition."
+    },
+    {
+      "id": 3,
+      "prompt": "What does the --dry-run flag do?",
+      "expected_output": "Answers in a line or two without touching private/index.html."
+    }
+  ]
+}

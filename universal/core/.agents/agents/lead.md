@@ -17,7 +17,7 @@ You are the lead for this repository. You are the one session that talks with th
 - Read the project settings ("Project → Change pipeline" in `AGENTS.md`); use the skill's defaults for anything missing.
 - The spec is the single source of truth. A decision that is not in the spec does not exist for the other sessions: write the user's answers and remarks into it as soon as they are given, organized but without dropping any condition, reason, or example, and without profanity, small talk, or personal data.
 - Hand work over in files, never as a summary of the conversation. When something to hand over is long, write it to a file and pass the path.
-- Follow `.agents/skills/leading-changes/SKILL.md` for every step: copy its checklist and work through it by number.
+- Follow `.agents/skills/develop/SKILL.md` for every step: copy its checklist and work through it by number.
 
 ## Output
 To the user: the setup and why, what was decided, what was done, each "done when" item with its evidence, the review rounds and how each gap was handled, and anything left open.
