@@ -17,6 +17,7 @@ Standard library only.
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,12 @@ ARMS = {
     },
 }
 TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "TodoWrite"]
+# Set when this script is started from inside a Claude Code session: they tie
+# the child claude to that session or run its subagents in the background,
+# unlike a claude started by hand (names as seen in a cloud session on
+# Claude Code 2.1.332).
+PARENT_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
+                       "CLAUDE_CODE_CHILD_NOTES_DIR", "CLAUDE_AUTO_BACKGROUND_TASKS", "CLAUDE_CODE_BG_TASKS_REPORT_RUNNING"]
 
 
 def git(repo, *args):
@@ -116,8 +123,16 @@ print(json.dumps({"hidden": {k.split(".")[-1]: v for k, v in hidden.items()},
 
 
 def stream_stats(path):
-    """Cost, time, turns and subagent calls from claude's stream-json output."""
-    stats = {"subagents": {}}
+    """Cost, time, turns, tokens and subagent calls from claude's stream-json output.
+
+    A session can end more than once: when a subagent ran in the background,
+    claude prints a result, picks up the subagent's report and goes on, then
+    prints another. Each result's duration and turns cover its own stretch,
+    so they are summed; total_cost_usd and modelUsage are running totals over
+    every model (subagents included), so the last result's are kept (seen on
+    Claude Code 2.1.332).
+    """
+    stats = {"subagents": {}, "duration_s": 0, "turns": 0, "results": 0}
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             ev = json.loads(line)
@@ -129,18 +144,20 @@ def stream_stats(path):
                     kind = (c.get("input") or {}).get("subagent_type") or "?"
                     stats["subagents"][kind] = stats["subagents"].get(kind, 0) + 1
         elif ev.get("type") == "result":
-            usage = ev.get("usage") or {}
+            models = (ev.get("modelUsage") or {}).values()
+            total = lambda key: sum(m.get(key) or 0 for m in models)  # noqa: E731
             stats.update({
                 "result": ev.get("subtype"),
                 "is_error": ev.get("is_error"),
-                "cost_usd": ev.get("total_cost_usd"),
-                "duration_s": round((ev.get("duration_ms") or 0) / 1000),
-                "turns": ev.get("num_turns"),
-                "input_tokens": usage.get("input_tokens"),
-                "cache_read_tokens": usage.get("cache_read_input_tokens"),
-                "cache_write_tokens": usage.get("cache_creation_input_tokens"),
-                "output_tokens": usage.get("output_tokens"),
+                "cost_usd": round(ev.get("total_cost_usd") or 0, 4),
+                "input_tokens": total("inputTokens"),
+                "cache_read_tokens": total("cacheReadInputTokens"),
+                "cache_write_tokens": total("cacheCreationInputTokens"),
+                "output_tokens": total("outputTokens"),
             })
+            stats["duration_s"] += round((ev.get("duration_ms") or 0) / 1000)
+            stats["turns"] += ev.get("num_turns") or 0
+            stats["results"] += 1
     return stats
 
 
@@ -156,7 +173,8 @@ def run_one(task, arm, n, args, out):
     t0 = time.time()
     with open(run_dir / "stream.jsonl", "w", encoding="utf-8") as so, open(run_dir / "stderr.txt", "w") as se:
         try:
-            subprocess.run(cmd, cwd=repo, stdin=subprocess.DEVNULL, stdout=so, stderr=se, timeout=args.timeout)
+            env = {k: v for k, v in os.environ.items() if k not in PARENT_SESSION_VARS}
+            subprocess.run(cmd, cwd=repo, env=env, stdin=subprocess.DEVNULL, stdout=so, stderr=se, timeout=args.timeout)
             timed_out = False
         except subprocess.TimeoutExpired:
             timed_out = True
@@ -178,7 +196,7 @@ def table(rows):
     for r in rows:
         subs = ", ".join(f"{k}×{v}" for k, v in r.get("subagents", {}).items()) or "—"
         lines.append(f"| {r['arm']} | {r['n']} | {r['hidden_passed']}/{r['hidden_total']} | {r.get('own_failed', '?')} "
-                     f"| {r.get('cost_usd', '?')} | {r.get('duration_s', r['wall_s'])} | {r.get('turns', '?')} | {subs} | {r['graded']} |")
+                     f"| {r.get('cost_usd', '?')} | {r['wall_s']} | {r.get('turns', '?')} | {subs} | {r['graded']} |")
     return "\n".join(lines)
 
 
