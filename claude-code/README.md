@@ -6,11 +6,10 @@ Claude Code의 플러그인·스킬·훅 체계로 여러 프로젝트에 같은
 Anthropic 공식 문서(code.claude.com/docs, platform.claude.com/docs)의 구조와 규칙을 그대로 따릅니다.
 각 설계 결정의 근거 문서는 [ARCHITECTURE.md](ARCHITECTURE.md)에 정리되어 있습니다.
 
-이 폴더는 세 가지 역할을 합니다.
+이 폴더는 두 가지 역할을 합니다. 데스크톱 앱 Omni Agent Terminal은 별도 서브 프로젝트 [`../apps/agent-terminal/`](../apps/agent-terminal/)에 있습니다.
 
 1. **플러그인 마켓플레이스** — `claude-code/` 자체가 마켓플레이스 루트입니다(`.claude-plugin/marketplace.json`). 모든 프로젝트가 공유하는 스킬·서브에이전트·훅을 플러그인으로 배포합니다. 자체 플러그인 2개와, 커밋으로 고정한 외부 플러그인 2개(**superpowers**, **playwright-cli**)를 기본 탑재합니다.
 2. **프로젝트 템플릿** — 각 프로젝트에 넣을 `CLAUDE.md`, `.claude/settings.json`, `.claude/rules/` 뼈대
-3. **데스크톱 앱** — [`apps/agent-terminal/`](apps/agent-terminal/): 커스텀 UI와 실제 터미널을 한 창에 합친 Electron 앱에서 여러 Claude Code 세션을 오가며 작업합니다
 
 ## 구조
 
@@ -193,7 +192,7 @@ done
 - 확인: `claude plugin list`(설치된 플러그인, 범위, 버전), `claude plugin details omni-core@omni-ai-framework`(스킬 목록과 토큰 비용). 세션 안에서는 `/plugin`.
 - 한 플러그인만 이 프로젝트에 켜기: 프로젝트 폴더에서 `claude plugin install omni-core@omni-ai-framework --scope project`(모든 프로젝트는 `--scope user`).
 - 업데이트: `git -C ~/omni-ai-framework pull` 후 새 세션 또는 `/reload-plugins`. 로컬 폴더 마켓플레이스는 원본 폴더를 바로 읽으므로 `claude plugin update`는 "nothing to update"라고 답합니다. 클라우드용 복사본(C)은 `vendor-plugins.py`를 다시 실행해 커밋합니다.
-- Omni Agent Terminal의 HTML 미리보기에 쓰는 `preview-notes` 스킬 설치는 [앱 README](apps/agent-terminal/README.md#그림-스킬-설치-omni-core-플러그인의-preview-notes)에 단계별로 있습니다.
+- Omni Agent Terminal의 HTML 미리보기에 쓰는 `preview-notes` 스킬 설치는 [앱 README](../apps/agent-terminal/README.md#그림-스킬-설치-omni-core-플러그인의-preview-notes)에 단계별로 있습니다.
 
 ### D. 조직 전체 강제 적용
 

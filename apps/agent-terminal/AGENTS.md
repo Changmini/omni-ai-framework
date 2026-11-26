@@ -1,4 +1,8 @@
-# AGENTS
+# AGENTS — apps/agent-terminal
+
+Omni Agent Terminal: an Electron app that runs terminals side by side and shows the state of each Claude Code session from its hooks. Features, layout of `src/` and how state is detected: [README.md](README.md).
+
+This folder is one self-contained sub-project of the omni-ai-framework repository: it can be taken and used alone. The general sections below are the same in every sub-project's `AGENTS.md`; change them in all of them together. When this folder is used alone, keep the repository's MIT `LICENSE` with it.
 
 Think and work in English. Reply in Korean.
 
@@ -9,7 +13,7 @@ Covers code, identifiers, log/error messages, comments, docs, examples, commit m
 - Write for a reader who has only the repo: what it is, its contract, how to run and maintain it, and the reason behind each value, exclusion, or exception.
 - Say what that reader needs once and briefly; link instead of repeating.
 - Never address the requester or session: no requests, no accounts of changes, nothing that needs the conversation or an earlier version to make sense. History belongs in VCS; change explanations in the reply or PR.
-- English, imperative or neutral third person, except the Korean text listed under "This repository".
+- English, imperative or neutral third person, except the Korean text listed under "Language".
 
 ## Code and commits
 
@@ -41,7 +45,7 @@ Covers code, identifiers, log/error messages, comments, docs, examples, commit m
 ## Other projects' code (absolute)
 
 - License compliance comes first.
-- Consult only projects the user has approved, via public docs and APIs. Refuse any whose license or terms conflict with this project's license (see its LICENSE file).
+- Consult only projects the user has approved, via public docs and APIs. Refuse any whose license or terms conflict with this project's license (MIT, `LICENSE` at the repository root).
 - Reading, copying, translating, or paraphrasing their code, structure, names, or text needs the user's explicit approval, even under a compatible license.
 - No clean-room work without the user's explicit approval.
 - Each direct dependency's license must be compatible with this project's license; meet its notice, attribution, and LICENSE/NOTICE terms.
@@ -78,21 +82,23 @@ Covers code, identifiers, log/error messages, comments, docs, examples, commit m
 - Never bypass access restrictions.
 - Never state conclusions on questions that need legal interpretation; flag them as such.
 
-## This repository
+## Personal data (absolute)
 
-Two areas with different rules:
+No personal data anywhere — files, examples, tests, screenshots or commit messages: no real names, account or OS user names, home paths, emails, phone numbers, account ids, company project names, issue keys or business details. Use generic placeholders (`user`, `/home/user/sample-app`, `PROJ-123`). Screenshots must be taken in a clean sample environment. In this repository, `python3 .github/scripts/check-personal-data.py` (run from the repository root) checks text files in CI but cannot read images.
 
-- `universal/` — tool- and model-neutral framework. `universal/core/` is copied verbatim into projects: never name a specific AI tool, tool API, or model there (`omni.py validate` enforces it). After adding or editing a skill or role in `universal/core/`, run `python3 universal/tools/omni.py index universal/core`; tool-specific output belongs in `universal/adapters/<tool>/`. Mark every claim about a tool's behavior as verified (with an official source link) or unverified, as in `universal/docs/STANDARDS.md`.
-- `claude-code/` — Claude Code-only implementation. Its own rules and commands are in `claude-code/AGENTS.md`.
+## Language
 
-No personal data anywhere — files, examples, tests, screenshots or commit messages: no real names, account or OS user names, home paths, emails, phone numbers, account ids, company project names, issue keys or business details. Use generic placeholders (`user`, `/home/user/sample-app`, `PROJ-123`). Screenshots must be taken in a clean sample environment; `.github/scripts/check-personal-data.py` runs in CI but cannot read images.
+Korean, for the Korean readers they serve: `README.md` and the app's UI strings (`src/renderer/index.html`, text shown by `src/renderer/*.js`). Everything else in "Repo text" (code, identifiers, comments, log/error messages, commit messages) is English.
 
-Korean, for the Korean readers they serve: README files and `docs/` pages, skill and pipeline documents already written in Korean, and the app's UI strings. Everything else in "Repo text" (code, identifiers, comments, log/error messages, commit messages) is English.
+## This project
 
-No tool-specific files outside `claude-code/` (and later `universal/adapters/`). `claude-code/` is itself the Claude Code marketplace root.
+- Claude Code only: the app depends on Claude Code's hooks, status line and CLI flags. Mark each claim about Claude Code's behavior as verified (version and how) or unverified, as README "Claude 상태는 어떻게 알아내나" does.
+- Logic that needs no DOM or Electron goes into modules the tests load (`src/renderer/view-logic.js`, `src/renderer/rule-logic.js`, `src/agent-state.js`, ...), with tests in `test/`.
+- Check user-visible changes in the running app, not only in tests, and say what CPU or memory a change adds while idle.
 
-### Checks
+### Commands
 
-- `python3 .github/scripts/check-personal-data.py`
-- `python3 universal/tools/omni.py validate universal/core && universal/tools/tests/run.sh`
-- `cd claude-code && python3 scripts/validate.py && tests/test-hooks.sh && tests/test-jira-guard.sh`
+- Install: `npm install`
+- Run: `npm start`
+- Test: `npm test`
+- Before committing, from the repository root: `python3 .github/scripts/check-personal-data.py`
