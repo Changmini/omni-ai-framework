@@ -107,7 +107,7 @@ A skill is a folder under `.agents/skills/` with a `SKILL.md` file (Agent Skills
 | --- | --- | --- | --- |
 | authoring-skills | Creates or revises skills and agent role files in this framework's format. Use when the user wants to add a skill or role, turn a repeated workflow into one, or fix one that is not picked up. | auto | `.agents/skills/authoring-skills/SKILL.md` |
 | implementing-specs | Hands a written spec to the implementer role so the work starts in a fresh context from the spec alone, on its own branch or worktree, and comes back as commits and a diff. Use when a spec exists and is approved, or the user asks to implement a spec file. | auto | `.agents/skills/implementing-specs/SKILL.md` |
-| leading-changes | Leads a change from the user's request to an accepted result as the lead role. Surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; solo with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec when the setup needs one, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, and re-checks the setup against the real diff before reporting. Use when a change touches several files or the requirements are unclear, or the user asks to run the development pipeline. | auto | `.agents/skills/leading-changes/SKILL.md` |
+| leading-changes | Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec with the conversation quoted rather than summarized, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline. | auto | `.agents/skills/leading-changes/SKILL.md` |
 | reviewing-changes | Reviews a finished change against its spec through the reviewer role, which only reads, does not know how the change was made, and reports only the gaps. Use after implementation and before accepting a change, or when the user asks for a review of a diff. | auto | `.agents/skills/reviewing-changes/SKILL.md` |
 | verifying-changes | Discovers and runs the project's own checks (tests, type checks, linters, builds) and reports the evidence. Use after editing code, before saying a task is done, or when the user asks to test or verify. | auto | `.agents/skills/verifying-changes/SKILL.md` |
 | writing-documents | Writes specs, plans, decision records, and review reports using the repository's document templates and style rules. Use when the user asks for any of these documents or a skill step produces one. | auto | `.agents/skills/writing-documents/SKILL.md` |
@@ -165,6 +165,18 @@ Include what an agent cannot infer from the code; exclude what it can.
 - Verify (run before every "done"): `<command>`
 - Test one file: `<command> <path>`
 - Lint / format: `<command>`
+
+### Change pipeline
+
+<!-- Read by .agents/skills/leading-changes. Delete lines that do not apply; the skill then uses its defaults. -->
+
+- Specs: `<docs/specs/>`, layout `<template path>`
+- Setup thresholds: solo up to `<2>` source files; split from `<6>` source files or `<3>` modules
+- Risky areas (added to the common list): `<paths or topics>`
+- Always ask in the interview: `<questions>`
+- Extra spec sections: `<e.g. Screen states, API request/response examples>`
+- Extra review focus: `<e.g. accessibility, query count>`
+- Out of scope (never modify): `<services or directories>`
 
 ### Code style
 
