@@ -32,11 +32,17 @@ Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
 **Background and goal**: one paragraph: what is wrong today, and what is true once this change is done. No implementation details.
 
-**Request and conversation**: the implementer and the reviewer read the conversation here. **Quote; do not summarize.** Do not edit or shorten the user's words; replace only personal data (names, paths, accounts) with sample values.
+**Request and conversation**: the implementer and the reviewer read the conversation here. Do not paste it: **organize it, but do not shorten anything development needs.**
 
-- Request: every user message that shaped the request, in order.
-- Questions and answers (Q1, Q2, ...): the question, the options offered, the answer verbatim, and where it went (R, S, K numbers). When a decision changes, keep the line and add "(changed → Q7)".
-- Said in passing: preferences, dislikes, example situations, worries the user raised unasked, quoted, with where each went (or "not used: reason").
+- Keep: conditions, numbers, example situations, reasons, what was chosen and what was dropped, the user's terms.
+- Leave out: profanity, emotion, tone, small talk, anything unrelated to the change, personal data (use sample values where needed).
+- Copy wording exactly only when the wording is the result: screen text, error messages, example data the user gave.
+
+Groups:
+
+- Request: what and why. If it came over several messages, all of it, in order.
+- Questions and answers (Q1, Q2, ...): the question, the options offered, the chosen answer and its reason, and where it went (R, S, K numbers). When a decision changes, keep the line and add "(changed → Q7)".
+- Said in passing: preferences, dislikes, example situations, worries the user raised unasked, with where each went (or "not used: reason").
 - Terms: the user's words next to the code's names where they differ.
 - Facts from the survey: code facts a decision relied on, with `file:line`.
 
@@ -62,13 +68,15 @@ Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 | --- | --- | --- |
 | Partial cancellation is supported | Says nothing about what happens | R1: `cancel_items(order_id, sku, qty)` lowers that item's line by qty and releases qty of reserved stock |
 | Errors are handled properly | Cannot be decided | R4: qty of 0 or less, or above the line's quantity, is rejected as invalid input; order and stock stay unchanged |
-| The user does not want a confirmation dialog | A summary loses the reason and the scope | Said in passing: "Cancel should apply at once; another confirm dialog annoys the customer" → out of scope (for the screen work) |
+| The user does not want a confirmation dialog | Blurred: the reason and the condition are lost | Said in passing: cancel applies at once with no confirmation dialog. Reason: one more prompt is a burden for the customer → out of scope (for the screen work) |
+| "Ugh, another confirm dialog is so annoying" | Copies tone and emotion | (content and reason only, as above) |
 | It works | Cannot be a "done when" item | D3: `<test command> <order tests>` passes |
 
 ## 5. Checklist
 
 - [ ] Someone who missed the conversation could implement from this file alone.
-- [ ] Every user message since the request has a place in the spec; answers and things said in passing are quoted.
+- [ ] Everything said about the change since the request has a place in the spec, with its conditions, reasons, and examples.
+- [ ] There is no profanity, emotion, small talk, or personal data.
 - [ ] Every requirement has scenarios, with normal, edge, and error ones; every error scenario says whether anything changes.
 - [ ] The project rules that apply are in the constraints; the project's extra spec sections are present.
 - [ ] "Files to change" ends with the file and module totals.
@@ -90,19 +98,19 @@ After this change, part of an item's quantity can be cancelled on an open order.
 
 ## Request and conversation
 ### Request
-- "Don't cancel the whole order, let me take out just a few items. Customers calling because they added one item by mistake is the most common case."
+- Cancel part of an item's quantity on an open order. Reason: customers who added one item by mistake are the most common case.
 
 ### Questions and answers
 - Q1: An order holds the same item on two lines. Which line shrinks? Options: the first line first (recommended) / in proportion / reject
-  Answer: "First line first. Those orders hardly happen." → K1
+  Answer: first line first; orders with an item on two lines hardly happen → K1
 - Q2: What happens to the order when its last line goes? Options: cancel the order (recommended) / reject / keep an empty order
-  Answer: "No empty orders left behind. Cancel it." → R3, K2
+  Answer: cancel the order; no empty order may remain → R3, K2
 - Q3: Paid orders too? Options: open orders only (recommended) / partial refunds as well
-  Answer: "Refunds next time. Open orders only for now." → R4, out of scope
+  Answer: open orders only; partial refunds in a later change → R4, out of scope
 
 ### Said in passing
-- "Cancel should apply at once; another confirm dialog annoys the customer" → out of scope (this change has no screen)
-- "Orders with coupons are always the trouble" → S2, constraints (money rule)
+- Cancel applies at once with no confirmation dialog; one more prompt is a burden for the customer → out of scope (this change has no screen)
+- Orders with coupons are where problems usually show up → S2, constraints (money rule)
 
 ### Terms
 - "take out a few items" → `OrderService.cancel_items`

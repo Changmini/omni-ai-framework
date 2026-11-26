@@ -8,9 +8,9 @@ Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 <One paragraph: what is wrong today, and what is true once this change is done. No implementation details.>
 
 ## Request and conversation
-<Quoted, not summarized. Request: the user's messages in order. Questions and answers: Q#, options, answer verbatim, where it went. Said in passing: quotes and where each went. Terms. Facts from the survey with file:line.>
-- Request: "..."
-- Q1: ... Answer: "..." → R1
+<Organized, not pasted; keep every condition, reason and example, drop profanity, small talk and personal data. Request: what and why. Questions and answers: Q#, options, chosen answer and reason, where it went. Said in passing: content and where it went. Terms. Facts from the survey with file:line.>
+- Request: ...
+- Q1: ... Answer: ... → R1
 
 ## Requirements
 <One observable behavior each: input, result, errors. Never renumber; mark dropped ones "(dropped: reason)".>

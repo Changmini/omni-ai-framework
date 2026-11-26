@@ -1,13 +1,13 @@
 ---
 name: leading-changes
-description: Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec with the conversation quoted rather than summarized, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline.
+description: Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec keeping every development-relevant detail of the conversation, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline.
 metadata:
   omni.arguments: "[request]"
 ---
 
 # Leading changes
 
-The lead talks with the user; the implementer and the reviewer never hear the conversation, only the files the lead gives them. The spec is the one standard every session reads, so what the conversation settles goes into it quoted, not summarized.
+The lead talks with the user; the implementer and the reviewer never hear the conversation, only the files the lead gives them. The spec is the one standard every session reads, so what the conversation settles for development goes into it organized but not shortened.
 
 There are three setups. Steps 2 and 4 pick one for each change.
 
@@ -111,7 +111,8 @@ Ask about the "unknowns" and the project's "always ask" questions that apply. St
 - Ask 1–4 questions at a time. Offer options and put a recommended one first, marked "(recommended)". A structured question tool may be used if the environment has one.
 - Do not ask what the code already answers; quote what you found as the reason.
 - Cover the normal behavior, edge cases (zero, empty, maximum, duplicates, the same instant), errors, what must not change, and what is out of scope.
-- Write each answer into the draft spec **right away**: quoted, unedited, under "Request and conversation", and its effect in the section it changes (requirements, constraints, decisions). Also quote what the user says unasked (preferences, dislikes, example situations). A long conversation gets compacted and the original words are lost.
+- Write each answer into the draft spec **right away**: the chosen answer with its reasons, conditions, and examples under "Request and conversation", and its effect in the section it changes (requirements, constraints, decisions). Also record what the user says unasked that matters for development (preferences, dislikes, example situations). A long conversation gets compacted and is lost.
+- Organize, but do not shorten. Never paste the conversation: leave out profanity, emotion, small talk, and personal data, and keep every development detail. See "Request and conversation" in spec-guide.md.
 
 ```
 Question: an order holds the same item on two lines. Which line shrinks on a partial cancel?
@@ -128,7 +129,7 @@ Question: an order holds the same item on two lines. Which line shrinks on a par
 
 Before showing the spec, check both and fix what fails:
 
-1. **Conversation check**: re-read every user message since the request. Each needs a place in the spec (a requirement, scenario, constraint, out of scope, decision, or "not used: reason"). Quote any that have none and give them a place.
+1. **Conversation check**: re-read every user message since the request. Everything said about the change needs a place in the spec (a requirement, scenario, constraint, out of scope, decision, or "not used: reason"). Add what has none and give it a place. Skip small talk and emotion.
 2. The checklist in spec-guide.md.
 
 ### 3-5. Approval
@@ -160,7 +161,7 @@ Announce it in one line: `Setup (final): with review — 2 source files, 2 modul
 
 ### Split: through the implementer
 
-Follow `.agents/skills/implementing-specs/SKILL.md`. Give the implementer the spec path (and, on a fix round, the file listing the gaps) and nothing else: the conversation is already quoted in the spec. With separate groups, give each its own implementer, divided by requirement numbers.
+Follow `.agents/skills/implementing-specs/SKILL.md`. Give the implementer the spec path (and, on a fix round, the file listing the gaps) and nothing else: the conversation is already organized in the spec. With separate groups, give each its own implementer, divided by requirement numbers.
 
 ## 6. Verify
 
@@ -241,7 +242,8 @@ Proposed setting: add risky area "stock count calculation (inventory)" — found
 ## Common mistakes
 
 - Picking a setup without reading the project settings and surveying the scope, then meeting a risky area late.
-- Leaving a decision out of the spec, or summarizing it, so the implementer and reviewer cannot tell why the user chose it.
+- Leaving a decision out of the spec, or blurring it, so the implementer and reviewer miss its conditions and reasons.
+- Pasting the conversation, so profanity, small talk, or personal data land in the spec.
 - Getting approval without the conversation check, so something said in passing is lost.
 - Always splitting, spending two to three times the cost on small changes.
 - Passing a reviewer's finding to the implementer without checking its evidence.

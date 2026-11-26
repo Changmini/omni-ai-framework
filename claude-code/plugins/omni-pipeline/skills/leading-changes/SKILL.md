@@ -1,12 +1,12 @@
 ---
 name: leading-changes
-description: Leads a change as the lead (팀장) from the user's request to an accepted result. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any SPEC; with an independent review or split work once the SPEC fixes the scope), interviews the user and writes the SPEC with the conversation quoted rather than summarized, implements or hands the work to the implementer agent, has the reviewer agent check it, decides on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or its requirements are unclear, when defining a task's goal and done criteria (목표·시작·종료) before work, or when the user asks to run the development pipeline.
+description: Leads a change as the lead (팀장) from the user's request to an accepted result. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any SPEC; with an independent review or split work once the SPEC fixes the scope), interviews the user and writes the SPEC keeping every development-relevant detail of the conversation, implements or hands the work to the implementer agent, has the reviewer agent check it, decides on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or its requirements are unclear, when defining a task's goal and done criteria (목표·시작·종료) before work, or when the user asks to run the development pipeline.
 argument-hint: "[요청]"
 ---
 
 # 팀장으로 변경 이끌기
 
-대화는 팀장(이 세션)에서만 한다. 구현자와 리뷰어는 대화를 듣지 못하고 팀장이 건넨 파일만 본다. 그래서 SPEC 이 모두가 읽는 하나뿐인 기준이고, 대화에서 나온 것은 요약하지 않고 SPEC 에 옮긴다.
+대화는 팀장(이 세션)에서만 한다. 구현자와 리뷰어는 대화를 듣지 못하고 팀장이 건넨 파일만 본다. 그래서 SPEC 이 모두가 읽는 하나뿐인 기준이고, 대화에서 개발에 필요한 것은 줄이지 않고 정리해 SPEC 에 옮긴다.
 
 구성은 세 가지다. 변경마다 2·4단계에서 고른다.
 
@@ -110,7 +110,8 @@ argument-hint: "[요청]"
 - 질문 도구(AskUserQuestion)로 한 번에 1~4개. 선택지를 주고, 추천은 첫 선택지에 「(추천)」.
 - 코드가 답하는 것은 묻지 않고, 찾은 사실을 질문의 근거로 적는다.
 - 다룰 것: 정상 동작, 경계(0, 비어 있음, 최대, 중복, 같은 시각), 오류일 때, 바꾸면 안 되는 것, 범위 밖.
-- 답을 받을 때마다 **그때 바로** SPEC 초안에 적는다. 「요청과 대화」에는 답을 고치지 않고 인용하고, 해당 절(요구·제약·결정 등)에는 그 결과를 적는다. 묻지 않았는데 사용자가 한 말(선호, 싫은 것, 예로 든 상황)도 인용해 둔다. 대화가 길어지면 앞부분이 압축되어 원래 말이 사라진다.
+- 답을 받을 때마다 **그때 바로** SPEC 초안에 정리해 적는다. 「요청과 대화」에는 고른 답과 그 이유·조건·예를 빠짐없이, 해당 절(요구·제약·결정 등)에는 그 결과를 적는다. 묻지 않았는데 사용자가 한 말 중 개발에 필요한 것(선호, 싫은 것, 예로 든 상황)도 적는다. 대화가 길어지면 앞부분이 압축되어 사라진다.
+- 정리는 하되 줄이지 않는다. 대화를 그대로 붙이지 않는다: 욕설·감정 표현·잡담·개인 정보는 빼고, 개발에 필요한 내용은 뭉뚱그리지 않는다. 자세한 기준은 spec-guide.md 「요청과 대화」.
 
 ```
 질문: 같은 상품 줄이 둘 있는 주문에서 일부 취소하면 어느 줄을 줄일까요?
@@ -127,7 +128,7 @@ argument-hint: "[요청]"
 
 보이기 전에 확인하고, 걸리면 고친다.
 
-1. **대화 대조**: 요청 이후 사용자 메시지를 처음부터 다시 읽는다. 메시지마다 SPEC 에 자리(요구, 시나리오, 제약, 범위 밖, 결정, 또는 「반영 안 함: 이유」)가 있어야 한다. 없으면 인용으로 넣고 자리를 정한다.
+1. **대화 대조**: 요청 이후 사용자 메시지를 처음부터 다시 읽는다. 개발에 관한 말마다 SPEC 에 자리(요구, 시나리오, 제약, 범위 밖, 결정, 또는 「반영 안 함: 이유」)가 있어야 한다. 없으면 정리해 넣고 자리를 정한다. 잡담이나 감정 표현은 넘어간다.
 2. spec-guide.md 의 「점검 목록」.
 
 ### 3-5. 승인
@@ -159,7 +160,7 @@ SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사�
 
 ### 분업: 구현자에게
 
-`implementing-specs` 스킬을 따른다. 구현자에게는 SPEC 경로(수정 차례면 고칠 차이 파일도)만 준다. 대화는 SPEC 에 인용으로 들어 있으므로 요약이나 메모를 덧붙이지 않는다. 작업 묶음을 나눴으면 묶음마다 구현자 하나, 요구 번호로 맡긴다.
+`implementing-specs` 스킬을 따른다. 구현자에게는 SPEC 경로(수정 차례면 고칠 차이 파일도)만 준다. 대화는 SPEC 에 정리되어 들어 있으므로 따로 요약이나 메모를 덧붙이지 않는다. 작업 묶음을 나눴으면 묶음마다 구현자 하나, 요구 번호로 맡긴다.
 
 ## 6. 검증
 
@@ -240,7 +241,8 @@ SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사�
 ## 흔한 실수
 
 - 프로젝트 설정과 범위 조사 없이 구성을 골라, 위험한 곳을 늦게 만난다.
-- 대화로 정한 것을 SPEC 에 적지 않거나 요약해 적어, 구현자·리뷰어가 사용자가 왜 그렇게 정했는지 모른다.
+- 대화로 정한 것을 SPEC 에 적지 않거나 뭉뚱그려 적어, 구현자·리뷰어가 조건과 이유를 모른다.
+- 대화를 그대로 붙여, 욕설·잡담·개인 정보가 SPEC 에 들어간다.
 - 대화 대조 없이 승인받아, 지나가며 한 말이 빠진다.
 - 매번 분업으로 가서 작은 변경에 비용을 두세 배 쓴다.
 - 리뷰 차이를 근거 확인 없이 구현자에게 넘긴다.
