@@ -55,6 +55,11 @@
       "id": 11,
       "prompt": "(First call) The lead expects solo, but the request brief mentions the user said discounts are calculated in this function.",
       "expected_output": "Passes only the brief, not the lead's expected setup; the router treats the discount as a risky area and returns spec needed, and the lead does not overturn it without asking the user."
+    },
+    {
+      "id": 12,
+      "prompt": "Write the spec for the export feature. (The project has no spec rules in AGENTS.md, but docs/rfcs/ holds 0003-cache.md and 0004-auth.md with Summary, Motivation, Design, Drawbacks sections, and CONTRIBUTING.md says documents are written in English.)",
+      "expected_output": "Writes docs/rfcs/0005-export.md in English with the RFC sections, adds the required spec sections the layout lacks (scenarios, done when, decisions, request and clarifications) at the end, and proposes recording the docs/rfcs/ layout in the project settings."
     }
   ]
 }

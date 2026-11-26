@@ -2,11 +2,33 @@
 
 The implementer and the reviewer never hear the conversation; they read only this file. One test applies: **could someone who missed the conversation implement and judge the change from this file alone?** Do not shorten what the conversation settled.
 
-## 1. Location and name
+## 1. Rules to follow and where the spec goes
 
-1. If the project settings ("Project → Change pipeline" in `AGENTS.md`) name where specs go, a file-name pattern, or a layout, use them.
-2. Otherwise write `docs/specs/<name>.md`, `<name>` being a short kebab-case name (for example `partial-cancel`), starting from `.agents/docs/templates/spec.md`. If that file belongs to another change, pick another name.
-3. If the project's layout has no place for a required section, add it at the end. Put the project's "extra spec sections" (for example screen states, API request and response examples) before "Constraints".
+The rules of the project being worked on come first. Look in this order and follow the first you find. Do not search the whole repository; look only in these places.
+
+1. **Project settings**: "Project → Change pipeline" in `AGENTS.md`. Use the spec location, file name, and layout it names.
+2. **Rule files and the documents they point to**: rules that speak directly about specs, design documents, or writing documents (location, name, layout, style, language). The file names depend on the agents and tools the project uses. For example:
+   - Shared by several agents: `AGENTS.md`, `AGENTS.override.md`, `AGENTS.md` in a subfolder
+   - Per tool: a file named after the tool at the root (`<TOOL>.md`), `.github/<tool>-instructions.md`, `.github/instructions/*.instructions.md`, a tool's rules folder (`.<tool>/rules/`) or rules file (`.<tool>rules`), `CONVENTIONS.md`
+   - For people: `CONTRIBUTING.md` (at the root, in `docs/`, or in `.github/`), `docs/README.md`, `docs/STYLE.md`, `STYLEGUIDE.md`, `docs/CONVENTIONS.md`
+
+   The names are examples. A file not listed that tells agents or people how to work in this project counts the same: read it.
+3. **Existing documents**: if specs or design documents already sit in a folder, follow their file names and section layout. Common places:
+   - `docs/specs/`, `docs/spec/`, `specs/`, `spec/`
+   - `docs/design/`, `docs/designs/`, `design/`, `docs/architecture/`
+   - `docs/rfcs/`, `rfcs/`, `docs/proposals/`
+   - `docs/adr/`, `docs/decisions/`: decision records. Do not use them as a spec layout; borrow only how they write decisions and reasons.
+   - Template files: `TEMPLATE.md`, `_template.md`, `0000-template.md`, `docs/templates/`
+
+   If the documents in a folder differ in layout, follow the most recent. If it is still unclear, ask the user.
+4. **Otherwise** write `docs/specs/<name>.md` from `.agents/docs/templates/spec.md`, with the sections in "2. Sections". `<name>` is a short kebab-case name (for example `partial-cancel`); if that file belongs to another change, pick another name.
+
+**What to follow and what to keep**
+
+- Follow the project's: location, file name, section order and headings, style, language.
+- Keep in any layout: request and clarifications, requirements, scenarios, constraints, out of scope, files to change, done when, decisions. Add any the project's layout has no place for at the end.
+- Put the project's "extra spec sections" (for example screen states, API request and response examples) before "Constraints".
+- Propose the rules found in 2 and 3 for the project settings ("Propose settings", step 10), so the next change reads them in 1.
 
 ## 2. Sections
 
@@ -79,6 +101,7 @@ Groups:
 - [ ] Everything said about the change since the request has a place in the spec, with its conditions, reasons, and examples.
 - [ ] Nothing the user said is copied word for word (screen text, error messages, example data aside). No profanity, small talk, or personal data.
 - [ ] Every requirement has scenarios, with normal, edge, and error ones; every error scenario says whether anything changes.
+- [ ] The project's document rules (location, name, layout, style, language) are followed, and no required section is missing.
 - [ ] The project rules that apply are in the constraints; the project's extra spec sections are present.
 - [ ] "Files to change" ends with the file and module totals.
 - [ ] Every requirement and scenario is covered by a "done when" item, each decidable by a command or an observation.
