@@ -622,20 +622,33 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 /* No tab is narrower than a two-syllable Hangul label ("git" as wide as
    "파일"): the label's 2em plus the tab's side padding. */
 .inspector-head .tab { min-width: calc(2em + 20px); }
-/* Narrow panels tighten the tabs in two steps: 8px still fits every label
-   at the default 320px width; 6px only when narrower than that. */
-@container (max-width: 340px) {
+/* Narrow panels tighten the tabs in steps so all seven labels fit down to
+   the default 320px width. Narrower still, the row scrolls sideways (below)
+   instead of hiding a tab. */
+@container (max-width: 420px) {
   .inspector-head { gap: 0; }
   .inspector-head .tab { padding: 2px 8px 0; min-width: calc(2em + 16px); }
 }
-@container (max-width: 280px) {
-  .inspector-head { padding: 0 6px; }
+@container (max-width: 370px) {
   .inspector-head .tab { padding: 2px 6px 0; min-width: calc(2em + 12px); }
 }
+@container (max-width: 340px) {
+  .inspector-head { padding: 0 8px; }
+  .inspector-head .tab { padding: 2px 5px 0; min-width: calc(2em + 10px); }
+}
+@container (max-width: 280px) {
+  .inspector-head { padding: 0 4px; }
+  .inspector-head .tab { padding: 2px 4px 0; min-width: calc(2em + 8px); }
+}
+/* When the tabs still do not fit (the narrowest panel), scroll the row with
+   the wheel; the refresh button stays at the right edge. */
+.inspector-head { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.inspector-head::-webkit-scrollbar { display: none; }
+.inspector-head .mini-btn { position: sticky; right: 0; background: var(--bg); }
 .inspector-head .mini-btn { flex: none; }
-/* Short labels keep their width; the long ones give way, "Claude 구성" first. */
+/* Labels keep their width (the row scrolls instead); only the preview tab,
+   shown in a narrow window, gives way. */
 .inspector-head .tab { flex-shrink: 0; }
-.inspector-head .tab[data-tab="config"] { flex-shrink: 4; min-width: 3em; }
 .inspector-head .tab[data-tab="preview"] { flex-shrink: 1; min-width: 3.4em; }
 /* five tabs in a narrow panel (the preview tab): tighter, never wrapped */
 .inspector-head:has(.tab[data-tab="preview"]:not([hidden])) .tab { padding: 2px 6px 0; }
@@ -1035,3 +1048,44 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
 /* the terminal a rule just ran for (⚡ a few seconds), or marked by one until shown */
 .agent.rule-zap .agent-name::after, .agent.rule-mark .agent-name::after { content: " ⚡"; color: var(--busy); }
 .agent.rule-mark .agent-row { box-shadow: inset 3px 0 0 var(--busy); }
+
+/* 스킬 tab: one card per skill (develop first and set apart), then the agents.
+   Each way to call a skill is a row: what it is, the text, a copy button. */
+.sk-status { margin-bottom: 4px; line-height: 1.5; }
+.sk-h:first-of-type { margin-top: 10px; }
+.sk-card {
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 8px;
+  display: grid; gap: 8px;
+}
+.sk-card.main { border-color: #3d4350; background: var(--panel); }
+.sk-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.sk-name { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.sk-title { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-when { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text); }
+.sk-calls { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--hair); }
+.sk-call { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.sk-call-label { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.sk-code {
+  font-family: var(--mono); font-size: 11.5px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; line-height: 1.45;
+  overflow-wrap: anywhere; /* the whole command stays readable in a narrow panel */
+}
+.sk-card:not(.main) .sk-code { background: var(--panel); }
+.sk-copy { height: 22px; padding: 0 7px; font-size: 11px; }
+.sk-steps { border-top: 1px solid var(--hair); padding-top: 6px; font-size: 11.5px; }
+.sk-steps > summary { cursor: pointer; color: var(--muted); list-style: none; }
+.sk-steps > summary::-webkit-details-marker { display: none; }
+.sk-steps > summary::before { content: "▸ "; }
+.sk-steps[open] > summary::before { content: "▾ "; }
+.sk-steps > summary:hover { color: var(--text); }
+.sk-steps ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 3px; line-height: 1.45; }
+.sk-open { justify-self: start; height: 26px; font-size: 11.5px; }
+.sk-hint { margin: -2px 0 6px; }
+.sk-agents { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.sk-agent {
+  display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 8px; align-items: baseline;
+  padding: 5px 6px; border-radius: 4px; cursor: pointer; font-size: 11.5px;
+}
+.sk-agent:hover, .sk-agent:focus-visible { background: var(--panel); outline: none; }
+.sk-agent .sk-name { font-size: 11.5px; font-weight: 600; }
+.sk-agent-desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -24,6 +24,7 @@ const journalLogic = require('./journal-logic');
 const allowRules = require('./allow-rules');
 const { wslToWindows } = require('./wsl');
 const gitView = require('./git-view');
+const appSkills = require('./app-skills');
 
 let win = null;
 let manager = null;
@@ -227,6 +228,15 @@ function registerIpc() {
     shell.showItemInFolder(t.host);
     return true;
   });
+  // The 스킬 tab: the omni-pipeline plugin's skills and agents, and its Markdown files.
+  ipcMain.handle('skills:list', () => {
+    const data = appSkills.readAppSkills();
+    return data && { ...data, installed: appSkills.installedElsewhere(claudeDir()) };
+  });
+  ipcMain.handle('skills:read', (_e, rel) => {
+    const text = appSkills.readAppSkillFile(str(rel, 400));
+    return text == null ? { error: '이 파일은 열 수 없습니다' } : { path: `omni-pipeline/${rel}`, text, size: Buffer.byteLength(text) };
+  });
   ipcMain.handle('files:list', (_e, id, rel, fresh) => manager.fileTree(str(id, 20), str(rel, 4000) ?? '', fresh === true));
   ipcMain.handle('files:all', (_e, id) => manager.fileList(str(id, 20)));
   ipcMain.handle('files:grep', (_e, id, query) => manager.searchText(str(id, 20), str(query, 400)));
@@ -400,6 +410,8 @@ if (primaryInstance) app.whenReady().then(async () => {
     shell: shellLaunch(),
     extraEnv: {
       OMNI_CLAUDE_SETTINGS: settingsFile,
+      // The repository's omni-pipeline plugin, added by the claude wrapper (shell-init).
+      OMNI_PLUGIN_DIR: appSkills.PLUGIN_DIR,
       OMNI_HOOK_TOKEN: hooks.token,
       OMNI_CWD_URL: hooks.cwdUrl,
       // For `wsl` typed in an app PowerShell terminal (see shell-init/omni.ps1).

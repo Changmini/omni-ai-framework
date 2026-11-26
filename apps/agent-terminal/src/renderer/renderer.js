@@ -2169,6 +2169,113 @@ cfgEls.refresh.addEventListener('click', () => {
 // is synchronous file I/O in the main process, slow over \\wsl.localhost).
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
 
+// ---------- skills the app brings (스킬 tab) ----------
+// The repository's omni-pipeline plugin (claude-code/plugins/omni-pipeline):
+// the claude of every app terminal gets it (src/shell-init), so its skills
+// work without installing anything. This page says what each does and how to
+// call it; the skill files open in the viewer.
+const skillsEls = { status: $('#sk-status'), body: $('#sk-body') };
+// What each skill is for, in a line a newcomer reads first. A skill not
+// listed here shows the first paragraph of its SKILL.md instead.
+const SKILL_GUIDE = {
+  develop: {
+    when: '요청 하나를 받아 끝까지 개발합니다. 구성(혼자·리뷰 포함·분업)은 router가 정하고, 필요하면 질문해 SPEC을 쓴 뒤 구현·검증·리뷰를 거쳐 보고합니다.',
+    say: '개발 파이프라인으로 진행해줘',
+  },
+  build: { when: '승인된 SPEC을 구현자에게 맡깁니다. 보통 develop이 분업일 때 부릅니다.' },
+  'spec-check': { when: '끝난 변경을 SPEC 기준으로 리뷰어에게 확인받습니다. 보통 develop이 리뷰 단계에서 부릅니다.' },
+};
+const AGENT_GUIDE = {
+  lead: '팀장 · 사용자와 대화하며 develop을 진행',
+  router: '구성 판단 · 혼자 / 리뷰 포함 / 분업을 정함',
+  implementer: '구현자 · SPEC만 보고 구현',
+  reviewer: '리뷰어 · SPEC과 diff만 보고 차이를 알림',
+};
+let skillsData = null;
+
+async function loadSkills() {
+  try { skillsData = await api.appSkills(); } catch { skillsData = null; }
+  renderSkills();
+}
+
+// One way to call it: a label, the text in the coding font, a copy button.
+function skillCallRow(label, text, note = '') {
+  const row = h('div', 'sk-call');
+  const code = h('code', 'sk-code', text);
+  code.title = note ? `${text}\n${note}` : text;
+  const copy = h('button', 'vbtn sk-copy', '복사');
+  copy.type = 'button';
+  copy.title = '복사';
+  copy.addEventListener('click', async () => flashButton(copy, await Promise.resolve(api.clipboardWrite(text)).then(() => true, () => false)));
+  row.append(h('span', 'sk-call-label', label), code, copy);
+  return row;
+}
+
+function openSkillFiles(files, title) {
+  const views = files.map((rel) => ({
+    key: rel,
+    label: rel.split('/').pop(),
+    load: async () => { const r = await api.appSkillFile(rel); return typeof r.text === 'string' ? { ...r, markdown: r.text } : r; },
+  }));
+  openViewer({ path: `${skillsData.plugin}/${title}`, views, actions: { copy: { label: '경로 복사', text: `${skillsData.plugin}/${files[0]}` } } });
+}
+
+function renderSkills() {
+  const d = skillsData;
+  if (!d) {
+    skillsEls.status.textContent = '저장소의 claude-code/plugins/omni-pipeline 폴더를 찾지 못했습니다. 앱 폴더만 따로 쓰면 이 스킬은 붙지 않습니다.';
+    skillsEls.body.replaceChildren();
+    return;
+  }
+  skillsEls.status.textContent = d.installed
+    ? `설치한 ${d.plugin} 플러그인을 씁니다. 저장소의 ${d.plugin}(${d.version})은 붙이지 않습니다.`
+    : `${d.plugin} ${d.version} · 이 앱의 터미널에서 실행한 claude에 자동으로 붙습니다. 이미 열린 Claude 세션은 다시 시작하면 적용됩니다.`;
+  const cards = d.skills.map((s) => {
+    const guide = SKILL_GUIDE[s.name] || {};
+    const card = h('section', 'sk-card');
+    if (s.name === 'develop') card.classList.add('main');
+    const head = h('div', 'sk-head');
+    head.append(h('span', 'sk-name', s.name), h('span', 'sk-title', s.title));
+    card.append(head, h('p', 'sk-when', guide.when || s.summary));
+    const calls = h('div', 'sk-calls');
+    calls.append(skillCallRow('Claude에게', s.call, 'Claude 세션 안에서 입력. [ ] 자리에 내용을 넣습니다'));
+    if (guide.say) calls.append(skillCallRow('말로', guide.say, 'Claude 세션 안에서 이렇게 말해도 됩니다'));
+    if (s.name === 'develop') {
+      const lead = d.agents.find((a) => a.name === 'lead' && a.call);
+      if (lead) calls.append(skillCallRow('팀장으로', lead.call, '터미널에서 실행: 세션 전체가 팀장으로 시작합니다'));
+    }
+    card.append(calls);
+    if (s.steps.length) {
+      const det = h('details', 'sk-steps');
+      det.append(h('summary', null, `진행 순서 ${s.steps.length}단계`));
+      const ol = h('ol');
+      for (const step of s.steps) ol.append(h('li', null, step.replace(/^\d+\.\s*/, '')));
+      det.append(ol);
+      card.append(det);
+    }
+    const more = h('button', 'btn sk-open', s.files.length > 1 ? `내용 보기 (문서 ${s.files.length}개)` : '내용 보기');
+    more.type = 'button';
+    more.addEventListener('click', () => openSkillFiles(s.files, `skills/${s.name}`));
+    card.append(more);
+    return card;
+  });
+  const agentList = h('ul', 'sk-agents');
+  for (const a of d.agents) {
+    const li = h('li', 'sk-agent');
+    li.tabIndex = 0;
+    li.title = `${a.description}\n\n클릭: 파일 보기`;
+    li.append(h('span', 'sk-name', a.name), h('span', 'sk-agent-desc', AGENT_GUIDE[a.name] || a.description));
+    const open = () => openSkillFiles([a.file], a.file);
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+    agentList.append(li);
+  }
+  skillsEls.body.replaceChildren(
+    h('h2', 'inspector-h sk-h', '스킬'), ...cards,
+    h('h2', 'inspector-h sk-h', '에이전트'), h('p', 'hint sk-hint', 'develop이 필요할 때 부르는 역할입니다. 직접 부를 일은 거의 없습니다.'), agentList,
+  );
+}
+
 // ---------- automation rules (자동화 tab) ----------
 // "When <hook event> (and <condition>) in <these terminals>, do <action>",
 // written by the user. The main process runs them on hook events
@@ -2546,7 +2653,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = ['config', 'git', 'files', 'review', 'rules'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
+let inspectorTab = ['config', 'git', 'files', 'review', 'rules', 'skills'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -2568,14 +2675,18 @@ function setInspectorTab(tab) {
   hideCard();
   inspectorTab = tab;
   if (tab !== 'preview') writePref('inspectorTab', tab); // the preview tab exists only in a narrow window
-  for (const t of insp.tabs) t.setAttribute('aria-selected', String(t.dataset.tab === tab));
+  for (const t of insp.tabs) {
+    t.setAttribute('aria-selected', String(t.dataset.tab === tab));
+    if (t.dataset.tab === tab) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab === 'activity' || tab === 'rules';
+  cfgEls.refresh.hidden = tab === 'activity' || tab === 'rules' || tab === 'skills';
   if (tab === 'config' && cfgStale) loadConfig(0);
   if (tab === 'git' && gitStale) loadGit(0);
   if (tab === 'files' && treeStale) loadTree(0);
   if (tab === 'review') loadReview();
   if (tab === 'rules') renderRules();
+  if (tab === 'skills') loadSkills();
   syncPreview();
 }
 
@@ -2584,6 +2695,13 @@ function setInspectorWidth(w, save = true) {
 }
 
 for (const t of insp.tabs) t.addEventListener('click', () => setInspectorTab(t.dataset.tab));
+// A tab row wider than the panel scrolls sideways with the mouse wheel.
+insp.tabs[0].parentElement.addEventListener('wheel', (e) => {
+  const row = e.currentTarget;
+  if (row.scrollWidth <= row.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+  row.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
 insp.toggle.addEventListener('click', () => {
   setInspectorOpen(app.classList.contains('inspector-closed'));
   agents.get(activeId)?.term.focus();

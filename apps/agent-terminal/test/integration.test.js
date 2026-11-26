@@ -82,7 +82,8 @@ test('shell launch: PowerShell gets the script encoded, bash an rcfile, zsh a ZD
   assert.strictEqual(ps.file, 'powershell.exe');
   const script = Buffer.from(ps.args.at(-1), 'base64').toString('utf16le');
   assert.match(script, /function global:claude/);
-  assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS/);
+  assert.match(script, /--settings \$env:OMNI_CLAUDE_SETTINGS @extra @args/);
+  assert.match(script, /'--plugin-dir', \$env:OMNI_PLUGIN_DIR/);
   assert.match(script, /OMNI_CWD_URL/);
   assert.match(script, /function global:wsl/);
   assert.match(script, /IFS=; exec bash --rcfile \$OMNI_INIT_BASH -i/);
@@ -104,6 +105,26 @@ test('bash claude wrapper adds the hook settings and keeps the arguments', (t) =
   }).stdout;
   try {
     assert.strictEqual(out, '--settings|/x.json|-n|a b|');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('bash claude wrapper adds the omni-pipeline plugin unless it is installed or missing', (t) => {
+  const { spawnSync } = require('node:child_process');
+  if (spawnSync('bash', ['--version']).status !== 0) return t.skip('no bash');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-wrap-'));
+  fs.mkdirSync(path.join(tmp, 'bin'));
+  fs.mkdirSync(path.join(tmp, 'plugin'));
+  fs.writeFileSync(path.join(tmp, 'bin', 'claude'), '#!/bin/sh\nprintf "%s|" "$@"\n', { mode: 0o755 });
+  const run = (extra = {}) => spawnSync('bash', ['-c', `source "${path.join(__dirname, '../src/shell-init/omni.bash')}" >/dev/null 2>&1; claude -n 'a b'`], {
+    encoding: 'utf8', env: { HOME: tmp, PATH: `${path.join(tmp, 'bin')}:/usr/bin:/bin`, OMNI_CLAUDE_SETTINGS: '/x.json', ...extra },
+  }).stdout;
+  try {
+    const plug = path.join(tmp, 'plugin');
+    assert.strictEqual(run({ OMNI_PLUGIN_DIR: plug }), `--settings|/x.json|--plugin-dir|${plug}|-n|a b|`);
+    assert.strictEqual(run({ OMNI_PLUGIN_DIR: path.join(tmp, 'missing') }), '--settings|/x.json|-n|a b|');
+    fs.mkdirSync(path.join(tmp, '.claude/plugins'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude/plugins/installed_plugins.json'), JSON.stringify({ plugins: { 'omni-pipeline@sample-market': [] } }));
+    assert.strictEqual(run({ OMNI_PLUGIN_DIR: plug }), '--settings|/x.json|-n|a b|');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
