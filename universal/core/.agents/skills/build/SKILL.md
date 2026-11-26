@@ -11,7 +11,8 @@ A fresh context that starts from the spec beats one weighed down by the planning
 
 1. Confirm the inputs:
    - the spec path, with an approved spec
-   - a branch or worktree per implementer; with several implementers, parts of the spec that do not touch the same files
+   - a branch or worktree per implementer, made from the current commit; with several implementers, parts of the spec that do not touch the same files
+   - put a worktree **inside the project**: `mkdir -p .worktrees && printf '*\n' > .worktrees/.gitignore`, then `git worktree add .worktrees/<branch> -b <branch>`. The `.gitignore` inside that folder keeps it out of version control and searches without touching the project's own `.gitignore` or files under `.git/`. Tools that limit commands to the project folder block a worktree beside the repository.
    - for a fix round, a file listing the gaps to fix
 2. Run the `implementer` role from `AGENTS.md`.
    - **If you can start a sub-agent:** give it `.agents/agents/implementer.md` as instructions and only the inputs above. Do not pass the conversation or your own notes on the change.
