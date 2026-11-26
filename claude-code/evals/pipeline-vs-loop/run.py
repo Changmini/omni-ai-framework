@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs one task of the pipeline-vs-loop eval under each setup (arm) and grades it.
+"""Runs eval tasks of the pipeline-vs-loop eval under each setup (arm) and grades them.
 
 Arms (same model, same plugin, same task prompt):
   A  the omni-pipeline lead (`--agent omni-pipeline:lead`): SPEC, then the
@@ -191,18 +191,18 @@ def run_one(task, arm, n, args, out):
 
 
 def table(rows):
-    head = "| 구성 | 회 | 숨긴 시험 | 기존 시험 실패 | 비용($) | 시간(s) | 턴 | 서브에이전트 | 채점한 곳 |"
-    lines = [head, "|" + "---|" * 9]
+    head = "| 작업 | 구성 | 회 | 숨긴 시험 | 기존 시험 실패 | 비용($) | 시간(s) | 턴 | 서브에이전트 | 채점한 곳 |"
+    lines = [head, "|" + "---|" * 10]
     for r in rows:
         subs = ", ".join(f"{k}×{v}" for k, v in r.get("subagents", {}).items()) or "—"
-        lines.append(f"| {r['arm']} | {r['n']} | {r['hidden_passed']}/{r['hidden_total']} | {r.get('own_failed', '?')} "
+        lines.append(f"| {r['task']} | {r['arm']} | {r['n']} | {r['hidden_passed']}/{r['hidden_total']} | {r.get('own_failed', '?')} "
                      f"| {r.get('cost_usd', '?')} | {r['wall_s']} | {r.get('turns', '?')} | {subs} | {r['graded']} |")
     return "\n".join(lines)
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--task", default="soft-delete")
+    p.add_argument("--tasks", default="soft-delete", help="comma-separated task names, or all")
     p.add_argument("--arms", default="A,B,C")
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--model", default="sonnet")
@@ -212,11 +212,14 @@ def main():
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     rows = []
-    for n in range(1, args.repeat + 1):
-        for arm in args.arms.split(","):
-            print(f"running {args.task} arm {arm} #{n}", file=sys.stderr, flush=True)
-            rows.append(run_one(args.task, arm, n, args, args.out))
-            (args.out / "summary.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    tasks = (sorted(d.name for d in (HERE / "tasks").iterdir() if d.is_dir()) if args.tasks == "all"
+             else args.tasks.split(","))
+    for task in tasks:
+        for n in range(1, args.repeat + 1):
+            for arm in args.arms.split(","):
+                print(f"running {task} arm {arm} #{n}", file=sys.stderr, flush=True)
+                rows.append(run_one(task, arm, n, args, args.out))
+                (args.out / "summary.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     print(table(rows))
 
 
