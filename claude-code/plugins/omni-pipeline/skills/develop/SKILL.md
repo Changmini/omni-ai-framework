@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Leads a change as the lead (팀장) from the user's request to an accepted result. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any SPEC; with an independent review or split work once the SPEC fixes the scope), interviews the user and writes the SPEC keeping every development-relevant detail of the conversation, implements or hands the work to the implementer agent, has the reviewer agent check it, decides on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or its requirements are unclear, when defining a task's goal and done criteria (목표·시작·종료) before work, or when the user asks to run the development pipeline.
+description: Leads a change as the lead (팀장) from the user's request to an accepted result. Reads the project's pipeline settings, has the router agent survey the scope and pick one of three setups by fixed rules at each decision point (solo or SPEC first; with an independent review or split work once the SPEC fixes the scope; a re-check against the real diff), interviews the user and writes the SPEC keeping every development-relevant detail of the conversation, implements or hands the work to the implementer agent, has the reviewer agent check it, decides on each reported gap, and proposes settings worth keeping. Use when a change touches several files or its requirements are unclear, when defining a task's goal and done criteria (목표·시작·종료) before work, or when the user asks to run the development pipeline.
 argument-hint: "[요청]"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "[요청]"
 
 대화는 팀장(이 세션)에서만 한다. 구현자와 리뷰어는 대화를 듣지 못하고 팀장이 건넨 파일만 본다. 그래서 SPEC 이 모두가 읽는 하나뿐인 기준이고, 대화에서 개발에 필요한 것은 줄이지 않고 정리해 SPEC 에 옮긴다.
 
-구성은 세 가지다. 변경마다 2·4단계에서 고른다.
+구성은 세 가지다. 변경마다 **router 에이전트**가 정한다(2·4·9단계). 판단 기준과 router 에게 넘길 것은 [setup-guide.md](setup-guide.md)에 있다.
 
 | 구성 | 누가 구현하나 | SPEC | 독립 리뷰 |
 |---|---|---|---|
@@ -22,15 +22,15 @@ argument-hint: "[요청]"
 
 ```
 진행:
-- [ ] 1. 범위 조사: 프로젝트 설정을 읽고 범위 메모를 쓴다
-- [ ] 2. 1차 판단: 혼자인가, SPEC 이 필요한가
+- [ ] 1. 준비: 프로젝트 설정을 읽고 요청 정리문을 쓴다
+- [ ] 2. 1차 판단(router): 혼자인가, SPEC 이 필요한가
 - [ ] 3. 완료 기준과 SPEC: 혼자는 완료 기준만, 그 밖은 인터뷰 → SPEC → 대화 대조 → 승인
-- [ ] 4. 2차 판단: SPEC 으로 리뷰 포함인지 분업인지 확정
+- [ ] 4. 2차 판단(router): SPEC 으로 리뷰 포함인지 분업인지 확정
 - [ ] 5. 구현: 혼자·리뷰 포함은 직접, 분업은 구현자에게
 - [ ] 6. 검증: 완료 기준을 하나씩 명령으로 확인
 - [ ] 7. 리뷰: 리뷰 포함·분업은 리뷰어에게
 - [ ] 8. 차이 처리: 차이마다 판단하고 5로 (리뷰 최대 3회)
-- [ ] 9. 실제 변경으로 다시 판정: diff 가 고른 구성의 기준을 넘었는지
+- [ ] 9. 다시 판정(router): 실제 변경이 고른 구성의 기준을 넘었는지
 - [ ] 10. 보고: 완료 기준마다 근거, 프로젝트 설정 제안
 ```
 
@@ -40,9 +40,7 @@ argument-hint: "[요청]"
 
 ---
 
-## 1. 범위 조사
-
-구성을 고르기 전에 무엇이 바뀔지 짧게 조사한다. 판단은 추정이고, 이 단계는 추정을 덜 틀리게 한다.
+## 1. 준비
 
 1. 규칙 파일(`AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`)의 「Agent pipeline」 절에서 아래 항목을 찾는다. 없는 항목은 기본값.
 
@@ -50,46 +48,25 @@ argument-hint: "[요청]"
    |---|---|---|
    | SPEC 위치·양식 | 3 | `docs/specs/<이름>.md`, spec-guide.md 양식 |
    | 구성 기준 | 2, 4, 9 | 혼자 소스 파일 1~2개, 분업 6개 이상 또는 모듈 3개 이상 |
-   | 위험한 곳(추가) | 1, 2, 9 | 아래 공통 목록만 |
+   | 위험한 곳(추가) | 2, 4, 9 | setup-guide.md 3-3 의 공통 목록만 |
    | 인터뷰에서 꼭 물을 것 | 3 | 없음 |
    | SPEC 추가 절 | 3 | 없음 |
    | 시험·검사 명령, 실행 확인 | 6 | `omni-core:test` 가 찾은 것 |
    | 리뷰 관점(추가) | 7 | 정확성만 |
    | 범위 밖 | 5, 9 | 없음 |
 
-   절이 아예 없으면, 조사에서 찾은 사실(시험 명령, 금액·권한·마이그레이션이 있는 곳, 기존 SPEC 폴더)로 설정 초안을 만들어 범위 메모와 함께 보인다. 승인받아야만 규칙 파일에 적는다. 거절하면 기본값으로 가고 이 세션에서 다시 묻지 않는다.
 2. 같은 작업의 기존 SPEC·기록이 있는지 SPEC 위치에서 찾는다.
-3. 요청에 나온 기능·함수·데이터 이름을 검색해 정의와 부르는 곳을 연다. 한 단계 더 따라간다: 부르는 쪽, 같은 데이터를 쓰는 쪽, 관련 시험.
-4. **범위 메모**를 답에 적는다.
+3. router 에게 넘길 **요청 정리문**을 쓴다(setup-guide.md 2절). 사용자의 말은 동작 문장으로 바꾸고, 코드만 봐서는 모를 위험(대화에서만 나온 것)을 빠뜨리지 않는다.
 
-```
-범위 메모
-- 요청: 열린 주문에서 일부 수량만 취소
-- 프로젝트 설정: 있음 — SPEC 위치 docs/specs/, 위험한 곳에 「재고 수량」 추가
-- 바뀔 곳(추정): orders — cancel_items 추가, inventory — release 호출만 (소스 파일 1개, 모듈 2개)
-- 위험한 곳: 금액(쿠폰 재계산)
-- 모르는 것: 같은 상품 줄이 둘이면 어느 줄을 줄이나, 마지막 줄을 빼면 주문 상태는?
-```
+## 2. 1차 판단 (router)
 
-**위험한 곳**(이 스킬 전체에서 같은 뜻. 프로젝트 설정의 것을 더한다):
+사용자가 구성을 직접 정했으면 그대로 따르고 2단계를 건너뛴다. 그 밖에는 router 에이전트(`omni-pipeline:router`)를 부른다.
 
-- 금액·결제·정산 계산
-- 데이터 삭제, 저장 형식·스키마 변경, 데이터 이전
-- 인증, 권한, 비밀 정보
-- 다른 코드나 외부가 쓰는 인터페이스: 공개 API, 다른 모듈이 부르는 함수의 인자·반환, 파일·메시지 형식
-- 동시성, 트랜잭션, 재시도처럼 실패가 늦게 드러나는 곳
-
-## 2. 1차 판단
-
-범위 메모만으로 **혼자**인지 **SPEC 필요**인지 정한다. 리뷰 포함과 분업의 구분은 파일 수가 SPEC 을 써야 보이므로 4단계에서 한다.
-
-위에서부터 처음 맞는 것을 고른다.
-
-1. **사용자가 정했다**: 「혼자 해」, 「리뷰 받아」, 「분업해」처럼 말했으면 따른다.
-2. **혼자**: 바뀔 소스 파일(시험·문서 제외)이 구성 기준 안이고, 「모르는 것」과 「위험한 곳」이 모두 없을 때.
-3. **SPEC 필요**: 그 밖 모두. 애매하면 이쪽. 혼자로 잘못 골라 다시 하는 비용이 SPEC 을 쓰는 비용보다 크다.
-
-한 줄로 알린다: `구성(1차): SPEC 필요 — 쿠폰 재계산(금액), 모르는 것 2개`.
+- 넘기는 것: 「판단: 1차」와 요청 정리문. 대화나 팀장의 예상 구성은 넘기지 않는다.
+- 받는 것: 구성, 맞은 규칙, 범위 메모(바뀔 곳·위험한 곳·모르는 것), 근거, 확신, 「팀장에게」.
+- 받은 뒤: setup-guide.md 9절대로 근거 몇 개를 열어 보고, 한 줄로 알린다. `구성(1차): SPEC 필요 — 1-3, 금액(쿠폰 재계산), 모르는 것 2개`. 범위 메모는 답에 그대로 싣는다.
+- 결과를 직접 뒤집지 않는다. 팀장만 아는 사실이 빠졌으면 정리문에 더해 다시 부른다.
+- 프로젝트 설정이 아예 없으면, 범위 메모와 근거로 설정 초안을 만들어 함께 보인다. 승인받아야만 규칙 파일에 적고, 거절하면 기본값으로 가며 이 세션에서 다시 묻지 않는다.
 
 ## 3. 완료 기준과 SPEC
 
@@ -105,7 +82,7 @@ argument-hint: "[요청]"
 
 ### 3-2. 인터뷰
 
-「모르는 것」과 프로젝트 설정의 「꼭 물을 것」 중 해당하는 것을 묻는다. **완료 기준을 추측 없이 쓸 수 있으면** 멈춘다.
+router 범위 메모의 「모르는 것」과 「팀장에게」, 프로젝트 설정의 「꼭 물을 것」 중 해당하는 것을 묻는다. **완료 기준을 추측 없이 쓸 수 있으면** 멈춘다.
 
 - 질문 도구(AskUserQuestion)로 한 번에 1~4개. 선택지를 주고, 추천은 첫 선택지에 「(추천)」.
 - 코드가 답하는 것은 묻지 않고, 찾은 사실을 질문의 근거로 적는다.
@@ -135,19 +112,13 @@ argument-hint: "[요청]"
 
 SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사용자 메시지 12개 — 모두 자리 있음`)을 보이고 승인을 받는다. 승인 전에는 구현하지 않는다. 뒤에 결정이 바뀌면 바로 SPEC 을 고치고 고친 줄을 알린다.
 
-## 4. 2차 판단
+## 4. 2차 판단 (router)
 
-승인된 SPEC 의 「바꿀 곳」으로 확정한다.
+사용자가 구성을 정했으면 그대로 따른다. 그 밖에는 router 를 다시 부른다.
 
-**분업**: 다음 중 하나라도 맞을 때.
-
-- 바꿀 소스 파일이나 모듈 수가 구성 기준의 분업 기준 이상이다.
-- 서로 다른 파일을 바꾸고 서로의 결과를 기다리지 않는 작업 묶음이 둘 이상이다.
-- 인터뷰와 조사로 대화가 이미 길어, 깨끗한 컨텍스트에서 SPEC 만 보고 시작하는 편이 낫다.
-
-**리뷰 포함**: 그 밖 모두. 구현자를 따로 띄우면 맥락을 다시 모으느라 비용이 더 들므로, 위 조건일 때만 분업한다.
-
-한 줄로 알린다: `구성(확정): 리뷰 포함 — 바꿀 곳 소스 파일 2개, 모듈 2개`.
+- 넘기는 것: 「판단: 2차」, 승인된 SPEC 경로, 인터뷰와 조사로 세션이 길어져 깨끗한 컨텍스트에서 시작하는 편이 나은지.
+- 받는 것: 리뷰 포함 또는 분업, 맞은 규칙, 분업이면 작업 묶음(요구 번호와 파일).
+- 한 줄로 알린다: `구성(확정): 리뷰 포함 — 2-5, 바꿀 곳 소스 파일 2개, 모듈 2개`. SPEC 머리의 구성도 적는다.
 
 ## 5. 구현
 
@@ -160,7 +131,7 @@ SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사�
 
 ### 분업: 구현자에게
 
-`build` 스킬을 따른다. 구현자에게는 SPEC 경로(수정 차례면 고칠 차이 파일도)만 준다. 대화는 SPEC 에 정리되어 들어 있으므로 따로 요약이나 메모를 덧붙이지 않는다. 작업 묶음을 나눴으면 묶음마다 구현자 하나, 요구 번호로 맡긴다.
+`build` 스킬을 따른다. 기준 커밋은 worktree 를 만든 커밋이다. 구현자에게는 SPEC 경로(수정 차례면 고칠 차이 파일도)만 준다. 대화는 SPEC 에 정리되어 들어 있으므로 따로 요약이나 메모를 덧붙이지 않는다. 작업 묶음을 나눴으면 묶음마다 구현자 하나, 요구 번호로 맡긴다.
 
 ## 6. 검증
 
@@ -202,15 +173,18 @@ SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사�
 
 고친 뒤 6·7단계를 다시 한다. 3회 뒤에도 차이가 남으면 멈추고 남은 차이와 판단을 보여 주고 묻는다.
 
-## 9. 실제 변경으로 다시 판정
+## 9. 다시 판정 (router)
 
-`git diff --stat <기준 커밋>` 으로 바뀐 소스 파일 수와 위험한 곳을 본다.
+1·2차 판단은 추정이었다. 끝내기 전에 router 를 부른다. 사용자가 구성을 정했어도 부른다.
 
-| 고른 구성 | 실제 변경이 | 할 일 |
-|---|---|---|
-| 혼자 | 혼자 기준을 넘었거나 위험한 곳을 건드림 | 정한 것으로 짧은 SPEC 을 쓰고 7단계 리뷰를 붙인다. 알린다 |
-| 리뷰 포함·분업 | 「바꿀 곳」 밖 파일을 바꿈 | 파일마다 이유를 적거나 되돌린다. 범위가 바뀌면 SPEC 을 고치고 7단계를 다시 |
-| 어느 구성이든 | 기준 안 | 10단계 |
+- 넘기는 것: 「판단: 다시 판정」, 기준 커밋, 지금 구성, SPEC 경로(있으면).
+- 결과에 따라:
+
+| router 결과 | 할 일 |
+|---|---|
+| 리뷰 포함으로 올림 (혼자였는데 기준을 넘음) | 정한 것으로 짧은 SPEC 을 쓰고(spec-guide.md) 7단계 리뷰를 붙인다. 사용자에게 알린다 |
+| 그대로, 바꿀 곳 밖 파일 있음 | 파일마다 이유를 적거나 되돌린다. 범위가 바뀌면 SPEC 을 고치고 7단계를 다시 |
+| 그대로 | 10단계 |
 
 사용자가 말하지 않는 한 가벼운 구성으로 내리지 않는다.
 
@@ -240,10 +214,11 @@ SPEC 경로와 요약(요구·시나리오 수, 바꿀 곳, `대화 대조: 사�
 
 ## 흔한 실수
 
-- 프로젝트 설정과 범위 조사 없이 구성을 골라, 위험한 곳을 늦게 만난다.
+- router 를 부르지 않고 짐작으로 구성을 골라, 위험한 곳을 늦게 만난다.
+- router 에게 요청 정리문 없이 대화 일부만 넘기거나, 받은 결과를 근거 확인 없이 뒤집는다.
 - 대화로 정한 것을 SPEC 에 적지 않거나 뭉뚱그려 적어, 구현자·리뷰어가 조건과 이유를 모른다.
 - 대화를 그대로 붙여, 욕설·잡담·개인 정보가 SPEC 에 들어간다.
 - 대화 대조 없이 승인받아, 따로 나온 요구가 빠진다.
 - 매번 분업으로 가서 작은 변경에 비용을 두세 배 쓴다.
 - 리뷰 차이를 근거 확인 없이 구현자에게 넘긴다.
-- 9단계를 건너뛰어, 혼자로 시작한 큰 변경이 리뷰 없이 끝난다.
+- 9단계 router 를 건너뛰어, 혼자로 시작한 큰 변경이 리뷰 없이 끝난다.

@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, surveys the scope, picks one of three setups by fixed rules in two steps (solo before any spec; with an independent review, or split work, once the spec fixes the scope), interviews the user and writes the spec keeping every development-relevant detail of the conversation, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, re-checks the setup against the real diff, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline.
+description: Leads a change from the user's request to an accepted result as the lead role. Reads the project's pipeline settings, has the router role survey the scope and pick one of three setups by fixed rules at each decision point (solo or spec first; with an independent review, or split work, once the spec fixes the scope; a re-check against the real diff), interviews the user and writes the spec keeping every development-relevant detail of the conversation, implements or hands the work to the implementer role, has the reviewer role check it, acts on each reported gap, and proposes settings worth keeping. Use when a change touches several files or the requirements are unclear, when defining a task's goal and done criteria before work, or when the user asks to run the development pipeline.
 metadata:
   omni.arguments: "[request]"
 ---
@@ -9,7 +9,7 @@ metadata:
 
 The lead talks with the user; the implementer and the reviewer never hear the conversation, only the files the lead gives them. The spec is the one standard every session reads, so what the conversation settles for development goes into it organized but not shortened.
 
-There are three setups. Steps 2 and 4 pick one for each change.
+There are three setups. For each change the **router role** picks one (steps 2, 4, and 9); the rules and what to give it are in [setup-guide.md](setup-guide.md).
 
 | Setup | Who implements | Spec | Independent review |
 | --- | --- | --- | --- |
@@ -23,15 +23,15 @@ Copy this checklist into your reply and keep it updated. Each step is explained 
 
 ```
 Progress:
-- [ ] 1. Survey the scope: read the project settings, write the scope note
-- [ ] 2. First call: solo, or a spec is needed
+- [ ] 1. Prepare: read the project settings, write the request brief
+- [ ] 2. First call (router): solo, or a spec is needed
 - [ ] 3. "Done when" and spec: solo writes "done when" only; otherwise interview, spec, conversation check, approval
-- [ ] 4. Second call: with review or split, from the spec
+- [ ] 4. Second call (router): with review or split, from the spec
 - [ ] 5. Implement: solo and with review here; split through the implementer
 - [ ] 6. Verify: check every "done when" item with a command
 - [ ] 7. Review: with review and split go to the reviewer
 - [ ] 8. Act on gaps: decide each, back to 5 (at most 3 review rounds)
-- [ ] 9. Re-check against the real change: did the diff outgrow the setup?
+- [ ] 9. Re-check (router): did the real change outgrow the setup?
 - [ ] 10. Report: every "done when" item with its evidence; propose settings
 ```
 
@@ -41,9 +41,7 @@ File names in the examples come from one sample project; read `<test command>` a
 
 ---
 
-## 1. Survey the scope
-
-Before picking a setup, find out briefly what will change. The pick is an estimate; this step makes it a better one.
+## 1. Prepare
 
 1. Read the project settings. Use the default for any item that is missing.
 
@@ -51,46 +49,26 @@ Before picking a setup, find out briefly what will change. The pick is an estima
    | --- | --- | --- |
    | Spec location and layout | 3 | `docs/specs/<name>.md`, layout in spec-guide.md |
    | Setup thresholds | 2, 4, 9 | Solo 1–2 source files; split from 6 source files or 3 modules |
-   | Risky areas (added) | 1, 2, 9 | The common list below |
+   | Risky areas (added) | 2, 4, 9 | The common list in setup-guide.md 3-3 |
    | Always ask in the interview | 3 | None |
    | Extra spec sections | 3 | None |
    | Test and check commands, run check | 6 | What `.agents/skills/test/SKILL.md` finds |
    | Extra review focus | 7 | Correctness only |
    | Out of scope | 5, 9 | None |
 
-   If there are no project settings at all, draft them from what the survey finds (test command, where money, permissions, or migrations live, an existing spec folder) and show the draft with the scope note. Write it into `AGENTS.md` only when the user approves. If they decline, go on with the defaults and do not ask again in this session.
 2. Look for an existing spec or record of the same work in the spec location.
-3. Search the code for the features, functions, and data the request names; open their definitions and callers. Follow one step further: who calls the code that changes, who uses the same data, which tests cover it.
-4. Write a **scope note** in your reply:
+3. Write the **request brief** for the router (setup-guide.md section 2): behavior statements, not the user's words, including any risk known only from the conversation.
 
-```
-Scope note
-- Request: cancel part of the quantity of an open order
-- Project settings: present — specs in docs/specs/, risky area "stock counts" added
-- Will change (estimate): orders — add cancel_items; inventory — calls release only (1 source file, 2 modules)
-- Risky areas: money (coupon discount is recalculated)
-- Unknowns: which line shrinks when the item appears twice; the order's status after its last line goes
-```
+## 2. First call (router)
 
-**Risky areas** (the same meaning everywhere in this skill; add the project's own):
+If the user chose the setup, follow it and skip this step. Otherwise run the `router` role from `AGENTS.md`.
 
-- Money, payment, or settlement calculations
-- Deleting data, changing a stored format or schema, migrating data
-- Authentication, permissions, secrets
-- Interfaces other code or outside users rely on: public APIs, arguments and return values of functions other modules call, file and message formats
-- Concurrency, transactions, retries: places where failures show up late
-
-## 2. First call
-
-Decide from the scope note only whether the change is **solo** or **needs a spec**. "With review" versus "split" waits for step 4, because the number of files is only clear once the spec is written.
-
-Take the first that fits, from the top:
-
-1. **The user decided**: "do it yourself", "get it reviewed", "split it": follow it.
-2. **Solo**: the source files expected to change (tests and docs excluded) are within the solo threshold, and "unknowns" and "risky areas" are both empty.
-3. **Spec needed**: everything else. When unsure, pick this one: redoing a wrong solo costs more than writing a spec.
-
-Announce it in one line: `Setup (first call): spec needed — coupon recalculation (money), 2 unknowns`.
+- **If you can start a sub-agent:** give it `.agents/agents/router.md` as instructions and only "Decision: first call" and the request brief, with read and search access only. Do not pass the conversation or the setup you expect.
+- **Fallback:** follow `.agents/agents/router.md` yourself as a separate pass, using only the brief and the repository.
+- You get back: the setup, the rule, a scope note (will change, risky areas, unknowns), evidence, confidence, and "For the lead".
+- Then, per setup-guide.md section 9, open a few cited lines and announce it in one line: `Setup (first call): spec needed — 1-3, money (coupon recalculation), 2 unknowns`. Include the scope note in your reply.
+- Do not overturn the result yourself. If it misses a fact only you know, add it to the brief and call again.
+- If there are no project settings at all, draft them from the scope note and evidence and show the draft. Write it into `AGENTS.md` only when the user approves; if they decline, use the defaults and do not ask again in this session.
 
 ## 3. "Done when" and spec
 
@@ -106,7 +84,7 @@ Done when
 
 ### 3-2. Interview
 
-Ask about the "unknowns" and the project's "always ask" questions that apply. Stop when **"done when" can be written without guessing**.
+Ask about the router's "unknowns" and "For the lead", and the project's "always ask" questions that apply. Stop when **"done when" can be written without guessing**.
 
 - Ask 1–4 questions at a time. Offer options and put a recommended one first, marked "(recommended)". A structured question tool may be used if the environment has one.
 - Do not ask what the code already answers; quote what you found as the reason.
@@ -136,19 +114,13 @@ Before showing the spec, check both and fix what fails:
 
 Show the spec path and a summary (requirements and scenarios, files to change, `Conversation check: 12 user messages — all placed`) and get approval. Do not implement before it. When a decision changes later, update the spec at once and tell the user which lines changed.
 
-## 4. Second call
+## 4. Second call (router)
 
-From the approved spec's "files to change", settle the setup.
+If the user chose the setup, follow it. Otherwise run the router again, the same way as step 2.
 
-**Split** when any of these holds:
-
-- The source files or modules to change reach the split threshold.
-- There are two or more groups of work that change different files and do not wait for each other.
-- The interview and survey have made this session long, and starting clean from the spec alone is better.
-
-**With review**: everything else. A separate implementer has to rebuild context, which costs time and tokens, so split only for the reasons above.
-
-Announce it in one line: `Setup (final): with review — 2 source files, 2 modules`.
+- Give: "Decision: second call", the approved spec path, and whether the interview and survey have made this session long enough that a fresh start is better.
+- You get back: with review or split, the rule, and for a split the work groups (requirement numbers and files).
+- Announce it in one line, `Setup (final): with review — 2-5, 2 source files, 2 modules`, and fill in the spec header's setup.
 
 ## 5. Implement
 
@@ -161,7 +133,7 @@ Announce it in one line: `Setup (final): with review — 2 source files, 2 modul
 
 ### Split: through the implementer
 
-Follow `.agents/skills/build/SKILL.md`. Give the implementer the spec path (and, on a fix round, the file listing the gaps) and nothing else: the conversation is already organized in the spec. With separate groups, give each its own implementer, divided by requirement numbers.
+Follow `.agents/skills/build/SKILL.md`. The starting commit is the one the branch or worktree was created from. Give the implementer the spec path (and, on a fix round, the file listing the gaps) and nothing else: the conversation is already organized in the spec. With separate groups, give each its own implementer, divided by requirement numbers.
 
 ## 6. Verify
 
@@ -203,15 +175,18 @@ Gaps (review round 1)
 
 After fixing, run steps 6 and 7 again. If gaps remain after 3 rounds, stop, show them with your decisions, and ask.
 
-## 9. Re-check against the real change
+## 9. Re-check (router)
 
-Count the changed source files since the starting commit (`git diff --stat <start>`) and look for risky areas among them.
+The first and second calls were estimates. Before finishing, run the router again, even if the user chose the setup.
 
-| Setup used | The real change | Do |
-| --- | --- | --- |
-| Solo | Beyond the solo threshold, or a risky area | Write a short spec from what was decided and add step 7. Tell the user |
-| With review or split | Touches files outside "files to change" | Give a reason for each or revert it. If the scope widens, update the spec and review again |
-| Any | Within its limits | Step 10 |
+- Give: "Decision: re-check", the starting commit, the current setup, and the spec path if there is one.
+- Then:
+
+| Router result | Do |
+| --- | --- |
+| Raised to with review (solo outgrew its limits) | Write a short spec from what was decided (spec-guide.md) and add step 7. Tell the user |
+| Unchanged, with files outside "files to change" | Give a reason for each or revert it. If the scope widens, update the spec and review again |
+| Unchanged | Step 10 |
 
 Never move down to a lighter setup unless the user says so.
 
@@ -241,10 +216,11 @@ Proposed setting: add risky area "stock count calculation (inventory)" — found
 
 ## Common mistakes
 
-- Picking a setup without reading the project settings and surveying the scope, then meeting a risky area late.
+- Picking a setup by guess instead of calling the router, then meeting a risky area late.
+- Giving the router part of the conversation instead of a request brief, or overturning its result without checking the evidence.
 - Leaving a decision out of the spec, or blurring it, so the implementer and reviewer miss its conditions and reasons.
 - Pasting the conversation, so profanity, small talk, or personal data land in the spec.
 - Getting approval without the conversation check, so a requirement raised unasked is lost.
 - Always splitting, spending two to three times the cost on small changes.
 - Passing a reviewer's finding to the implementer without checking its evidence.
-- Skipping step 9, so a solo change that grew ends without a review.
+- Skipping the router at step 9, so a solo change that grew ends without a review.

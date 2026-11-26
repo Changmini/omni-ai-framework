@@ -9,7 +9,7 @@
     {
       "id": 2,
       "prompt": "Fix the typo in the README heading.",
-      "expected_output": "Surveys the scope, announces 'Setup (first call): solo' with the reason (one file, no unknowns, no risky areas), writes 2-5 'done when' lines, edits it directly, and starts no other role."
+      "expected_output": "Writes a request brief and calls the router, which returns solo (rule 1-2: no source files, no unknowns, no risky areas); announces it in one line, writes 2-5 'done when' lines, edits directly, and runs the router's re-check before reporting."
     },
     {
       "id": 3,
@@ -24,17 +24,17 @@
     {
       "id": 5,
       "prompt": "Round each line's refund down to whole units instead of rounding the total. It only touches the refund function.",
-      "expected_output": "Treats it as a risky area (money) despite one file: announces 'Setup (first call): spec needed', writes a spec with edge scenarios, then 'Setup (final): with review', implements in this session, and runs the reviewer role before reporting."
+      "expected_output": "The router returns spec needed (rule 1-3, money) despite one file; the lead announces it, writes a spec with edge scenarios, the router's second call returns with review, the lead implements in this session and runs the reviewer role before reporting."
     },
     {
       "id": 6,
       "prompt": "(Solo change in progress) The fix for the date label now also touches the payment and invoice modules: four files changed.",
-      "expected_output": "At the re-check (step 9) raises the setup to with review, tells the user, writes a short spec from what was decided, and runs the reviewer role on the diff since the starting commit before reporting."
+      "expected_output": "The router's re-check returns 'raised to with review' (rule 3-1); the lead tells the user, writes a short spec from what was decided, and runs the reviewer role on the diff since the starting commit before reporting."
     },
     {
       "id": 7,
       "prompt": "The approved spec lists eight files across the payment, notification and reporting modules; payment and notification do not share files.",
-      "expected_output": "Announces 'Setup (final): split' with the reason, hands the two independent groups to separate implementers by requirement numbers, and does not edit code itself."
+      "expected_output": "The router's second call returns split (rule 2-2) with two work groups by requirement numbers; the lead announces it, hands each group to its own implementer, and does not edit code itself."
     },
     {
       "id": 8,
@@ -45,6 +45,16 @@
       "id": 9,
       "prompt": "Add a discount field to the checkout API. (AGENTS.md has a 'Project → Change pipeline' section listing 'API request/response examples' as an extra spec section and 'src/billing/' as a risky area.)",
       "expected_output": "Reports the project settings in the scope note, treats src/billing/ as a risky area (spec needed), and includes an API request/response examples section in the spec."
+    },
+    {
+      "id": 10,
+      "prompt": "Just do it yourself, no review: add a --verbose flag to the CLI.",
+      "expected_output": "Follows the user's choice without the router's first and second calls (rule 1-1), but still runs the router's re-check before reporting."
+    },
+    {
+      "id": 11,
+      "prompt": "(First call) The lead expects solo, but the request brief mentions the user said discounts are calculated in this function.",
+      "expected_output": "Passes only the brief, not the lead's expected setup; the router treats the discount as a risky area and returns spec needed, and the lead does not overturn it without asking the user."
     }
   ]
 }
