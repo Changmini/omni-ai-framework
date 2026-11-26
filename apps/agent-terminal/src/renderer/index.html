@@ -182,6 +182,7 @@
         <button class="tab" role="tab" data-tab="config" title="Claude 구성">구성</button>
         <button class="tab" role="tab" data-tab="review" title="돌아보기 — 승인한 명령·반복한 요청">돌아보기</button>
         <button class="tab" role="tab" data-tab="rules" title="자동화 — Claude가 일할 때 정해 둔 일을 하기">자동화</button>
+        <button class="tab" role="tab" data-tab="skills" title="스킬 — 앱에 든 스킬과 쓰는 법">스킬</button>
         <button class="tab" role="tab" data-tab="preview" title="미리보기" hidden>미리보기</button>
         <button id="config-refresh" class="mini-btn" title="다시 읽기" aria-label="다시 읽기">⟳</button>
       </div>
@@ -242,6 +243,10 @@
         </div>
         <ul id="rl-list" class="rl-list" aria-label="자동화 규칙"></ul>
         <p id="rl-empty" class="hint rl-empty">⚡ Claude가 일할 때 자동으로 할 일<br>＋ 규칙 또는 템플릿 ▾ 로 시작</p>
+      </section>
+      <section class="tab-body skills" data-tab="skills">
+        <p id="sk-status" class="hint sk-status"></p>
+        <div id="sk-body"></div>
       </section>
     </aside>
   </div>

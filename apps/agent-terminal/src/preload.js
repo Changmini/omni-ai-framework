@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('agentApi', {
   onRuleFire: on('rules:fire'),
   rename: (id, name) => ipcRenderer.invoke('session:rename', id, name),
   claudeConfig: (id) => ipcRenderer.invoke('session:config', id),
+  appSkills: () => ipcRenderer.invoke('skills:list'),
+  appSkillFile: (rel) => ipcRenderer.invoke('skills:read', rel),
   focusPane: (id, target) => ipcRenderer.invoke('session:focusPane', id, target),
   activity: (id) => ipcRenderer.invoke('session:activity', id),
   openFile: (id, file) => ipcRenderer.invoke('open-file', id, file),

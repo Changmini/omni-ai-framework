@@ -33,11 +33,20 @@ __omni_user_statusline() {
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null
 }
 
+# The app's bundled omni-pipeline plugin (develop and its agents), unless the
+# user installed omni-pipeline from a marketplace: then that copy is used.
+__omni_plugin_dir() {
+  [ -n "${OMNI_PLUGIN_DIR:-}" ] && [ -d "$OMNI_PLUGIN_DIR" ] || return 1
+  ! grep -qs '"omni-pipeline@' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+}
+
 if [ -n "$OMNI_CLAUDE_SETTINGS" ]; then
   # OMNI_HOOKED tells the tmux hook (claude-hook.sh) this claude already reports.
   claude() {
+    local __omni_extra=()
+    __omni_plugin_dir && __omni_extra=(--plugin-dir "$OMNI_PLUGIN_DIR")
     OMNI_USER_STATUSLINE="$(__omni_user_statusline)" OMNI_HOOKED=1 \
-      command claude --settings "$OMNI_CLAUDE_SETTINGS" "$@"
+      command claude --settings "$OMNI_CLAUDE_SETTINGS" ${__omni_extra[@]+"${__omni_extra[@]}"} "$@"
   }
 fi
 

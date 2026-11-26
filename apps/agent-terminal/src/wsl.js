@@ -25,7 +25,7 @@ function windowsToWsl(p) {
 
 // WSLENV entries that carry the app's variables into WSL; /p converts a
 // Windows path to its /mnt/... form (see Microsoft's WSLENV documentation).
-const WSLENV_VARS = ['OMNI_TERMINAL_ID', 'OMNI_TERMINAL_RUN', 'OMNI_HOOK_TOKEN', 'OMNI_CWD_URL', 'OMNI_CLAUDE_SETTINGS/p', 'OMNI_INIT_BASH/p'];
+const WSLENV_VARS = ['OMNI_TERMINAL_ID', 'OMNI_TERMINAL_RUN', 'OMNI_HOOK_TOKEN', 'OMNI_CWD_URL', 'OMNI_CLAUDE_SETTINGS/p', 'OMNI_PLUGIN_DIR/p', 'OMNI_INIT_BASH/p'];
 
 function withWslEnv(existing) {
   const have = new Set((existing || '').split(':').filter(Boolean));

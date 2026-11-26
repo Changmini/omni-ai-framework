@@ -32,6 +32,7 @@
 | 🪟 **tmux 지원** | 앱 터미널에서 접속한 tmux 안의 `claude`도 상태 표시(앱보다 먼저 만든 세션, 창 분할 팀 포함). 설정은 자동 |
 | 🐧 **WSL·Linux** | 앱 터미널에서 `wsl`로 들어간 Ubuntu 안에서도 위치·Claude 상태 표시 · Linux/WSL에서 앱을 직접 실행하는 설치 스크립트 |
 | 🔁 **돌아보기** | 상세 패널의 `돌아보기` 탭: 하루 동안 자주 승인한 명령(→ 허용 목록에 추가), 반복한 요청(→ 스킬 만들기 요청을 Claude 입력칸에 채움), 고쳐 준 말(→ `.claude/` 안의 요소로 만들어 달라는 요청을 채움, CLAUDE.md는 안 건드림)을 모아 보여 줌. 기록은 이 PC에만, 30일 보관, 하루·전체 지우기와 기록 끄기 |
+| 🧠 **스킬** | 상세 패널의 `스킬` 탭: 앱에 든 개발 스킬(`develop` 등)과 에이전트가 무엇을 하는지, 어떻게 부르는지(복사 버튼), 진행 순서. 플러그인을 설치하지 않아도 앱 터미널의 `claude`에서 바로 씀 |
 | 🧩 **Claude 구성** | 상세 패널의 `구성` 탭. 선택한 터미널의 프로젝트에서 Claude가 불러오는 스킬·플러그인(켜짐/꺼짐)·훅·서브에이전트·MCP 서버 목록. 사용자·프로젝트·로컬 설정과 켜진 플러그인을 합쳐 보여 주고, WSL 터미널은 WSL 쪽 설정을 읽음 |
 | ↔️ **패널 크기** | 사이드바 오른쪽 경계를 끌어 너비 조절(200~600px, 더블클릭: 기본 너비) · 상세 패널 왼쪽 경계도 같은 방식(240~640px), 상단 바 오른쪽 버튼이나 `Ctrl+Shift+I`로 접기/펴기 · 터미널 목록과 바로가기 사이 경계를 위아래로 끌어 높이 조절(끝까지 끌면 한쪽을 완전히 숨기고 다른 쪽이 전체를 씀, 손잡이를 다시 끌거나 더블클릭하면 복원) · 상단 바 버튼이나 `Ctrl+Shift+B`로 접기/펴기. 모두 기억 |
 | ⚙️ **설정** | 글자 크기 슬라이더(설정 기억) · 한글 코딩 글꼴 내장(시스템 글꼴 불필요) |
@@ -202,6 +203,16 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 - **시험:** `🧪 시험`이 이번에 앱을 켠 뒤 받은 같은 종류의 훅(최근 30개 중 5개)에 조건을 맞춰 보고, 맞으면 만들어질 글을 보여 줍니다.
 - **대상:** 앱 터미널에서 실행한 Claude의 메인 세션(막기·확인은 그 서브에이전트까지). 팀원, 앱보다 먼저 만든 tmux 세션의 Claude(tmux용 훅)에는 적용되지 않습니다.
 - **저장:** 규칙은 이 PC의 앱 데이터 폴더(Windows는 `%APPDATA%\omni-agent-terminal`)에 남습니다. 고른 터미널은 이름으로 저장하고, 앱을 켜 둔 동안은 같은 터미널을 따라갑니다(폴더를 옮겨 이름이 바뀌어도).
+
+## 스킬
+
+앱에는 개발 파이프라인 플러그인 `omni-pipeline`(저장소의 `claude-code/plugins/omni-pipeline`과 같은 것)이 들어 있습니다. 앱 터미널에서 `claude`를 실행하면 앱이 `--plugin-dir`로 이 플러그인을 붙이므로, 따로 설치하지 않아도 씁니다.
+
+- **부르는 법:** Claude 세션 안에서 `/omni-pipeline:develop <요청>` 또는 "개발 파이프라인으로 진행해줘". 세션 전체를 팀장으로 시작하려면 터미널에서 `claude --agent omni-pipeline:lead`.
+- **`스킬` 탭:** 스킬마다 하는 일, 부르는 법(복사 버튼), 진행 순서, `내용 보기`(SKILL.md와 딸린 문서를 뷰어로)와 에이전트(lead, router, implementer, reviewer) 목록을 보여 줍니다.
+- **이미 설치했다면:** 마켓플레이스에서 `omni-pipeline`을 설치해 두었으면(`~/.claude/plugins/installed_plugins.json`) 그 설치본을 쓰고 앱에 든 사본은 붙이지 않습니다.
+- **적용 시점:** 이미 실행 중인 Claude 세션에는 붙지 않습니다. 세션을 다시 시작하면 적용됩니다.
+- **사본 맞추기:** `plugins/omni-pipeline`은 `claude-code/plugins/omni-pipeline`의 사본입니다. 그쪽을 고친 뒤 `scripts/sync-plugin.sh`로 복사합니다. 둘이 다르면 `npm test`가 실패합니다.
 
 ## 바로가기
 
@@ -413,6 +424,7 @@ src/
 ├── wsl.js             # WSL 경로 ↔ Windows 경로 변환, WSLENV 구성
 ├── teams.js           # ~/.claude/teams, ~/.claude/tasks 읽기
 ├── claude-config.js   # 스킬·플러그인·훅·서브에이전트·MCP 목록 읽기
+├── app-skills.js      # 스킬 탭: 앱에 든 플러그인(plugins/omni-pipeline)의 스킬·에이전트와 문서 읽기
 ├── activity.js        # 훅 이벤트 → 활동 기록 한 줄 (요약 + 상세 카드용 입력·결과)
 ├── journal.js         # 돌아보기 기록: 날짜별 파일(앱 데이터 폴더), 30일 보관, 지우기, 켜기/끄기
 ├── journal-logic.js   # 순수 로직: 승인한 명령·반복한 요청 묶기, 허용 규칙 만들기, 위험한 규칙 빼기
@@ -430,6 +442,8 @@ src/
                        #   rule-logic.js: 자동화 규칙의 사건·조건·값·문장(화면과 rules.js 공용)
                        #   preview-pane.js: 미리보기 패널(메인 창·새 창 공용) · preview.html/preview-window.js: 새 창
 scripts/setup-linux.sh # Linux·WSL 설치 자동화 (패키지, npm install, 샌드박스, 실행기)
+scripts/sync-plugin.sh # claude-code/plugins/omni-pipeline을 plugins/로 복사
+plugins/omni-pipeline/ # 앱 터미널의 claude에 붙이는 개발 파이프라인 플러그인(사본)
 test/                  # node --test
 ```
 

@@ -95,6 +95,7 @@ Korean, for the Korean readers they serve: `README.md` and the app's UI strings 
 - Claude Code only: the app depends on Claude Code's hooks, status line and CLI flags. Mark each claim about Claude Code's behavior as verified (version and how) or unverified, as README "Claude 상태는 어떻게 알아내나" does.
 - Logic that needs no DOM or Electron goes into modules the tests load (`src/renderer/view-logic.js`, `src/renderer/rule-logic.js`, `src/agent-state.js`, ...), with tests in `test/`.
 - Check user-visible changes in the running app, not only in tests, and say what CPU or memory a change adds while idle.
+- `plugins/omni-pipeline` is a copy of `claude-code/plugins/omni-pipeline`: change it there and run `scripts/sync-plugin.sh`; `npm test` fails while the two differ.
 
 ### Commands
 
