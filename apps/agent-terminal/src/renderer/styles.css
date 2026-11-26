@@ -993,12 +993,10 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; }
 /* automation rules (자동화 tab) */
 .rules { display: flex; flex-direction: column; gap: 8px; }
 .rl-bar { display: flex; gap: 6px; }
-.rl-empty p { margin: 6px 0; }
-.rl-empty ul { margin: 0; padding: 0; list-style: none; }
-.rl-empty li { position: relative; padding-left: 12px; }
-.rl-empty li::before { content: "-"; position: absolute; left: 0; }
-.rl-empty code { font: 11.5px var(--mono); color: var(--text); }
+.rl-empty { margin: 6px 0; line-height: 1.8; }
 .rl-empty[hidden] { display: none; }
+.rl-vars { align-self: start; width: max-content; font: 11px var(--mono); color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; padding: 0 6px; cursor: help; }
+.rl-vars:hover, .rl-vars:focus-visible { color: var(--text); border-color: var(--muted); outline: none; }
 .rl-list { list-style: none; margin: 0; padding: 0; }
 .rl-item { border-top: 1px solid var(--hair); padding: 8px 0; }
 .rl-item:last-child { border-bottom: 1px solid var(--hair); }
@@ -1029,11 +1027,11 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; }
 .rl-foot .pp-del { margin: 0 0 0 auto; }
 .rl-test { list-style: none; margin: 0; padding: 0; font-size: 12px; }
 .rl-test li { padding: 4px 0; border-top: 1px dashed var(--line); min-width: 0; }
-.rl-test-mark { display: inline-block; width: 34px; font-weight: 600; }
+.rl-test-mark { display: inline-block; width: 18px; font-weight: 700; }
 .rl-test .ok .rl-test-mark { color: var(--ok); }
 .rl-test .no .rl-test-mark { color: var(--muted); }
-.rl-test-subj { display: inline-block; max-width: calc(100% - 40px); vertical-align: bottom; font-family: var(--mono); }
-.rl-test-out { margin: 2px 0 0 34px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rl-test-subj { display: inline-block; max-width: calc(100% - 24px); vertical-align: bottom; font-family: var(--mono); }
+.rl-test-out { margin: 2px 0 0 18px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* the terminal a rule just ran for (⚡ a few seconds), or marked by one until shown */
 .agent.rule-zap .agent-name::after, .agent.rule-mark .agent-name::after { content: " ⚡"; color: var(--busy); }
 .agent.rule-mark .agent-row { box-shadow: inset 3px 0 0 var(--busy); }
