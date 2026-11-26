@@ -16,5 +16,5 @@ argument-hint: "[SPEC 경로]"
 2. `omni-pipeline:implementer` 에이전트를 띄운다(Agent, `subagent_type: omni-pipeline:implementer`). 프롬프트에는 위 경로들만 넣는다. 대화나 팀장의 메모는 넣지 않는다. 정의에 model 이 있으므로 Agent 호출에 model 을 넘기지 않는다.
 3. 보고를 확인한다.
    - 「완료 기준」 항목마다 충족 근거, 또는 미충족 이유가 있는가.
-   - 「SPEC 문제」는 코드로 덮지 말고 팀장이 판단한다(`leading-changes` 5단계).
+   - 「SPEC 문제」는 코드로 덮지 말고 팀장이 판단한다(`leading-changes` 8단계 「차이 처리」).
 4. 브랜치를 `reviewing-changes` 로 넘긴다. 리뷰가 끝나 받아들이면 브랜치 병합과 `git worktree remove` 는 사용자 지시에 따라 한다.

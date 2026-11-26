@@ -15,7 +15,7 @@
 │   └─ [Project]  명령어 · 코드 스타일 · 아키텍처 · 주의사항   ← 프로젝트가 채움
 └── .agents/
     ├── skills/                       # Agent Skills 공개 표준
-    │   ├── leading-changes/          # 팀장: 인터뷰 → 스펙 → 구현·리뷰 맡김 → 차이 판단
+    │   ├── leading-changes/          # 팀장: 범위 조사 → 구성 고르기 → 스펙(spec-guide.md) → 구현·리뷰 → 차이 판단 → 실제 변경으로 재판정
     │   ├── implementing-specs/       # 구현: 새 컨텍스트에서 스펙만 읽고 브랜치·worktree에 커밋
     │   ├── reviewing-changes/        # 리뷰어: 스펙과 diff만 보고 차이만 보고
     │   ├── verifying-changes/        # 프로젝트 검사 실행, 증거 보고
@@ -23,7 +23,7 @@
     │   └── authoring-skills/         # 새 스킬·역할 작성 (체크리스트, 템플릿)
     │       (각 스킬에 evals/evals.json 3건)
     ├── agents/                       # 역할 정의 (자체 완결 프롬프트, 역할마다 대응 스킬)
-    │   ├── lead.md                   # 팀장: 사용자와 대화하는 세션, 코드는 쓰지 않음
+    │   ├── lead.md                   # 팀장: 사용자와 대화하는 세션, 구성(혼자·리뷰 포함·분업)을 고름
     │   ├── implementer.md            # 구현: 스펙만 읽고 시작, 결과는 커밋·diff
     │   └── reviewer.md               # 리뷰어: 읽기 전용, 구현 과정을 모름
     ├── docs/                         # 문서 디자인

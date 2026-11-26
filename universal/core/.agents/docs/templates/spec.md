@@ -1,23 +1,39 @@
 # <Feature name> — spec
 
-Status: draft | approved · Owner: <name> · Date: <YYYY-MM-DD>
+Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 
-<One paragraph: the problem, who has it, and the outcome this spec commits to.>
+<!-- How to fill each section, with good and bad sentences and a full example: .agents/skills/leading-changes/spec-guide.md -->
+
+## Background and goal
+<One paragraph: what is wrong today, and what is true once this change is done. No implementation details.>
 
 ## Requirements
-<What must be true when this is done, one per line. Behavior a user or caller sees, including edge cases.>
+<One observable behavior each: input, result, errors. Never renumber; mark dropped ones "(dropped: reason)".>
 - R1: ...
 
+## Scenarios
+<state → action → result, tagged with requirements. Normal, edge (zero, empty, maximum, duplicate, same instant, exact threshold) and error cases; say whether anything changes on an error.>
+- S1 (normal): ... (R1)
+
 ## Constraints
-<Limits the implementation must keep: interfaces that must not change, security, performance, dependencies.>
-- Out of scope: ...
+<Interfaces that must not change, the project rules that apply (copied in), limits on performance, security, compatibility.>
+- ...
+
+## Out of scope
+- ...
+
+## Files to change
+<One line per file: path — what. Tests marked (tests). Groups for separate implementers if the work splits.>
+- ...
+- Total: <n> source files, <m> modules
 
 ## Done when
-<The checks that end the implementation and decide the review. Each is a command or an observation anyone can repeat.>
-- [ ] ...
+<One check each, decidable by a command or an observation, tagged with requirements and scenarios. The last item is the project's full test command.>
+- [ ] D1 ...
 
-## Design notes
-<Files, modules, and interfaces involved; decisions made with the user and why.>
+## Decisions
+<What was settled with the user or by the survey, and why; why other options were dropped.>
+- K1: ...
 
 ## Open questions
 - None

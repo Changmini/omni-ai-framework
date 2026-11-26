@@ -111,7 +111,7 @@ Project 섹션은 Commands(**verify 명령이 최우선**), Code style, Architec
 ### 4.3 역할 (서브 에이전트) ✅
 - 형식: `.agents/agents/<name>.md`, frontmatter `name`(파일명과 일치), `description`(무엇 + 언제), `access`(`read-only` | `read-write`).
 - 본문 필수 요소: "호출자 대화를 볼 수 없음, 최종 사용자에게 질문 금지", Inputs, Rules, 고정된 Output 형식.
-- 기본 역할 3종: `lead`(read-write, 사용자와 대화하고 스펙을 씀, 코드는 쓰지 않음), `implementer`(read-write, 새 컨텍스트에서 스펙만 읽고 구현), `reviewer`(read-only, 스펙과 diff만 보고 차이만 보고). 세션 사이에는 대화가 아니라 파일(스펙, diff, 차이 목록)만 오갑니다.
+- 기본 역할 3종: `lead`(read-write, 사용자와 대화하고 구성(혼자·리뷰 포함·분업)을 골라 스펙을 씀, 분업일 때는 코드를 쓰지 않음), `implementer`(read-write, 새 컨텍스트에서 스펙만 읽고 구현), `reviewer`(read-only, 스펙과 diff만 보고 차이만 보고). 세션 사이에는 대화가 아니라 파일(스펙, diff, 차이 목록)만 오갑니다.
 - 도구 고유 형식(Claude Code `.claude/agents/*.md`, Kimi YAML agent spec)으로의 변환은 어댑터의 몫입니다 🔜.
 
 ### 4.4 문서 디자인 ✅

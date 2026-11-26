@@ -14,5 +14,5 @@ A reviewer who did not see how the change was made is not pulled along by its re
 2. Run the `reviewer` role from `AGENTS.md` with these inputs.
    - **If you can start a sub-agent:** give it `.agents/agents/reviewer.md` as instructions and only the inputs above, with read and search access only. Do not pass the conversation or the implementer's report.
    - **Fallback:** follow `.agents/agents/reviewer.md` yourself as a separate pass, reading only the spec and the diff.
-3. Act on the gaps as the lead (`.agents/skills/leading-changes/SKILL.md`, step 5). If the report is long, keep it as a file and pass its path on.
+3. Act on the gaps as the lead (`.agents/skills/leading-changes/SKILL.md`, step 8 "Act on gaps"). If the report is long, keep it as a file and pass its path on.
 4. If the user asked for a written report, use `.agents/docs/templates/review.md`.
