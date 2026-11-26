@@ -10,7 +10,7 @@ __omni_user_statusline() {
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null
 }
 
-# The app's bundled plugin (see omni.bash).
+# The repository's omni-pipeline plugin (see omni.bash).
 __omni_plugin_dir() {
   [ -n "${OMNI_PLUGIN_DIR:-}" ] && [ -d "$OMNI_PLUGIN_DIR" ] || return 1
   ! grep -qs '"omni-pipeline@' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"

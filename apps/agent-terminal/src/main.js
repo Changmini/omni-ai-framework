@@ -228,7 +228,7 @@ function registerIpc() {
     shell.showItemInFolder(t.host);
     return true;
   });
-  // The 스킬 tab: the bundled plugin's skills and agents, and its Markdown files.
+  // The 스킬 tab: the omni-pipeline plugin's skills and agents, and its Markdown files.
   ipcMain.handle('skills:list', () => {
     const data = appSkills.readAppSkills();
     return data && { ...data, installed: appSkills.installedElsewhere(claudeDir()) };
@@ -410,7 +410,7 @@ if (primaryInstance) app.whenReady().then(async () => {
     shell: shellLaunch(),
     extraEnv: {
       OMNI_CLAUDE_SETTINGS: settingsFile,
-      // The bundled omni-pipeline plugin, added by the claude wrapper (shell-init).
+      // The repository's omni-pipeline plugin, added by the claude wrapper (shell-init).
       OMNI_PLUGIN_DIR: appSkills.PLUGIN_DIR,
       OMNI_HOOK_TOKEN: hooks.token,
       OMNI_CWD_URL: hooks.cwdUrl,

@@ -1,14 +1,17 @@
 'use strict';
 
-// The plugin the app bundles (plugins/omni-pipeline) and loads into the claude
-// of its terminals with --plugin-dir (src/shell-init): read for the 스킬 tab.
-// Only Markdown files inside the plugin folder are read; nothing is executed.
+// The repository's omni-pipeline plugin (claude-code/plugins/omni-pipeline,
+// next to this app in the omni-ai-framework checkout), which the claude of the
+// app's terminals loads with --plugin-dir (src/shell-init): read for the 스킬
+// tab. Used in place, not copied, so the app always runs the current plugin;
+// without that folder (the app folder used alone) the tab says so and claude
+// starts without it. Only Markdown files inside it are read; nothing runs.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { frontMatter } = require('./claude-config');
 
-const PLUGIN_DIR = path.join(__dirname, '..', 'plugins', 'omni-pipeline');
+const PLUGIN_DIR = path.join(__dirname, '..', '..', '..', 'claude-code', 'plugins', 'omni-pipeline');
 const MAX_FILE = 256 * 1024;
 // Shown first, in this order; any other skill or agent follows by name.
 const SKILL_ORDER = ['develop', 'build', 'spec-check'];

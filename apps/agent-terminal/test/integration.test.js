@@ -108,7 +108,7 @@ test('bash claude wrapper adds the hook settings and keeps the arguments', (t) =
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('bash claude wrapper adds the bundled plugin unless omni-pipeline is installed', (t) => {
+test('bash claude wrapper adds the omni-pipeline plugin unless it is installed or missing', (t) => {
   const { spawnSync } = require('node:child_process');
   if (spawnSync('bash', ['--version']).status !== 0) return t.skip('no bash');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-wrap-'));

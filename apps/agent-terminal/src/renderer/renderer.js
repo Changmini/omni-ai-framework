@@ -2170,10 +2170,10 @@ cfgEls.refresh.addEventListener('click', () => {
 window.addEventListener('focus', () => { if (Date.now() - lastConfigAt > 5000) loadConfig(); });
 
 // ---------- skills the app brings (스킬 tab) ----------
-// The omni-pipeline plugin bundled with the app (plugins/omni-pipeline): the
-// claude of every app terminal gets it (src/shell-init), so its skills work
-// without installing anything. This page says what each does and how to call
-// it; the skill files open in the viewer.
+// The repository's omni-pipeline plugin (claude-code/plugins/omni-pipeline):
+// the claude of every app terminal gets it (src/shell-init), so its skills
+// work without installing anything. This page says what each does and how to
+// call it; the skill files open in the viewer.
 const skillsEls = { status: $('#sk-status'), body: $('#sk-body') };
 // What each skill is for, in a line a newcomer reads first. A skill not
 // listed here shows the first paragraph of its SKILL.md instead.
@@ -2223,12 +2223,12 @@ function openSkillFiles(files, title) {
 function renderSkills() {
   const d = skillsData;
   if (!d) {
-    skillsEls.status.textContent = '앱에 든 스킬을 읽을 수 없습니다 (plugins/omni-pipeline).';
+    skillsEls.status.textContent = '저장소의 claude-code/plugins/omni-pipeline 폴더를 찾지 못했습니다. 앱 폴더만 따로 쓰면 이 스킬은 붙지 않습니다.';
     skillsEls.body.replaceChildren();
     return;
   }
   skillsEls.status.textContent = d.installed
-    ? `설치한 ${d.plugin} 플러그인을 씁니다. 앱에 든 사본(${d.version})은 붙이지 않습니다.`
+    ? `설치한 ${d.plugin} 플러그인을 씁니다. 저장소의 ${d.plugin}(${d.version})은 붙이지 않습니다.`
     : `${d.plugin} ${d.version} · 이 앱의 터미널에서 실행한 claude에 자동으로 붙습니다. 이미 열린 Claude 세션은 다시 시작하면 적용됩니다.`;
   const cards = d.skills.map((s) => {
     const guide = SKILL_GUIDE[s.name] || {};

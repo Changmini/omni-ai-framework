@@ -67,25 +67,10 @@ test('installedElsewhere looks for omni-pipeline@<marketplace> in the install re
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the bundled plugin has develop, and matches claude-code/plugins/omni-pipeline when that exists', (t) => {
+test('PLUGIN_DIR is the repository\'s claude-code/plugins/omni-pipeline, which has develop', (t) => {
+  assert.strictEqual(PLUGIN_DIR, path.resolve(__dirname, '..', '..', '..', 'claude-code', 'plugins', 'omni-pipeline'));
+  if (!fs.existsSync(PLUGIN_DIR)) return t.skip('not inside the omni-ai-framework repository');
   const r = readAppSkills();
-  assert.ok(r && r.skills.some((s) => s.name === 'develop'), 'plugins/omni-pipeline/skills/develop is bundled');
-  const src = path.join(__dirname, '..', '..', '..', 'claude-code', 'plugins', 'omni-pipeline');
-  if (!fs.existsSync(src)) return t.skip('not inside the omni-ai-framework repository');
-  const list = (root) => {
-    const out = [];
-    const walk = (d) => {
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p); else out.push(path.relative(root, p));
-      }
-    };
-    walk(root);
-    return out.sort();
-  };
-  const files = list(src);
-  assert.deepStrictEqual(list(PLUGIN_DIR), files, 'same files (run scripts/sync-plugin.sh)');
-  for (const f of files) {
-    assert.ok(fs.readFileSync(path.join(PLUGIN_DIR, f)).equals(fs.readFileSync(path.join(src, f))), `${f} differs (run scripts/sync-plugin.sh)`);
-  }
+  assert.ok(r && r.skills.some((s) => s.name === 'develop'));
+  assert.ok(r.agents.some((a) => a.name === 'router'));
 });
