@@ -127,9 +127,12 @@
   }
 
   // Starting points in the 자동화 tab's 템플릿 menu, by `group`. Guards watch
-  // the tool and its command or file (subject): a Bash command only, not
-  // a script it runs, so they catch slips, not intent. Each regex is tested
-  // against what it must and must not catch (test/rules.test.js).
+  // the tool and its command or file (subject): a command line only, not a
+  // script it runs, so they catch slips, not intent. Command guards
+  // (`shellGuard`) hold for a shell tool only, not for a file read or a
+  // search that merely names the same words (db/migrate/, "sudo"). Each
+  // regex is tested against what it must and must not catch
+  // (test/rules.test.js).
   const R = String.raw;
   const END = R`(?=\s|;|&|\||\)|$)`; // end of a command-line word
   const EDIT = R`^(Edit|Write|MultiEdit) `;
@@ -139,37 +142,39 @@
   const re = (value, label) => ({ kind: 'regex', value, label });
   const all = { kind: 'all' };
   const guard = (name, label, kind, value, text) => ({ group: '지키기', name, event: 'pre', cond: re(value, label), scope: all, action: { kind, text }, freq: 'every' });
+  // PowerShell: the Windows shell tool's name, unverified (harmless if absent).
+  const shellGuard = (name, label, kind, value, text) => guard(name, label, kind, R`^(Bash|PowerShell) [\s\S]*?(?:` + value + ')', text);
   const tell = (name, event, cond, text, freq = 'every', scope = all) => ({ group: '알려 주기', name, event, cond, scope, action: { kind: 'context', text }, freq });
   const TEMPLATES = [
     guard('비밀 파일 막기', '비밀 파일', 'block',
       R`(^|[\\/\s])(\.env(\.[\w-]+)?|id_rsa|id_ed25519|id_ecdsa|[\w-]+\.(pem|key|p12|pfx)|credentials(\.json)?|\.netrc|\.pgpass)` + END,
       '비밀 정보가 든 파일은 읽거나 고치지 않습니다: {file}{command}. 필요하면 사용자에게 값을 요청하세요.'),
-    guard('넓은 삭제 막기', '루트·홈·폴더 전체 삭제', 'block',
+    shellGuard('넓은 삭제 막기', '루트·홈·폴더 전체 삭제', 'block',
       R`\brm\b(?=[^;&|]*\s(-[a-zA-Z]*[rR]|--recursive))[^;&|]*\s["']?(\/\*?|~\/?\*?|\$HOME\/?\*?|\.\.?\/?\*?|\*)["']?` + END,
       '루트·홈·현재 폴더 전체를 지우는 명령은 막혀 있습니다: {command}. 지울 대상을 정확히 적으세요.'),
-    guard('되돌릴 수 없는 git 명령 막기', '되돌릴 수 없는 git 명령', 'block',
+    shellGuard('되돌릴 수 없는 git 명령 막기', '되돌릴 수 없는 git 명령', 'block',
       R`\bgit\s+push\b[^;&|]*\s(--force|-f)` + END + R`|\bgit\s+reset\b[^;&|]*\s--hard\b|\bgit\s+clean\s+[^;&|]*-[a-zA-Z]*f|\bgit\s+(checkout|restore)\s+(--\s+)?\.` + END,
       '작업을 되돌릴 수 없게 지우는 git 명령은 막혀 있습니다: {command}. 필요하면 사용자에게 직접 실행을 요청하세요.'),
     guard('잠금 파일 직접 수정 막기', '잠금 파일 수정', 'block',
       EDIT + R`.*[\\/](package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|poetry\.lock|Pipfile\.lock|uv\.lock|Cargo\.lock|go\.sum|composer\.lock|Gemfile\.lock)$`,
       '잠금 파일({file})은 손으로 고치지 않습니다. 패키지 관리자 명령으로 바꾸세요.'),
-    guard('푸시 전 확인', 'git push', 'ask', R`\bgit\s+push\b`, '원격 저장소로 올리기 전 확인: {command}'),
-    guard('의존성 설치 확인', '패키지 설치', 'ask',
+    shellGuard('푸시 전 확인', 'git push', 'ask', R`\bgit\s+push\b`, '원격 저장소로 올리기 전 확인: {command}'),
+    shellGuard('의존성 설치 확인', '패키지 설치', 'ask',
       R`\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\buv\s+(add|pip\s+install)\b|\bpoetry\s+add\b|\bcargo\s+add\b|\bgo\s+get\b|\bgem\s+install\b`,
       '새 패키지 설치 전 확인: {command}'),
-    guard('인터넷 스크립트 실행 확인', '받은 스크립트 바로 실행', 'ask',
+    shellGuard('인터넷 스크립트 실행 확인', '받은 스크립트 바로 실행', 'ask',
       R`\b(curl|wget)\b[^;&]*\|\s*(sudo\s+)?(ba|z|da)?sh\b|\b(ba|z)?sh\s+<\(\s*(curl|wget)\b|\b(iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^;&]*\|\s*(iex|Invoke-Expression)\b`,
       '인터넷에서 받은 스크립트를 바로 실행하기 전 확인: {command}'),
-    guard('외부로 보내는 명령 확인', '밖으로 보내기', 'ask',
+    shellGuard('외부로 보내는 명령 확인', '밖으로 보내기', 'ask',
       R`\bcurl\b[^;&|]*\s(-d|--data(-[a-z]+)?|-F|--form|-T|--upload-file)(\s|=)|\bwget\b[^;&|]*\s--post-(data|file)\b|\bscp\b|\brsync\b[^;&|]*\s[\w.@-]+:`,
       '이 PC 밖으로 데이터를 보내기 전 확인: {command}'),
-    guard('배포·인프라 명령 확인', '배포·인프라 명령', 'ask',
+    shellGuard('배포·인프라 명령 확인', '배포·인프라 명령', 'ask',
       R`\bkubectl\s+(apply|create|delete|replace|patch|scale|rollout|drain)\b|\b(terraform|tofu)\s+(apply|destroy|import)\b|\bhelm\s+(install|upgrade|uninstall|rollback|delete)\b|\bpulumi\s+(up|destroy)\b|\bdocker\s+push\b|\b(npm|pnpm|yarn)\s+publish\b|\bcargo\s+publish\b|\btwine\s+upload\b|\bgh\s+release\s+create\b`,
       '배포나 공유 인프라를 바꾸는 명령 전 확인: {command}'),
-    guard('DB 변경 확인', 'DB 변경', 'ask',
+    shellGuard('DB 변경 확인', 'DB 변경', 'ask',
       R`\bmigrate\b|\bdb:(migrate|rollback|reset|drop)\b|\balembic\s+(upgrade|downgrade)\b|\bprisma\s+db\s+push\b|\b(DROP\s+(TABLE|DATABASE|SCHEMA|INDEX)|TRUNCATE|ALTER\s+TABLE)\b|\bDELETE\s+FROM\s+[\w."]+\s*(;|"|'|$)`,
       '데이터베이스 구조나 데이터를 바꾸는 명령 전 확인: {command}'),
-    guard('관리자 권한 확인', '관리자 권한', 'ask', R`\bsudo\b|\b(Start-Process\b[^;&|]*-Verb\s+RunAs)\b`, '관리자 권한으로 실행하기 전 확인: {command}'),
+    shellGuard('관리자 권한 확인', '관리자 권한', 'ask', R`\bsudo\b|\b(Start-Process\b[^;&|]*-Verb\s+RunAs)\b`, '관리자 권한으로 실행하기 전 확인: {command}'),
     guard('시스템·계정 설정 수정 확인', '시스템·계정 설정 파일', 'ask',
       EDIT + R`(\/etc\/|.*[\\/]\.ssh[\\/]|.*[\\/]\.aws[\\/]|.*[\\/]\.(bashrc|zshrc|profile|bash_profile|zprofile|gitconfig|npmrc|pypirc)$|.*[\\/]\.claude[\\/]settings(\.local)?\.json$)`,
       '셸·계정·Claude 권한 설정 파일을 고치기 전 확인: {file}'),
