@@ -111,8 +111,8 @@ Ask about the "unknowns" and the project's "always ask" questions that apply. St
 - Ask 1–4 questions at a time. Offer options and put a recommended one first, marked "(recommended)". A structured question tool may be used if the environment has one.
 - Do not ask what the code already answers; quote what you found as the reason.
 - Cover the normal behavior, edge cases (zero, empty, maximum, duplicates, the same instant), errors, what must not change, and what is out of scope.
-- Write each answer into the draft spec **right away**: the chosen answer with its reasons, conditions, and examples under "Request and conversation", and its effect in the section it changes (requirements, constraints, decisions). Also record what the user says unasked that matters for development (preferences, dislikes, example situations). A long conversation gets compacted and is lost.
-- Organize, but do not shorten. Never paste the conversation: leave out profanity, emotion, small talk, and personal data, and keep every development detail. See "Request and conversation" in spec-guide.md.
+- Write each answer into the draft spec **right away**: the chosen answer with its reasons, conditions, and examples under "Request and clarifications", and its effect in the section it changes (requirements, constraints, decisions). Also record what the user says unasked that matters for development (preferences, dislikes, example situations). A long conversation gets compacted and is lost.
+- Do not copy what the user said; rewrite it as a behavior statement (for example "Clicking OK should just close the modal" → the selection dialog closes after OK or Cancel). Leave out profanity, small talk, and personal data; keep every condition, reason, and example. See "Request and clarifications" in spec-guide.md.
 
 ```
 Question: an order holds the same item on two lines. Which line shrinks on a partial cancel?
@@ -244,7 +244,7 @@ Proposed setting: add risky area "stock count calculation (inventory)" — found
 - Picking a setup without reading the project settings and surveying the scope, then meeting a risky area late.
 - Leaving a decision out of the spec, or blurring it, so the implementer and reviewer miss its conditions and reasons.
 - Pasting the conversation, so profanity, small talk, or personal data land in the spec.
-- Getting approval without the conversation check, so something said in passing is lost.
+- Getting approval without the conversation check, so a requirement raised unasked is lost.
 - Always splitting, spending two to three times the cost on small changes.
 - Passing a reviewer's finding to the implementer without checking its evidence.
 - Skipping step 9, so a solo change that grew ends without a review.

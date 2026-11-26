@@ -7,10 +7,10 @@ Status: draft | approved · Date: <YYYY-MM-DD> · Setup: <with review | split>
 ## Background and goal
 <One paragraph: what is wrong today, and what is true once this change is done. No implementation details.>
 
-## Request and conversation
-<Organized, not pasted; keep every condition, reason and example, drop profanity, small talk and personal data. Request: what and why. Questions and answers: Q#, options, chosen answer and reason, where it went. Said in passing: content and where it went. Terms. Facts from the survey with file:line.>
+## Request and clarifications
+<Behavior statements, not the user's words; keep every condition, reason and example, drop profanity, small talk and personal data. Request: what and why. Clarified: Q#, what was settled, why, options dropped, where it went. Added requirements: statement, reason, where it went. Terms. Facts from the survey with file:line.>
 - Request: ...
-- Q1: ... Answer: ... → R1
+- Q1 ... → ... Reason: ... → R1
 
 ## Requirements
 <One observable behavior each: input, result, errors. Never renumber; mark dropped ones "(dropped: reason)".>

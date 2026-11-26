@@ -39,7 +39,7 @@
     {
       "id": 8,
       "prompt": "(During the interview, after asking about the date filter) By the way, the export must never include deleted users; legal asked for that last year.",
-      "expected_output": "Records the remark, with its reason, under 'Said in passing' in the spec and turns it into a requirement or constraint with a scenario, rather than leaving it in the conversation; the conversation check before approval counts it as placed."
+      "expected_output": "Records the remark, with its reason, as a behavior statement under 'Added requirements' in the spec and turns it into a requirement or constraint with a scenario, rather than leaving it in the conversation; the conversation check before approval counts it as placed."
     },
     {
       "id": 9,
