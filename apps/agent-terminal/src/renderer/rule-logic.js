@@ -13,12 +13,12 @@
 }(typeof self !== 'undefined' ? self : this, () => {
   // Rule events and the Claude Code hook each one answers to.
   const EVENTS = {
-    prompt: { hook: 'UserPromptSubmit', label: '프롬프트를 받을 때' },
-    pre: { hook: 'PreToolUse', label: '명령·도구 실행 전' },
-    post: { hook: 'PostToolUse', label: '명령·도구 실행 후' },
-    wait: { hook: 'PermissionRequest', label: '승인을 기다릴 때' },
-    stop: { hook: 'Stop', label: '작업이 끝났을 때' },
-    compact: { hook: 'PostCompact', label: '대화가 압축된 뒤' },
+    prompt: { hook: 'UserPromptSubmit', label: '💬 프롬프트' },
+    pre: { hook: 'PreToolUse', label: '🛠️ 실행 전' },
+    post: { hook: 'PostToolUse', label: '✅ 실행 후' },
+    wait: { hook: 'PermissionRequest', label: '✋ 승인 대기' },
+    stop: { hook: 'Stop', label: '🏁 작업 끝' },
+    compact: { hook: 'PostCompact', label: '🗜️ 압축 뒤' },
   };
   const EVENT_OF_HOOK = Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [v.hook, k]));
 
@@ -27,15 +27,15 @@
   // block and ask only before a tool runs (Claude Code reads
   // permissionDecision there; HTTP hook replies verified on 2.1.331).
   const ACTIONS = {
-    context: { label: 'Claude 에게 글 붙이기', events: ['prompt', 'pre', 'post'], reply: true },
-    pipeline: { label: '파이프라인 노드 정보 붙이기', events: ['prompt'], reply: true },
-    block: { label: '실행 막기', events: ['pre'], reply: true },
-    ask: { label: '실행 전 확인 받기', events: ['pre'], reply: true },
-    fill: { label: '다른 터미널 입력창에 글 넣기', events: Object.keys(EVENTS), reply: false },
-    highlight: { label: '사이드바에 표시', events: Object.keys(EVENTS), reply: false },
+    context: { label: '📝 글 붙이기', events: ['prompt', 'pre', 'post'], reply: true },
+    pipeline: { label: '🧭 노드 정보 붙이기', events: ['prompt'], reply: true },
+    block: { label: '⛔ 막기', events: ['pre'], reply: true },
+    ask: { label: '❓ 확인 받기', events: ['pre'], reply: true },
+    fill: { label: '↪️ 다른 터미널에 넣기', events: Object.keys(EVENTS), reply: false },
+    highlight: { label: '⚡ 표시', events: Object.keys(EVENTS), reply: false },
   };
 
-  const FREQS = { every: '매번', once: '세션당 한 번', changed: '글이 바뀔 때만' };
+  const FREQS = { every: '매번', once: '세션당 1번', changed: '바뀔 때만' };
   const VARS = ['terminal', 'branch', 'cwd', 'prompt', 'command', 'file', 'tool', 'last_answer'];
   const SUBJECT_MAX = 20000;
 
@@ -110,20 +110,21 @@
     return condHolds(rule.cond, subject(ev));
   }
 
-  // The rule as one line for the list.
+  // The rule as one short line for the list: when · condition · where →
+  // what. "Every terminal" is left out; "?" marks a choice still to make.
   function describe(rule, groupName = (id) => id) {
     const ev = EVENTS[rule.event] ? EVENTS[rule.event].label : '?';
     const c = rule.cond || {};
     const shown = String(c.value || '').length > 40 ? `${String(c.value).slice(0, 40)}…` : c.value;
-    const cond = c.kind === 'none' || !c.value ? ''
-      : c.label ? ` · 조건 「${c.label}」` : ` · ${c.kind === 'regex' ? '정규식' : '내용에'} 「${shown}」`;
-    const scope = !rule.scope || rule.scope.kind === 'all' ? '모든 터미널'
-      : rule.scope.kind === 'group' ? `그룹 ${groupName(rule.scope.id)}`
-        : rule.scope.kind === 'agent' ? `에이전트 ${rule.scope.name || '(고르세요)'}` : `터미널 ${rule.scope.name || '(고르세요)'}`;
+    const cond = c.kind === 'none' || !c.value ? '' : ` · ${c.label || `「${shown}」`}`;
+    const s = rule.scope || {};
+    const scope = !s.kind || s.kind === 'all' ? ''
+      : s.kind === 'group' ? ` · 📁 ${groupName(s.id)}`
+        : s.kind === 'agent' ? ` · 🤖 ${s.name || '?'}` : ` · 🖥️ ${s.name || '?'}`;
     const a = rule.action || {};
-    const what = a.kind === 'fill' ? `터미널 ${a.target || '(고르세요)'} 입력창에 글 ${a.send ? '넣고 보내기' : '채우기'}`
+    const what = a.kind === 'fill' ? `↪️ ${a.target || '?'} ${a.send ? '보내기' : '넣기'}`
       : (ACTIONS[a.kind] ? ACTIONS[a.kind].label : '?');
-    return `${ev}${cond} · ${scope} → ${what}`;
+    return `${ev}${cond}${scope} → ${what}`;
   }
 
   // Starting points in the 자동화 tab's 템플릿 menu, by `group`. Guards watch
@@ -141,10 +142,10 @@
   // regex until the user changes it.
   const re = (value, label) => ({ kind: 'regex', value, label });
   const all = { kind: 'all' };
-  const guard = (name, label, kind, value, text) => ({ group: '지키기', name, event: 'pre', cond: re(value, label), scope: all, action: { kind, text }, freq: 'every' });
+  const guard = (name, label, kind, value, text) => ({ group: '🛡️ 지키기', name, event: 'pre', cond: re(value, label), scope: all, action: { kind, text }, freq: 'every' });
   // PowerShell: the Windows shell tool's name, unverified (harmless if absent).
   const shellGuard = (name, label, kind, value, text) => guard(name, label, kind, R`^(Bash|PowerShell) [\s\S]*?(?:` + value + ')', text);
-  const tell = (name, event, cond, text, freq = 'every', scope = all) => ({ group: '알려 주기', name, event, cond, scope, action: { kind: 'context', text }, freq });
+  const tell = (name, event, cond, text, freq = 'every', scope = all) => ({ group: '💬 알려 주기', name, event, cond, scope, action: { kind: 'context', text }, freq });
   const TEMPLATES = [
     guard('비밀 파일 막기', '비밀 파일', 'block',
       R`(^|[\\/\s])(\.env(\.[\w-]+)?|id_rsa|id_ed25519|id_ecdsa|[\w-]+\.(pem|key|p12|pfx)|credentials(\.json)?|\.netrc|\.pgpass)` + END,
@@ -191,13 +192,13 @@
     tell('수정 뒤 시험 상기', 'post', re(EDIT, '파일 수정'), '파일을 고쳤으면 끝내기 전에 관련 시험·검사를 돌려 결과를 확인하세요.', 'once'),
     tell('그룹 규칙 상기', 'prompt', none, '이 그룹의 작업 규칙: (여기에 적기)', 'once', { kind: 'group', id: '' }),
 
-    { group: '넘기기·표시', name: '작업 끝나면 다른 터미널에 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 작업이 끝났어. {branch} 브랜치의 변경을 검토해줘.' }, freq: 'every' },
-    { group: '넘기기·표시', name: '마지막 답 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 마지막 답이야. 이어서 처리해줘.\n\n{last_answer}' }, freq: 'every' },
-    { group: '넘기기·표시', name: '질문으로 끝나면 표시', event: 'stop', cond: re(R`(\?|？|까요\.?)\s*$`, '질문으로 끝남'), scope: all, action: { kind: 'highlight' }, freq: 'every' },
-    { group: '넘기기·표시', name: '승인 대기 표시', event: 'wait', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
-    { group: '넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '↪️ 넘기기·표시', name: '작업 끝나면 다른 터미널에 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 작업이 끝났어. {branch} 브랜치의 변경을 검토해줘.' }, freq: 'every' },
+    { group: '↪️ 넘기기·표시', name: '마지막 답 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 마지막 답이야. 이어서 처리해줘.\n\n{last_answer}' }, freq: 'every' },
+    { group: '↪️ 넘기기·표시', name: '질문으로 끝나면 표시', event: 'stop', cond: re(R`(\?|？|까요\.?)\s*$`, '질문으로 끝남'), scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '↪️ 넘기기·표시', name: '승인 대기 표시', event: 'wait', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '↪️ 넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
 
-    { group: '파이프라인', name: '파이프라인 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
+    { group: '🧭 파이프라인', name: '파이프라인 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
   ];
 
   return { EVENTS, EVENT_OF_HOOK, ACTIONS, FREQS, VARS, TEMPLATES, subject, vars, fillText, condHolds, agentMatches, fires, describe };

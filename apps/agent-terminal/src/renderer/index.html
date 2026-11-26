@@ -115,13 +115,13 @@
           <span id="pipe-title" class="pipe-title ellipsis" title="더블클릭: 이름 바꾸기"></span>
           <button id="pipe-pick" class="vbtn" type="button" aria-haspopup="menu">파이프라인 ▾</button>
           <span class="pipe-gap"></span>
-          <button id="pipe-open-all" class="vbtn" type="button" hidden title="저장된 세션은 이어 열고, 없으면 노드의 에이전트로 새로 시작합니다">Claude 모두 열기</button>
+          <button id="pipe-open-all" class="vbtn" type="button" hidden title="Claude 모두 열기: 저장된 세션은 이어 열고, 없으면 에이전트로 새로 시작">▶ 모두 열기</button>
           <span id="pipe-edit-tools" class="pipe-tools" hidden>
             <button id="pipe-add" class="vbtn" type="button">＋ 노드</button>
-            <button id="pipe-del-edge" class="vbtn" type="button" hidden>선 삭제</button>
+            <button id="pipe-del-edge" class="vbtn" type="button" hidden title="고른 화살표 삭제">🗑 선</button>
           </span>
-          <button id="pipe-edit" class="vbtn" type="button">편집</button>
-          <button id="pipe-done" class="vbtn primary" type="button" hidden>편집 끝</button>
+          <button id="pipe-edit" class="vbtn" type="button">✏️ 편집</button>
+          <button id="pipe-done" class="vbtn primary" type="button" hidden>완료</button>
         </div>
         <div class="pipe-body">
         <div id="pipe-canvas" class="pipe-canvas">
@@ -134,7 +134,7 @@
         </div>
         <div id="pipe-empty" class="pipe-empty" hidden>
           <button id="pipe-create" class="vbtn" type="button">＋ 새 파이프라인</button>
-          <button id="pipe-create-recommended" class="vbtn" type="button">권장 개발 파이프라인</button>
+          <button id="pipe-create-recommended" class="vbtn" type="button">⭐ 권장 개발 파이프라인</button>
         </div>
       </section>
       <div id="terminals" class="terminals">
@@ -179,7 +179,7 @@
         <button class="tab" role="tab" data-tab="activity" title="활동">활동</button>
         <button class="tab" role="tab" data-tab="files" title="파일">파일</button>
         <button class="tab" role="tab" data-tab="git" title="git">git</button>
-        <button class="tab" role="tab" data-tab="config" title="Claude 구성">Claude 구성</button>
+        <button class="tab" role="tab" data-tab="config" title="Claude 구성">구성</button>
         <button class="tab" role="tab" data-tab="review" title="돌아보기 — 승인한 명령·반복한 요청">돌아보기</button>
         <button class="tab" role="tab" data-tab="rules" title="자동화 — Claude가 일할 때 정해 둔 일을 하기">자동화</button>
         <button class="tab" role="tab" data-tab="preview" title="미리보기" hidden>미리보기</button>
@@ -230,8 +230,8 @@
         <div id="rv-body"></div>
         <div class="rv-foot">
           <div class="rv-foot-btns">
-            <button id="rv-clear-day" class="btn" type="button">이 날 기록 지우기</button>
-            <button id="rv-clear-all" class="btn" type="button">전부 지우기</button>
+            <button id="rv-clear-day" class="btn" type="button" title="이 날 기록 지우기">🗑 이 날</button>
+            <button id="rv-clear-all" class="btn" type="button">🗑 전부</button>
           </div>
         </div>
       </section>
@@ -241,15 +241,7 @@
           <button id="rl-templates" class="btn" type="button" aria-haspopup="menu">템플릿 ▾</button>
         </div>
         <ul id="rl-list" class="rl-list" aria-label="자동화 규칙"></ul>
-        <div id="rl-empty" class="hint rl-empty">
-          <p>Claude가 일하는 순간에 맞춰 정해 둔 일을 합니다.</p>
-          <ul>
-            <li>예: 작업이 끝나면 다른 터미널 입력창에 다음 요청 넣기</li>
-            <li>예: <code>git push</code> 전에 한 번 더 묻기</li>
-            <li>예: 특정 낱말이 든 질문에 체크리스트 붙이기</li>
-          </ul>
-          <p>이 앱 터미널에서 실행한 Claude에만 적용됩니다.</p>
-        </div>
+        <p id="rl-empty" class="hint rl-empty">⚡ Claude가 일할 때 자동으로 할 일<br>＋ 규칙 또는 템플릿 ▾ 로 시작</p>
       </section>
     </aside>
   </div>

@@ -1017,7 +1017,7 @@ function renderPipeline() {
     // the session: its name, or its folder when it is named after the step;
     // for a subagent, the node it runs in
     const sessName = info ? displayName(info) : '';
-    const sessText = host ? `「${host.name}」 안 서브에이전트` : !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
+    const sessText = host ? `↳ ${host.name} 안` : !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
     div.append(h('div', 'pn-name ellipsis', n.name), h('div', 'pn-sess ellipsis', sessText), h('div', 'pn-state ellipsis', label));
     const claudeName = info && info.claude && info.claude.session && info.claude.session.name;
     const where = host ? `\n「${host.name}」 세션 안의 서브에이전트${n.agent ? ` (${n.agent})` : ''}` : info ? `\n터미널: ${displayName(info)}` : '\n세션 없음';
@@ -1065,18 +1065,18 @@ function openNode(n) {
 function nodeMenu(n) {
   if (n.within) {
     return [
-      { label: '세션으로 이동', disabled: !hostTerminal(n), action: () => openNode(n) },
+      { label: '→ 이동', disabled: !hostTerminal(n), action: () => openNode(n) },
       { sep: true },
-      { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
+      { label: '✏️ 편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
     ];
   }
   const tid = boundTerminal(n.id);
   return [
-    { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
-    ...(n.claude && !sessionOpen(n) ? [{ label: 'Claude 세션 다시 열기', action: () => reopenSession(n) }] : []),
-    ...(!claudeRunning(n) ? [{ label: n.agent ? `Claude 시작 (${n.agent})` : 'Claude 시작', action: () => startNodeClaude(n) }] : []),
+    { label: '→ 이동', disabled: !tid, action: () => openNode(n) },
+    ...(n.claude && !sessionOpen(n) ? [{ label: '↻ 세션 다시 열기', action: () => reopenSession(n) }] : []),
+    ...(!claudeRunning(n) ? [{ label: '▶ Claude 시작', hint: n.agent || '', action: () => startNodeClaude(n) }] : []),
     { sep: true },
-    { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
+    { label: '✏️ 편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
   ];
 }
 
@@ -1186,7 +1186,7 @@ function renderProps(p) {
     const g = groupById(groupOf[tid]);
     sess.append(new Option(`${displayName(a.info)}${g ? ` (${g.name})` : ''}`, tid));
   }
-  sess.append(new Option('＋ 새 터미널 열기', '__new'));
+  sess.append(new Option('＋ 새 터미널', '__new'));
   sess.value = boundTerminal(n.id) || '';
   sess.addEventListener('change', async () => {
     if (sess.value === '__new') {
@@ -1202,21 +1202,21 @@ function renderProps(p) {
   memo.rows = 4;
   memo.value = n.memo || '';
   memo.addEventListener('input', () => { n.memo = memo.value; savePipes(); });
-  const del = h('button', 'btn pp-del', '노드 삭제');
+  const del = h('button', 'btn pp-del', '🗑 삭제');
   del.type = 'button';
   del.addEventListener('click', () => deleteNode(n.id));
   const field = (label, el) => { const l = h('label', 'pp-field'); l.append(h('span', null, label), el); return l; };
   const agent = h('input', 'pp-in mono');
   agent.value = n.agent || '';
-  agent.placeholder = '예: omni-pipeline:lead (비우면 그냥 claude)';
+  agent.placeholder = '비우면 claude';
   agent.spellcheck = false;
   agent.addEventListener('input', () => { const v = agent.value.trim(); if (v) n.agent = v; else delete n.agent; savePipes(); });
   // 종류: a terminal of its own, or a subagent inside another node's session.
   const hosts = p.nodes.filter((x) => x.id !== n.id && !x.within);
   const kind = document.createElement('select');
   kind.className = 'pp-in';
-  kind.append(new Option('터미널', ''));
-  for (const x of hosts) kind.append(new Option(`「${x.name}」 세션 안 서브에이전트`, x.id));
+  kind.append(new Option('🖥️ 터미널', ''));
+  for (const x of hosts) kind.append(new Option(`↳ ${x.name} 안 서브에이전트`, x.id));
   kind.value = n.within && hosts.some((x) => x.id === n.within) ? n.within : '';
   kind.addEventListener('change', () => {
     if (kind.value) {
@@ -1232,7 +1232,7 @@ function renderProps(p) {
   if (n.within) {
     agent.placeholder = '예: omni-pipeline:implementer';
     props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('종류', kind), field('에이전트', agent),
-      h('div', 'pp-ro muted', '그 세션에서 이 에이전트가 돌면 상태가 표시됩니다'), field('메모', memo), del);
+      h('div', 'pp-ro muted', '돌 때 자동 표시'), field('메모', memo), del);
     return;
   }
   props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('종류', kind), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), del);
@@ -1250,15 +1250,15 @@ function claudeInfo(n) {
     b.addEventListener('click', action);
     return b;
   };
-  if (!n.claude) box.append(h('div', 'pp-ro muted', '아직 없음'));
+  if (!n.claude) box.append(h('div', 'pp-ro muted', '—'));
   else {
     const row = (label, value, mono) => { const r = h('div', 'pp-ro-row'); r.append(h('span', 'pp-ro-k', label), h('span', `pp-ro${mono ? ' mono' : ''}`, value)); return r; };
     box.append(row('이름', n.claude.name || '—'), row('id', n.claude.id, true), row('폴더', `${n.claude.cwd || '—'}${n.claude.wsl ? ` (WSL ${n.claude.wsl})` : ''}`, true));
   }
-  if (claudeRunning(n)) { box.append(h('div', 'pp-ro muted', sessionOpen(n) ? '연결된 터미널에서 실행 중' : '연결된 터미널에서 다른 Claude 가 실행 중')); return box; }
+  if (claudeRunning(n)) { box.append(h('div', 'pp-ro muted', sessionOpen(n) ? '● 실행 중' : '● 다른 Claude 실행 중')); return box; }
   const actions = h('div', 'pp-actions');
-  if (n.claude) actions.append(button('이 세션 다시 열기', ViewLogic.resumeLines(n.claude, api.platform, n.agent), () => reopenSession(n)));
-  actions.append(button(n.claude ? '새로 시작' : 'Claude 시작', ViewLogic.startLines(startPlace(n), api.platform, n.agent), () => startNodeClaude(n)));
+  if (n.claude) actions.append(button('↻ 다시 열기', ViewLogic.resumeLines(n.claude, api.platform, n.agent), () => reopenSession(n)));
+  actions.append(button(n.claude ? '▶ 새로' : '▶ 시작', ViewLogic.startLines(startPlace(n), api.platform, n.agent), () => startNodeClaude(n)));
   box.append(actions);
   return box;
 }
@@ -1371,10 +1371,10 @@ function pipelineMenu() {
   return [
     ...pipelines.map((x) => ({ label: x.name, hint: x.id === (p && p.id) ? '보는 중' : '', action: () => { pipeCur = x.id; writePref(PIPE_CUR_KEY, pipeCur); pipe.sel = null; setPipeEditing(false); renderStrip(); } })),
     ...(pipelines.length ? [{ sep: true }] : []),
-    { label: '새 파이프라인', sub: [{ label: '빈 그래프', action: createPipeline }, { label: '권장 개발 파이프라인', action: addRecommendedPipeline }] },
+    { label: '＋ 새 파이프라인', sub: [{ label: '⬜ 빈 그래프', action: createPipeline }, { label: '⭐ 권장 개발 파이프라인', action: addRecommendedPipeline }] },
     ...(p ? [
-      { label: '이름 바꾸기', action: renamePipeline },
-      { label: '이 파이프라인 삭제', action: () => {
+      { label: '✏️ 이름 바꾸기', action: renamePipeline },
+      { label: '🗑 삭제', action: () => {
         if (!window.confirm(`파이프라인 "${p.name}"을(를) 삭제할까요? 터미널은 그대로 둡니다.`)) return;
         pipelines = pipelines.filter((x) => x.id !== p.id);
         savePipes();
@@ -2274,10 +2274,10 @@ async function ruleFill(rule, source, target, text, send) {
   const a = agents.get(target);
   if (!a) return;
   const block = ViewLogic.promptBlock(a.info);
-  if (block) { rule.lastSkip = block === 'waiting' ? '승인 대기 중이라 넣지 않음' : 'Claude가 없어 넣지 않음'; return; }
+  if (block) { rule.lastSkip = block === 'waiting' ? '⏸ 승인 대기라 안 넣음' : '⏸ Claude 없어 안 넣음'; return; }
   const depth = (autoDepth.get(source) || 0) + 1;
   const sendNow = send && depth <= MAX_AUTO_CHAIN;
-  rule.lastSkip = send && !sendNow ? `자동으로 ${MAX_AUTO_CHAIN}번 이어 보내서 이번엔 넣기만 함` : '';
+  rule.lastSkip = send && !sendNow ? `⏸ 자동 ${MAX_AUTO_CHAIN}번 연속이라 넣기만` : '';
   api.write(target, ViewLogic.promptInput(text, a.term.modes.bracketedPasteMode));
   if (!sendNow) return;
   await sleep(120);
@@ -2337,7 +2337,7 @@ function renderRules() {
     main.type = 'button';
     main.append(h('div', 'rl-name ellipsis', r.name), h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
     main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
-    const hits = h('div', 'rl-hits', r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '아직 없음');
+    const hits = h('div', 'rl-hits', r.hits ? `⚡${r.hits} · ${clock(r.lastAt)}` : '—');
     const row = h('div', 'rl-row');
     row.append(sw, main, hits);
     li.append(row);
@@ -2391,7 +2391,7 @@ function ruleEditor(r) {
   const condCheck = () => {
     let bad = false;
     if (r.cond.kind === 'regex' && r.cond.value) { try { new RegExp(r.cond.value); } catch { bad = true; } }
-    condHint.textContent = bad ? '정규식이 올바르지 않아 맞는 것이 없습니다' : RULE_SUBJECT[r.event] || '';
+    condHint.textContent = bad ? '⚠️ 잘못된 정규식' : RULE_SUBJECT[r.event] || '';
     condHint.classList.toggle('bad', bad);
   };
   const condValue = input(r.cond.value, r.cond.kind === 'regex' ? '예: git push|migrate' : '예: 배포', (v) => { r.cond.value = v; delete r.cond.label; condCheck(); changed(); }, 'pp-in mono');
@@ -2403,7 +2403,7 @@ function ruleEditor(r) {
   const terminalOpts = (prefix, which, name) => {
     const opts = [...agents].map(([id, a]) => [`t:${id}`, `${prefix}${displayName(a.info)}`]);
     const now = ruleTerminals(r, which, name)[0];
-    if (name && !now) opts.push([`n:${name}`, `${prefix}${name} (열려 있지 않음)`]);
+    if (name && !now) opts.push([`n:${name}`, `${prefix}${name} (닫힘)`]);
     if (!name && !now) opts.push(['n:', `${prefix}(고르세요)`]);
     return [opts, now ? `t:${now}` : `n:${name || ''}`];
   };
@@ -2412,9 +2412,9 @@ function ruleEditor(r) {
   };
 
   // 어디서: every terminal, a group, one terminal, or an agent.
-  const [tOpts, tVal] = terminalOpts('터미널: ', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
-  const scopeOpts = [['all', '모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `그룹: ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal'), ['agent', '에이전트…']];
-  if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '그룹: (고르세요)']);
+  const [tOpts, tVal] = terminalOpts('🖥️ ', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
+  const scopeOpts = [['all', '🌐 모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `📁 ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal'), ['agent', '🤖 에이전트…']];
+  if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '📁 (고르세요)']);
   const scopeVal = r.scope.kind === 'group' ? `g:${r.scope.id}` : r.scope.kind === 'terminal' ? tVal : r.scope.kind === 'agent' ? 'agent' : 'all';
   const where = select(scopeOpts, scopeVal, (v) => {
     if (v === 'all') r.scope = { kind: 'all' };
@@ -2433,7 +2433,7 @@ function ruleEditor(r) {
     for (const n of known) list.append(new Option(n));
     const agentName = input(r.scope.name, '예: omni-pipeline:implementer', (v) => { r.scope.name = v.trim(); changed(); }, 'pp-in mono');
     agentName.setAttribute('list', list.id);
-    whereParts.push(agentName, list, h('div', 'rl-note', '- claude --agent <이름> 으로 띄운 세션\n- 그 이름의 서브에이전트 (막기·확인만)\n- 어느 터미널이든 상관없음'));
+    whereParts.push(agentName, list, h('div', 'rl-note', 'claude --agent 이름 세션 + 그 서브에이전트(⛔❓만)'));
   }
 
   // 무엇을, and what it needs.
@@ -2451,44 +2451,48 @@ function ruleEditor(r) {
     box.type = 'checkbox';
     box.checked = r.action.send === true;
     box.addEventListener('change', () => { r.action.send = box.checked; changed(true); });
-    send.append(box, '넣고 바로 보내기');
-    parts.push(field('받을 터미널', target, send, h('div', 'rl-note', r.action.send
-      ? `- 그 터미널의 Claude가 바로 일을 시작합니다\n- 사람이 입력하지 않은 채 ${MAX_AUTO_CHAIN}번 이어지면 그다음은 넣기만 합니다`
-      : '- 입력창에 넣기만 합니다. 보내기는 직접 Enter')));
+    send.append(box, '바로 보내기');
+    parts.push(field('받는 곳', target, send, h('div', 'rl-note', r.action.send
+      ? `자동 ${MAX_AUTO_CHAIN}번 연속 뒤엔 넣기만`
+      : 'Enter는 직접')));
   }
   if (['context', 'block', 'ask', 'fill'].includes(kind)) {
     const text = document.createElement('textarea');
     text.className = 'pp-in';
     text.rows = 3;
     text.value = r.action.text || '';
-    text.placeholder = kind === 'context' ? 'Claude에게 함께 보낼 글' : kind === 'fill' ? '넣을 글' : 'Claude에게 보여 줄 이유';
+    text.placeholder = kind === 'context' ? 'Claude에게 붙일 글' : kind === 'fill' ? '넣을 글' : 'Claude에게 보일 이유';
     text.addEventListener('input', () => { r.action.text = text.value; changed(); });
-    parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : '이유', text,
-      h('div', 'rl-note', `쓸 수 있는 값: ${RuleLogic.VARS.map((v) => `{${v}}`).join(' ')}`)));
+    // The values a text can use, behind a small "{ }" (hover or focus).
+    const vals = h('span', 'rl-vars', '{ } 값');
+    vals.tabIndex = 0;
+    vals.title = RuleLogic.VARS.map((v) => `{${v}}`).join('  ');
+    parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : '이유', text, vals));
   }
-  if (kind === 'pipeline') parts.push(h('div', 'rl-note', '- 연결된 파이프라인 노드의 이름·메모와 앞뒤 노드를 붙입니다\n- 노드에 연결된 터미널에만'));
+  if (kind === 'pipeline') parts.push(h('div', 'rl-note', '🧭 연결된 노드와 앞뒤 노드'));
   if (kind !== 'block' && kind !== 'ask') {
     parts.push(field('빈도', select(Object.entries(RuleLogic.FREQS), r.freq, (v) => { r.freq = v; changed(true); })));
   }
-  if (['context', 'pipeline'].includes(kind)) parts.push(h('div', 'rl-note', '- 붙인 글만큼 그 세션의 토큰을 씁니다'));
+  if (['context', 'pipeline'].includes(kind)) parts.push(h('div', 'rl-note', '붙인 만큼 토큰 사용'));
 
   // 시험: the condition against the last events this app run saw.
   const out = h('ol', 'rl-test');
-  const test = h('button', 'btn', '최근 기록으로 시험');
+  const test = h('button', 'btn', '🧪 시험');
+  test.title = '최근 기록에 조건을 맞춰 보기';
   test.type = 'button';
   test.addEventListener('click', async () => {
     const recent = (await api.rulesRecent()).filter((e) => e.hook === RuleLogic.EVENTS[r.event].hook).slice(-5).reverse();
-    if (!recent.length) { out.replaceChildren(h('li', 'muted', `아직 「${RuleLogic.EVENTS[r.event].label}」 기록이 없습니다`)); return; }
+    if (!recent.length) { out.replaceChildren(h('li', 'muted', `${RuleLogic.EVENTS[r.event].label} 기록 없음`)); return; }
     out.replaceChildren(...recent.map((e) => {
       const ok = RuleLogic.condHolds(r.cond, e.subject);
       const li = h('li', ok ? 'ok' : 'no');
-      li.append(h('span', 'rl-test-mark', ok ? '맞음' : '아님'), h('span', 'rl-test-subj ellipsis', e.subject || '(내용 없음)'));
+      li.append(h('span', 'rl-test-mark', ok ? '✓' : '–'), h('span', 'rl-test-subj ellipsis', e.subject || '—'));
       if (ok && r.action.text) li.append(h('div', 'rl-test-out', RuleLogic.fillText(r.action.text, e.vars)));
       li.title = `${clock(e.at)} · ${(agents.get(e.terminal) && displayName(agents.get(e.terminal).info)) || e.vars.terminal}`;
       return li;
     }));
   });
-  const del = h('button', 'btn pp-del', '규칙 삭제');
+  const del = h('button', 'btn pp-del', '🗑 삭제');
   del.type = 'button';
   del.addEventListener('click', () => {
     if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
@@ -2505,12 +2509,12 @@ function ruleEditor(r) {
 
 // What a condition is checked against, per event.
 const RULE_SUBJECT = {
-  prompt: '사용자가 보낸 글에서 찾습니다',
-  pre: '도구 이름과 명령(또는 파일 경로)에서 찾습니다. 예: Bash git push',
-  post: '도구 이름과 명령(또는 파일 경로)에서 찾습니다',
-  wait: '승인을 기다리는 도구 이름과 명령에서 찾습니다',
-  stop: 'Claude의 마지막 답에서 찾습니다',
-  compact: '조건 없이 매번입니다',
+  prompt: '🔎 보낸 글',
+  pre: '🔎 도구 + 명령·경로 (예: Bash git push)',
+  post: '🔎 도구 + 명령·경로',
+  wait: '🔎 도구 + 명령',
+  stop: '🔎 마지막 답',
+  compact: '조건 없음',
 };
 
 rulesEls.add.addEventListener('click', () => { const r = newRule(); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); });
@@ -4211,8 +4215,8 @@ function renderReview() {
   els.enabled.checked = d.enabled;
   els.clearAll.title = `최근 ${d.keepDays}일 기록 전부 (이 PC에만 저장)`;
   const c = d.counts;
-  els.stats.replaceChildren(...[['프롬프트', c.prompts], ['승인 요청', c.permissions], ['중단', c.interrupts], ['오류', c.errors]]
-    .map(([k, n]) => { const s = h('span', null, `${k} `); s.append(h('b', null, String(n))); return s; }));
+  els.stats.replaceChildren(...[['💬', '프롬프트', c.prompts], ['✋', '승인 요청', c.permissions], ['⏹', '중단', c.interrupts], ['⚠️', '오류', c.errors]]
+    .map(([icon, k, n]) => { const s = h('span', null, `${icon} `); s.title = k; s.append(h('b', null, String(n))); return s; }));
   els.clearDay.disabled = !d.days.includes(d.day);
   els.clearAll.disabled = !d.days.length;
 
@@ -4234,8 +4238,8 @@ function renderReview() {
 }
 
 function renderApprovals(d) {
-  const head = h('h4', 'rv-h', '자주 승인한 명령');
-  if (!d.approvals.length) return [head, h('p', 'hint', '없음')];
+  const head = h('h4', 'rv-h', '✋ 자주 승인');
+  if (!d.approvals.length) return [head, h('p', 'hint', '—')];
   const list = h('ul', 'rv-list');
   for (const g of d.approvals) {
     const key = `${g.project}\n${g.rule}`;
@@ -4254,7 +4258,8 @@ function renderApprovals(d) {
     const sub = h('div', 'rv-sub');
     const proj = h('span', 'rv-proj', rvBase(g.project));
     proj.title = g.project || '';
-    const add = h('button', 'btn rv-act', g.added ? '추가됨' : '허용에 추가');
+    const add = h('button', 'btn rv-act', g.added ? '허용됨' : '✓ 허용');
+    add.title = '다음부터 묻지 않게 허용 목록에 추가';
     add.type = 'button';
     add.disabled = g.added;
     add.addEventListener('click', () => confirmAllow(g.project, [g.rule]));
@@ -4272,7 +4277,7 @@ function renderApprovals(d) {
   const picked = d.approvals.filter((g) => !g.added && rv.picked.has(`${g.project}\n${g.rule}`));
   if (picked.length) {
     const bulk = h('div', 'rv-bulk');
-    const b = h('button', 'btn primary rv-act', `선택한 ${picked.length}개 추가`);
+    const b = h('button', 'btn primary rv-act', `✓ ${picked.length}개 허용`);
     b.type = 'button';
     b.addEventListener('click', async () => {
       // One confirmation per project (each has its own settings file).
@@ -4287,8 +4292,8 @@ function renderApprovals(d) {
 }
 
 function renderRepeats(d) {
-  const head = h('h4', 'rv-h', '반복한 요청');
-  if (!d.repeats.length) return [head, h('p', 'hint', '없음')];
+  const head = h('h4', 'rv-h', '🔁 반복 요청');
+  if (!d.repeats.length) return [head, h('p', 'hint', '—')];
   const list = h('ul', 'rv-list');
   for (const g of d.repeats) {
     const key = `repeat\n${g.key}`;
@@ -4301,7 +4306,8 @@ function renderRepeats(d) {
     const sub = h('div', 'rv-sub');
     const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
     proj.title = g.project || '';
-    const make = h('button', 'btn rv-act', '스킬 만들기');
+    const make = h('button', 'btn rv-act', '＋ 스킬');
+    make.title = '이 요청을 스킬로 만들기';
     make.type = 'button';
     make.addEventListener('click', () => makeSkill(g));
     sub.append(proj, make);
@@ -4324,8 +4330,8 @@ function renderRepeats(d) {
 // as a request to turn them into what lives in the project's .claude/
 // folder; CLAUDE.md is left to the user (a file the team shares).
 function renderCorrections(d) {
-  const head = h('h4', 'rv-h', '고쳐 준 말');
-  if (!d.corrections.length) return [head, h('p', 'hint', '없음')];
+  const head = h('h4', 'rv-h', '✏️ 고쳐 준 말');
+  if (!d.corrections.length) return [head, h('p', 'hint', '—')];
   const list = h('ul', 'rv-list');
   for (const g of d.corrections) {
     const key = `fix\n${g.key}`;
@@ -4359,8 +4365,8 @@ function renderCorrections(d) {
   const out = [head, list];
   const picked = d.corrections.filter((g) => rv.pickedFix.has(g.key));
   const bulk = h('div', 'rv-bulk');
-  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `선택한 ${picked.length}개 .claude/에 만들기` : '.claude/에 만들기');
-  b.title = 'Claude 입력칸에 요청을 채움 (CLAUDE.md 는 고치지 않음)';
+  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `＋ ${picked.length}개 지침으로` : '＋ 지침으로');
+  b.title = '.claude/ 에 지침으로 만들도록 Claude 입력칸에 요청을 채움 (CLAUDE.md 는 고치지 않음)';
   b.type = 'button';
   b.disabled = !picked.length;
   b.addEventListener('click', () => askClaudeDir(picked));
