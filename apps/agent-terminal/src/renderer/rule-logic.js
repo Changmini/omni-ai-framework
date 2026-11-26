@@ -198,7 +198,7 @@
     { group: '↪️ 넘기기·표시', name: '승인 대기 표시', event: 'wait', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
     { group: '↪️ 넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
 
-    { group: '🧭 파이프라인', name: '파이프라인 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
+    { group: '🧭 보드', name: '보드 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
   ];
 
   return { EVENTS, EVENT_OF_HOOK, ACTIONS, FREQS, VARS, TEMPLATES, subject, vars, fillText, condHolds, agentMatches, fires, describe };

@@ -96,7 +96,7 @@
         <span id="active-status" class="status-text"></span>
         <span id="view-switch" class="view-switch" role="tablist" aria-label="보기">
           <button type="button" role="tab" data-view="terminal" aria-selected="true">터미널</button>
-          <button type="button" role="tab" data-view="pipeline" aria-selected="false" title="파이프라인 (Ctrl+Shift+G)">파이프라인</button>
+          <button type="button" role="tab" data-view="pipeline" aria-selected="false" title="보드 (Ctrl+Shift+G)">보드</button>
         </span>
         <button id="preview-toggle" class="icon-btn preview-toggle" title="미리보기 (Ctrl+Shift+P)" aria-label="미리보기">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor"/><path d="M3.5 11 6.5 7.5 8.5 9.5 10 8 12.5 11Z" fill="currentColor"/><circle cx="11" cy="5.5" r="1.1" fill="currentColor"/></svg>
@@ -110,10 +110,10 @@
       <div id="pipe-strip" class="pipe-strip" hidden></div>
       <div id="center" class="center">
       <!-- Pipeline graph over the terminals and the preview (Ctrl+Shift+G). -->
-      <section id="pipeline" class="pipeline" hidden tabindex="-1" aria-label="파이프라인">
+      <section id="pipeline" class="pipeline" hidden tabindex="-1" aria-label="보드">
         <div class="pipe-bar">
           <span id="pipe-title" class="pipe-title ellipsis" title="더블클릭: 이름 바꾸기"></span>
-          <button id="pipe-pick" class="vbtn" type="button" aria-haspopup="menu">파이프라인 ▾</button>
+          <button id="pipe-pick" class="vbtn" type="button" aria-haspopup="menu">보드 ▾</button>
           <span class="pipe-gap"></span>
           <button id="pipe-open-all" class="vbtn" type="button" hidden title="Claude 모두 열기: 저장된 세션은 이어 열고, 없으면 에이전트로 새로 시작">▶ 모두 열기</button>
           <span id="pipe-edit-tools" class="pipe-tools" hidden>
@@ -133,8 +133,8 @@
         <div id="pipe-props" class="pipe-props" hidden></div>
         </div>
         <div id="pipe-empty" class="pipe-empty" hidden>
-          <button id="pipe-create" class="vbtn" type="button">＋ 새 파이프라인</button>
-          <button id="pipe-create-recommended" class="vbtn" type="button">⭐ 권장 개발 파이프라인</button>
+          <button id="pipe-create" class="vbtn" type="button">＋ 새 보드</button>
+          <button id="pipe-create-recommended" class="vbtn" type="button">⭐ 권장 개발 보드</button>
         </div>
       </section>
       <div id="terminals" class="terminals">

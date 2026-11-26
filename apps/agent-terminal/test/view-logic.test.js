@@ -308,7 +308,7 @@ test('pipelines: what the Claude of a node is told', () => {
   const sessions = { a: { claude: { id: 'id-a', name: 'research' } }, b: { claude: { id: 'id-b', name: null } }, c: { claude: null } };
   const text = pipelineContext(p, 'b', (id) => sessions[id] || null);
   assert.strictEqual(text, [
-    '[Omni Agent Terminal] 사용자가 그린 파이프라인 「앱 개발」에서 이 세션은 「화면」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.',
+    '[Omni Agent Terminal] 사용자가 그린 보드 「앱 개발」에서 이 세션은 「화면」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.',
     '- 이 노드 메모: 로그인 화면',
     '- 이전 노드: 「조사」 — 세션 「research」(id id-a) — 메모: 요구 정리',
     '- 다음 노드: 「통합」 — Claude 없음', // once, though two arrows; self and missing nodes left out
@@ -342,7 +342,7 @@ test('pipelines: the recommended pipeline (lead, implementer, reviewer)', () => 
   const { recommendedPipeline, pipelineOrder } = require('../src/renderer/view-logic');
   let n = 0;
   const p = recommendedPipeline(() => `r${n++}`);
-  assert.strictEqual(p.name, '권장 개발 파이프라인');
+  assert.strictEqual(p.name, '권장 개발 보드');
   assert.deepStrictEqual(p.nodes.map((x) => x.name), ['팀장', '구현', '리뷰어']);
   const name = (id) => p.nodes.find((x) => x.id === id).name;
   assert.deepStrictEqual(p.edges.map((e) => `${name(e.from)}→${name(e.to)}`), ['팀장→구현', '구현→리뷰어', '팀장→리뷰어', '리뷰어→팀장']);
@@ -381,7 +381,7 @@ test('pipelines: subagent nodes show the subagent of their type in the host sess
   assert.strictEqual(subagentsInRecommended(b), true);
   assert.deepStrictEqual(b.nodes[1].claude, { id: 's2' });
   const c = old();
-  c.name = '내 파이프라인';
+  c.name = '내 보드';
   assert.strictEqual(subagentsInRecommended(c), false);
 });
 

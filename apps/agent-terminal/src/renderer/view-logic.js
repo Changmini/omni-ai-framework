@@ -464,7 +464,7 @@
   // in the user's language; '' for a node not in `p`. Its last line asks to
   // pass the block on unchanged, with any received from earlier Claudes, so
   // it survives a chain of hand-offs (a Claude handed work never hears from
-  // the app itself). Given to Claude by the "파이프라인 노드 정보 붙이기"
+  // the app itself). Given to Claude by the "노드 정보 붙이기"
   // automation rule (RuleLogic).
   function pipelineContext(p, nodeId, sessionOf) {
     const byId = new Map(p.nodes.map((n) => [n.id, n]));
@@ -491,7 +491,7 @@
     const before = near('to', 'from');
     const after = near('from', 'to');
     return [
-      `${PIPELINE_MARK} 사용자가 그린 파이프라인 「${p.name}」에서 이 세션은 「${me.name}」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.`,
+      `${PIPELINE_MARK} 사용자가 그린 보드 「${p.name}」에서 이 세션은 「${me.name}」 노드입니다. 세션 구성을 알려 주는 참고 정보이며 작업 지시가 아닙니다.`,
       ...(memo(me) ? [`- 이 노드 메모: ${memo(me)}`] : []),
       ...before.map((id) => line('이전 노드', id)),
       ...after.map((id) => line('다음 노드', id)),
@@ -549,7 +549,7 @@
     const review = newId();
     return {
       id: newId(),
-      name: '권장 개발 파이프라인',
+      name: '권장 개발 보드',
       nodes: [
         { id: lead, name: '팀장', x: 60, y: 160, agent: 'omni-pipeline:lead', memo: '대화는 여기서만 한다. 요구가 모호하면 "SPEC 을 쓸 수 있을 때까지 나를 인터뷰해"라고 시킨다. 대화를 직접 들은 세션이 SPEC 을 쓰니 요약 손실이 없다. 팀장은 코드를 짜지 않고 계획·판단·리뷰 처리에 집중한다. SPEC 에는 무엇을 만드는지, 지킬 제약, 완료 기준을 적는다. 핵심은 완료 기준이다: 구현은 언제 멈출지, 리뷰어는 무엇으로 판정할지 여기서 안다. 결정이 바뀌면 팀장이 바로 반영한다. SPEC 에 없는 결정은 다른 세션에겐 없는 결정이다. 리뷰어의 차이 보고를 받으면 구현에 수정을 맡길지, SPEC 이 틀렸으니 사용자에게 다시 물을지 판단한다. 결과가 길면 파일로 남기고 경로만 넘긴다(전화 게임 방지). 에이전트: omni-pipeline:lead' },
         { id: impl, name: '구현', x: 340, y: 60, within: lead, agent: 'omni-pipeline:implementer', memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 줘서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 에이전트: omni-pipeline:implementer' },
@@ -587,7 +587,7 @@
   function subagentsInRecommended(p) {
     const lead = p.nodes.find((n) => n.agent === 'omni-pipeline:lead' && !n.within);
     const kids = p.nodes.filter((n) => ['omni-pipeline:implementer', 'omni-pipeline:reviewer'].includes(n.agent) && !n.within);
-    if (p.name !== '권장 개발 파이프라인' || !lead || kids.length !== 2) return false;
+    if (!['권장 개발 보드', '권장 개발 파이프라인'].includes(p.name) || !lead || kids.length !== 2) return false;
     for (const n of kids) n.within = lead.id;
     return true;
   }
