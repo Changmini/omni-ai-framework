@@ -475,6 +475,8 @@
       return t.length > MEMO_MAX ? `${t.slice(0, MEMO_MAX)}…` : t;
     };
     const session = (id) => {
+      const host = byId.get(byId.get(id).within);
+      if (host) return `「${host.name}」 세션 안의 서브에이전트`;
       const s = sessionOf(id);
       if (!s) return '세션 없음';
       if (!s.claude) return 'Claude 없음';
@@ -550,11 +552,44 @@
       name: '권장 개발 파이프라인',
       nodes: [
         { id: lead, name: '팀장', x: 60, y: 160, agent: 'omni-pipeline:lead', memo: '대화는 여기서만 한다. 요구가 모호하면 "SPEC 을 쓸 수 있을 때까지 나를 인터뷰해"라고 시킨다. 대화를 직접 들은 세션이 SPEC 을 쓰니 요약 손실이 없다. 팀장은 코드를 짜지 않고 계획·판단·리뷰 처리에 집중한다. SPEC 에는 무엇을 만드는지, 지킬 제약, 완료 기준을 적는다. 핵심은 완료 기준이다: 구현은 언제 멈출지, 리뷰어는 무엇으로 판정할지 여기서 안다. 결정이 바뀌면 팀장이 바로 반영한다. SPEC 에 없는 결정은 다른 세션에겐 없는 결정이다. 리뷰어의 차이 보고를 받으면 구현에 수정을 맡길지, SPEC 이 틀렸으니 사용자에게 다시 물을지 판단한다. 결과가 길면 파일로 남기고 경로만 넘긴다(전화 게임 방지). 에이전트: omni-pipeline:lead' },
-        { id: impl, name: '구현', x: 340, y: 60, agent: 'omni-pipeline:implementer', memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 줘서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 에이전트: omni-pipeline:implementer' },
-        { id: review, name: '리뷰어', x: 620, y: 160, agent: 'omni-pipeline:reviewer', memo: '구현 과정을 모르는 게 장점이다. 코드를 만든 추론을 보지 않았으니 그 논리에 끌려가지 않는다. 입력은 SPEC 과 코드 변경뿐, 도구는 Read·Grep·Glob 만 준다. "스타일은 넘기고 정확성에 영향을 주는 누락만 보고해"처럼 범위를 정해 준다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
+        { id: impl, name: '구현', x: 340, y: 60, within: lead, agent: 'omni-pipeline:implementer', memo: '새 세션에서 SPEC 만 읽고 시작한다. 계획 대화로 무거워진 컨텍스트 대신 깨끗한 컨텍스트와 문서로 된 완료 기준으로 출발한다. 노드가 여럿이면 각자 worktree 를 줘서 충돌을 막는다. 결과는 대화가 아니라 커밋과 diff 로 남긴다. 에이전트: omni-pipeline:implementer' },
+        { id: review, name: '리뷰어', x: 620, y: 160, within: lead, agent: 'omni-pipeline:reviewer', memo: '구현 과정을 모르는 게 장점이다. 코드를 만든 추론을 보지 않았으니 그 논리에 끌려가지 않는다. 입력은 SPEC 과 코드 변경뿐, 도구는 Read·Grep·Glob 만 준다. "스타일은 넘기고 정확성에 영향을 주는 누락만 보고해"처럼 범위를 정해 준다. 차이만 팀장에게 보고한다. 에이전트: omni-pipeline:reviewer' },
       ],
       edges: [{ from: lead, to: impl }, { from: impl, to: review }, { from: lead, to: review }, { from: review, to: lead }],
     };
+  }
+
+  // A node with `within` (a node id) is a subagent: it runs inside that
+  // node's Claude session, has no terminal of its own, and shows the state
+  // of the subagent of its `agent` type found in that session.
+
+  // Whether hook agent_type `type` names agent `name`, with or without the
+  // plugin prefix ("omni-pipeline:implementer", "implementer").
+  function sameAgent(type, name) {
+    const a = String(type || '');
+    const b = String(name || '').trim();
+    return Boolean(a && b) && (a === b || a.split(':').pop() === b.split(':').pop());
+  }
+
+  // A subagent node's state from its host session's agents (the sidebar's
+  // list): working or waiting with its tool, or rest when none runs.
+  function subagentState(node, hostAgents) {
+    const ag = (hostAgents || []).find((a) => !a.teammate && sameAgent(a.type, node.agent));
+    if (!ag) return { state: 'rest', tool: null };
+    return { state: ag.status === 'waiting' ? 'waiting' : ag.status === 'idle' ? 'idle' : 'working', tool: ag.tool || null };
+  }
+
+  // The recommended pipeline as first shipped had 구현 and 리뷰어 as
+  // terminals of their own; in omni-pipeline they are subagents of 팀장.
+  // Turns those two nodes of `p` into subagent nodes when they still have
+  // their shipped agents; returns whether it changed. A saved session stays
+  // on the node and comes back if it is made a terminal again.
+  function subagentsInRecommended(p) {
+    const lead = p.nodes.find((n) => n.agent === 'omni-pipeline:lead' && !n.within);
+    const kids = p.nodes.filter((n) => ['omni-pipeline:implementer', 'omni-pipeline:reviewer'].includes(n.agent) && !n.within);
+    if (p.name !== '권장 개발 파이프라인' || !lead || kids.length !== 2) return false;
+    for (const n of kids) n.within = lead.id;
+    return true;
   }
 
   // The nodes in arrow order (for the one-line strip): sources first; a loop
@@ -634,6 +669,6 @@
   return {
     diffKinds, diffStat, escapeAction, serial, frontMatter, markdownBlocks, inlineSpans, relativeInside, searchFiles, findAll, textRanges, hitView, entersWsl, promptLike, shellReady, statusMark, treeMarks,
     previewOnChange, previewPlacement, previewWidth, previewRestore, historyLabel, promptBlock, promptInput, groupNav, newTerminalGroup, ungroupTarget, groupSummary,
-    pipelineContext, pipelineOrder, recommendedPipeline, resumeLines, startLines, PREVIEW_MIN, TERMINAL_MIN,
+    pipelineContext, pipelineOrder, recommendedPipeline, sameAgent, subagentState, subagentsInRecommended, resumeLines, startLines, PREVIEW_MIN, TERMINAL_MIN,
   };
 }));
