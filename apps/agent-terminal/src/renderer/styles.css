@@ -927,7 +927,9 @@ body.resizing .preview-frame, body.resizing-v .preview-frame { pointer-events: n
 .pipe-node.s-waiting { box-shadow: 0 0 0 1px rgba(242,127,178,.5), 0 0 16px rgba(242,127,178,.16); }
 .pipe-node.s-error::before { background: var(--err); } .pipe-node.s-error .pn-state { color: var(--err); }
 .pipe-node.s-idle::before { background: var(--ok); } .pipe-node.s-idle .pn-state { color: var(--ok); }
-.pipe-node.s-none { opacity: .6; }
+.pipe-node.s-none, .pipe-node.s-rest { opacity: .6; }
+/* a subagent: runs inside another node's session */
+.pipe-node.sub { border-style: dashed; }
 .pipe-node.on { outline: 2px solid var(--text); outline-offset: 2px; }
 .pipe-node:hover { border-color: var(--muted); }
 .pipeline.editing .pipe-node { cursor: grab; }

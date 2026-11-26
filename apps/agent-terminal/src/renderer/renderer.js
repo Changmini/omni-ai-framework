@@ -769,7 +769,8 @@ const PIPE_BIND_KEY = 'pipelineBind';
 const NODE_W = 168;
 const NODE_H = 66;
 // By ledStatus, plus none (no session bound) and ready (Claude started, no prompt yet).
-const PIPE_STATE_LABEL = { none: '세션 없음', ready: '준비됨', shell: '셸', working: '작업 중', waiting: '승인 대기', error: '오류', idle: '끝남', exited: '종료됨' };
+// rest: a subagent node whose subagent is not running.
+const PIPE_STATE_LABEL = { none: '세션 없음', ready: '준비됨', shell: '셸', working: '작업 중', waiting: '승인 대기', error: '오류', idle: '끝남', exited: '종료됨', rest: '쉬는 중' };
 const readSession = (k) => { try { return JSON.parse(sessionStorage.getItem(k) || '{}') || {}; } catch { return {}; } };
 const writeSession = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* this run only */ } };
 let pipelines = [];
@@ -801,11 +802,25 @@ if (readPref(PIPE_SEEDED_KEY, '') !== '1') {
   writePref(PIPE_CUR_KEY, pipeCur);
   writePref(PIPE_SEEDED_KEY, '1');
 }
+// The recommended pipeline shipped before subagent nodes: 구현 and 리뷰어 run
+// inside 팀장's session (ViewLogic.subagentsInRecommended).
+if (pipelines.map(ViewLogic.subagentsInRecommended).some(Boolean)) writePref(PIPE_KEY, JSON.stringify(pipelines));
 const currentPipe = () => pipelines.find((p) => p.id === pipeCur) || pipelines[0] || null;
 const boundTerminal = (nodeId) => (agents.has(pipeBind[nodeId]) ? pipeBind[nodeId] : null);
+const nodeById = (id) => pipelines.flatMap((p) => p.nodes).find((n) => n.id === id) || null;
+// A subagent node's host terminal: the one bound to the node it runs within.
+const hostTerminal = (n) => (n.within ? boundTerminal(n.within) : null);
+// A subagent node's state and tool (ViewLogic.subagentState).
+function subState(n) {
+  const tid = hostTerminal(n);
+  const c = tid && agents.get(tid).info.claude;
+  return ViewLogic.subagentState(n, c && c.agents);
+}
 
-// The node's state: its session's light, or none.
+// The node's state: its session's light, or none; a subagent node's from
+// its host session.
 function nodeState(n) {
+  if (n.within) return subState(n).state;
   const tid = boundTerminal(n.id);
   if (!tid) return 'none';
   const { info } = agents.get(tid);
@@ -901,7 +916,7 @@ async function startNodeClaude(n) {
 // Every node of the pipeline without a running Claude: its saved session
 // reopened, else its agent started; nodes with neither are left alone. One
 // after another, as each terminal's shell must be ready before typing.
-const openable = (n) => !claudeRunning(n) && Boolean(n.claude || n.agent);
+const openable = (n) => !n.within && !claudeRunning(n) && Boolean(n.claude || n.agent);
 let openingAll = false;
 async function openAllSessions() {
   const p = currentPipe();
@@ -991,18 +1006,22 @@ function renderPipeline() {
   els.nodes.replaceChildren(...p.nodes.map((n) => {
     const st = nodeState(n);
     const tid = boundTerminal(n.id);
-    const div = h('div', `pipe-node s-${st}${activeNodes.has(n.id) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
+    const host = n.within ? nodeById(n.within) : null;
+    const div = h('div', `pipe-node s-${st}${n.within ? ' sub' : ''}${activeNodes.has(n.id) || (host && activeNodes.has(host.id)) ? ' on' : ''}${pipe.sel === n.id ? ' sel' : ''}`);
     div.dataset.id = n.id;
     div.style.left = `${n.x}px`;
     div.style.top = `${n.y}px`;
     const info = tid ? agents.get(tid).info : null;
-    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && info.claude.tool ? ` ${info.claude.tool}` : ''}`;
-    // the session: its name, or its folder when it is named after the step
+    const tool = n.within ? subState(n).tool : info && info.claude.tool;
+    const label = `${PIPE_STATE_LABEL[st] || ''}${(st === 'working' || st === 'waiting') && tool ? ` ${tool}` : ''}`;
+    // the session: its name, or its folder when it is named after the step;
+    // for a subagent, the node it runs in
     const sessName = info ? displayName(info) : '';
-    const sessText = !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
+    const sessText = host ? `「${host.name}」 안 서브에이전트` : !info ? '' : sessName === n.name ? (info.cwd || '').split(/[\\/]/).filter(Boolean).pop() || sessName : sessName;
     div.append(h('div', 'pn-name ellipsis', n.name), h('div', 'pn-sess ellipsis', sessText), h('div', 'pn-state ellipsis', label));
     const claudeName = info && info.claude && info.claude.session && info.claude.session.name;
-    div.title = `${n.name}${info ? `\n터미널: ${displayName(info)}` : '\n세션 없음'}${claudeName ? `\nClaude 세션: ${claudeName}` : ''}${n.memo ? `\n메모: ${n.memo}` : ''}`;
+    const where = host ? `\n「${host.name}」 세션 안의 서브에이전트${n.agent ? ` (${n.agent})` : ''}` : info ? `\n터미널: ${displayName(info)}` : '\n세션 없음';
+    div.title = `${n.name}${where}${claudeName ? `\nClaude 세션: ${claudeName}` : ''}${n.memo ? `\n메모: ${n.memo}` : ''}`;
     if (pipe.editing) {
       const handle = h('span', 'pn-handle');
       handle.title = '끌어서 다른 노드에 연결';
@@ -1036,7 +1055,7 @@ function edgePath(a, b) {
 }
 
 function openNode(n) {
-  const tid = boundTerminal(n.id);
+  const tid = n.within ? hostTerminal(n) : boundTerminal(n.id);
   if (tid) { select(tid); setView('terminal'); return; }
   pipe.sel = n.id;
   setPipeEditing(true);
@@ -1044,6 +1063,13 @@ function openNode(n) {
 }
 
 function nodeMenu(n) {
+  if (n.within) {
+    return [
+      { label: '세션으로 이동', disabled: !hostTerminal(n), action: () => openNode(n) },
+      { sep: true },
+      { label: '편집', action: () => { pipe.sel = n.id; setPipeEditing(true); } },
+    ];
+  }
   const tid = boundTerminal(n.id);
   return [
     { label: '세션으로 이동', disabled: !tid, action: () => openNode(n) },
@@ -1185,7 +1211,31 @@ function renderProps(p) {
   agent.placeholder = '예: omni-pipeline:lead (비우면 그냥 claude)';
   agent.spellcheck = false;
   agent.addEventListener('input', () => { const v = agent.value.trim(); if (v) n.agent = v; else delete n.agent; savePipes(); });
-  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), del);
+  // 종류: a terminal of its own, or a subagent inside another node's session.
+  const hosts = p.nodes.filter((x) => x.id !== n.id && !x.within);
+  const kind = document.createElement('select');
+  kind.className = 'pp-in';
+  kind.append(new Option('터미널', ''));
+  for (const x of hosts) kind.append(new Option(`「${x.name}」 세션 안 서브에이전트`, x.id));
+  kind.value = n.within && hosts.some((x) => x.id === n.within) ? n.within : '';
+  kind.addEventListener('change', () => {
+    if (kind.value) {
+      n.within = kind.value;
+      bindNode(n.id, null);
+      // Nodes inside this one move out with it: one level only.
+      for (const x of p.nodes) if (x.within === n.id) delete x.within;
+    } else delete n.within;
+    savePipes();
+    props.dataset.node = '';
+    renderPipeline();
+  });
+  if (n.within) {
+    agent.placeholder = '예: omni-pipeline:implementer';
+    props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('종류', kind), field('에이전트', agent),
+      h('div', 'pp-ro muted', '그 세션에서 이 에이전트가 돌면 상태가 표시됩니다'), field('메모', memo), del);
+    return;
+  }
+  props.replaceChildren(h('h4', 'pp-h', '노드'), field('이름', name), field('종류', kind), field('터미널', sess), field('에이전트', agent), claudeInfo(n), field('메모', memo), del);
 }
 
 // The node's Claude session, read-only (selectable to copy), and a way to
@@ -1230,6 +1280,7 @@ function deleteNode(id) {
   const p = currentPipe();
   if (!p) return;
   p.nodes = p.nodes.filter((n) => n.id !== id);
+  for (const n of p.nodes) if (n.within === id) delete n.within; // its subagents become plain nodes
   p.edges = p.edges.filter((e) => e.from !== id && e.to !== id);
   delete pipeBind[id];
   writeSession(PIPE_BIND_KEY, pipeBind);

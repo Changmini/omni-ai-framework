@@ -349,6 +349,40 @@ test('pipelines: the recommended pipeline (lead, implementer, reviewer)', () => 
   assert.ok(p.nodes.every((x) => x.memo && x.memo.length <= 1000)); // sent to Claude whole
   assert.deepStrictEqual(pipelineOrder(p).map(name), ['팀장', '구현', '리뷰어']);
   assert.strictEqual(new Set([p.id, ...p.nodes.map((x) => x.id)]).size, 4);
+  // One terminal: 구현 and 리뷰어 are subagents inside 팀장's session.
+  assert.deepStrictEqual(p.nodes.map((x) => x.within ? name(x.within) : null), [null, '팀장', '팀장']);
+});
+
+test('pipelines: subagent nodes show the subagent of their type in the host session', () => {
+  const { sameAgent, subagentState, pipelineContext, subagentsInRecommended, recommendedPipeline } = require('../src/renderer/view-logic');
+  assert.ok(sameAgent('omni-pipeline:implementer', 'omni-pipeline:implementer'));
+  assert.ok(sameAgent('implementer', 'omni-pipeline:implementer')); // with or without the plugin prefix
+  assert.ok(!sameAgent('reviewer', 'omni-pipeline:implementer'));
+  assert.ok(!sameAgent('', 'x') && !sameAgent('x', ''));
+  const node = { agent: 'omni-pipeline:implementer' };
+  assert.deepStrictEqual(subagentState(node, null), { state: 'rest', tool: null });
+  assert.deepStrictEqual(subagentState(node, [{ type: 'Explore', status: 'working' }]), { state: 'rest', tool: null });
+  assert.deepStrictEqual(subagentState(node, [{ type: 'omni-pipeline:implementer', status: 'working', tool: 'Edit' }]), { state: 'working', tool: 'Edit' });
+  assert.deepStrictEqual(subagentState(node, [{ type: 'omni-pipeline:implementer', status: 'waiting', tool: 'Bash' }]).state, 'waiting');
+  assert.deepStrictEqual(subagentState(node, [{ type: 'omni-pipeline:implementer', status: 'working', teammate: true }]).state, 'rest'); // a teammate is not a subagent
+  // For Claude: a subagent node's place is its host session.
+  let k = 0;
+  const p = recommendedPipeline(() => `r${k++}`);
+  assert.match(pipelineContext(p, p.nodes[0].id, () => ({ claude: { id: 's1', name: null } })), /다음 노드: 「구현」 — 「팀장」 세션 안의 서브에이전트/);
+  // The recommended pipeline as first shipped (three terminals) becomes the
+  // same, once; a session saved on 구현 stays on the node.
+  const old = () => { const q = recommendedPipeline(() => `o${k++}`); for (const x of q.nodes) delete x.within; return q; };
+  const a = old();
+  assert.strictEqual(subagentsInRecommended(a), true);
+  assert.deepStrictEqual(a.nodes.map((x) => Boolean(x.within)), [false, true, true]);
+  assert.strictEqual(subagentsInRecommended(a), false);
+  const b = old();
+  b.nodes[1].claude = { id: 's2' };
+  assert.strictEqual(subagentsInRecommended(b), true);
+  assert.deepStrictEqual(b.nodes[1].claude, { id: 's2' });
+  const c = old();
+  c.name = '내 파이프라인';
+  assert.strictEqual(subagentsInRecommended(c), false);
 });
 
 test('pipelines: lines that start a node Claude as its agent', () => {
