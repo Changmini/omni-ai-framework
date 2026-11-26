@@ -168,6 +168,11 @@ test('rule templates: each condition catches what it names and spares the rest',
     '수정 뒤 시험 상기': [['Edit /a.js', 'Write /a/b.md'], ['Read /a.js', 'Bash npm test']],
     '질문으로 끝나면 표시': [['이대로 진행할까요?', '어느 쪽으로 할까요.', 'Should I continue?  '], ['완료했습니다.', '질문? 없음']],
   };
+  // Command guards: a shell tool only, not a file read or search naming the same words.
+  cases['DB 변경 확인'][1].push('Read /home/user/sample-app/db/migrate/20260101_add_users.rb', 'Grep DROP TABLE', 'Glob db/migrate/*.rb');
+  cases['관리자 권한 확인'][1].push('Grep sudo', 'Read /etc/sudoers');
+  cases['푸시 전 확인'][1].push('Grep git push');
+  cases['되돌릴 수 없는 git 명령 막기'][0].push('PowerShell git push --force');
   for (const [name, [yes, no]] of Object.entries(cases)) {
     for (const s of yes) assert.ok(holds(name, s), `${name} should catch: ${s}`);
     for (const s of no) assert.ok(!holds(name, s), `${name} should spare: ${s}`);
