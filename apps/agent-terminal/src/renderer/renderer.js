@@ -2454,13 +2454,17 @@ function renderRules() {
     const kind = h('span', `rl-kind${r.event === 'timer' ? ' sched' : ''}`, r.event === 'timer' ? '스케줄' : '훅');
     kind.title = r.event === 'timer' ? '앱이 시계를 보고 실행 (앱이 켜져 있을 때)' : 'Claude가 그 순간 보내는 훅으로 실행';
     title.append(h('span', 'rl-name ellipsis', r.name), kind);
-    main.append(title, h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
-    main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
+    main.append(title);
+    // The chips take the row's full width, under the switch too.
+    const sent = ruleSentence(r, h('div', 'rl-sent'));
+    const toggle = () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); };
+    main.addEventListener('click', toggle);
+    sent.addEventListener('click', toggle);
     const st = r.event === 'timer' ? autoState[r.id] || {} : null;
     const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? dayClock(st.last) : '—') : r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '—');
     const row = h('div', 'rl-row');
     const ev = RuleLogic.EVENTS[r.event];
-    row.append(sw, Icons.tile(ev ? ev.icon : 'highlight', ev ? ev.label : ''), main, hits);
+    row.append(sw, Icons.tile(ev ? ev.icon : 'highlight', ev ? ev.label : ''), main, hits, sent);
     li.append(row);
     if (r.lastSkip) li.append(h('div', 'rl-skip', r.lastSkip));
     if (ruleOpen === r.id) li.append(ruleEditor(r));
@@ -2468,9 +2472,18 @@ function renderRules() {
   }));
 }
 
+// The rule's second line: a chip per condition, then what it does.
+function ruleSentence(r, el) {
+  const { when, what } = RuleLogic.describeParts(r, (gid) => (groupById(gid) || {}).name || '?');
+  const chip = (text, cls = '') => { const c = h('span', `rl-chip${cls}`, text); c.title = text; return c; };
+  el.replaceChildren(...when.map((w) => chip(w)), h('span', 'rl-arrow', '→'), chip(what, ' do'));
+  el.title = RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?');
+  return el;
+}
+
 function ruleEditor(r) {
   const ed = h('div', 'rl-ed');
-  const changed = (redraw) => { saveRules(); if (redraw) renderRules(); else { const s = ed.closest('.rl-item')?.querySelector('.rl-sent'); if (s) s.textContent = RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?'); } };
+  const changed = (redraw) => { saveRules(); if (redraw) renderRules(); else { const s = ed.closest('.rl-item')?.querySelector('.rl-sent'); if (s) ruleSentence(r, s); } };
   const field = (label, ...els) => { const l = h('div', 'rl-field'); l.append(h('span', 'rl-k', label), ...els); return l; };
   const select = (options, value, onChange) => {
     const s = document.createElement('select');

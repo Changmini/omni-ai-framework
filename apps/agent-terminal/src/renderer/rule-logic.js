@@ -136,26 +136,32 @@
     return condHolds(rule.cond, subject(ev));
   }
 
-  // The rule as one short line for the list: when · condition · where →
-  // what. "Every terminal" is left out; "?" marks a choice still to make.
-  function describe(rule, groupName = (id) => id) {
-    const a0 = rule.action || {};
+  // The rule for the list: its conditions (when, what it looks at, where)
+  // and what it does, each shown as a chip. "Every terminal" is left out;
+  // "?" marks a choice still to make.
+  function describeParts(rule, groupName = (id) => id) {
+    const a = rule.action || {};
     if (rule.event === 'timer') {
-      const job = a0.kind === 'agent' && PRESETS[a0.preset] ? PRESETS[a0.preset].label : ACTIONS[a0.kind] ? ACTIONS[a0.kind].label : '?';
-      return `${periodText(everyMinutes(rule))}마다 · 프로젝트마다 → ${job}`;
+      const job = a.kind === 'agent' && PRESETS[a.preset] ? PRESETS[a.preset].label : ACTIONS[a.kind] ? ACTIONS[a.kind].label : '?';
+      return { when: [`${periodText(everyMinutes(rule))}마다`, '프로젝트마다'], what: job };
     }
-    const ev = EVENTS[rule.event] ? EVENTS[rule.event].label : '?';
+    const when = [EVENTS[rule.event] ? EVENTS[rule.event].label : '?'];
     const c = rule.cond || {};
     const shown = String(c.value || '').length > 40 ? `${String(c.value).slice(0, 40)}…` : c.value;
-    const cond = c.kind === 'none' || !c.value ? '' : ` · ${c.label || `「${shown}」`}`;
+    if (c.kind !== 'none' && c.value) when.push(c.label || `「${shown}」`);
     const s = rule.scope || {};
-    const scope = !s.kind || s.kind === 'all' ? ''
-      : s.kind === 'group' ? ` · 그룹 ${groupName(s.id)}`
-        : s.kind === 'agent' ? ` · 에이전트 ${s.name || '?'}` : ` · ${s.name || '?'}`;
-    const a = rule.action || {};
+    if (s.kind === 'group') when.push(`그룹 ${groupName(s.id)}`);
+    else if (s.kind === 'agent') when.push(`에이전트 ${s.name || '?'}`);
+    else if (s.kind && s.kind !== 'all') when.push(s.name || '?');
     const what = a.kind === 'fill' ? `${a.target || '?'}에 ${a.send ? '보내기' : '넣기'}`
       : (ACTIONS[a.kind] ? ACTIONS[a.kind].label : '?');
-    return `${ev}${cond}${scope} → ${what}`;
+    return { when, what };
+  }
+
+  // The same as one line: when · condition · where → what.
+  function describe(rule, groupName) {
+    const { when, what } = describeParts(rule, groupName);
+    return `${when.join(' · ')} → ${what}`;
   }
 
   // Starting points in the 자동화 tab's 템플릿 menu, by `group`. Guards watch
@@ -245,5 +251,5 @@
     { group: '결과에 남기기', name: '승인 요청 남기기', event: 'wait', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 승인 대기: {tool} {command}{file}' }, freq: 'every' },
   ];
 
-  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, clampMinutes, everyMinutes, periodText, ACTIONS, PRESETS, GROUP_ICONS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
+  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, clampMinutes, everyMinutes, periodText, ACTIONS, PRESETS, GROUP_ICONS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe, describeParts };
 }));

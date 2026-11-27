@@ -979,11 +979,18 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
   border: 1px solid var(--line); border-radius: 4px; color: var(--muted);
 }
 .rl-kind.sched { border-style: dashed; }
-.rl-sent { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.rl-sent { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; cursor: pointer; font-size: 11.5px; line-height: 18px; }
+/* One condition, or what the rule does, in a rounded chip. */
+.rl-chip {
+  max-width: 100%; padding: 0 8px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #cfd3dc; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .12);
+}
+.rl-chip.do { color: var(--text); background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .2); }
+.rl-arrow { color: var(--muted); }
 .rl-item.off .rl-name, .rl-item.off .rl-sent { opacity: .55; }
 .rl-hits { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .rl-skip { margin: 4px 0 0 34px; font-size: 11.5px; color: var(--wait); }
-.rl-ed { display: grid; gap: 10px; margin: 10px 0 2px 34px; }
+.rl-ed { display: grid; gap: 10px; margin: 10px 0 2px; } /* the full width, not under the name */
 .rl-field { display: grid; gap: 4px; }
 .rl-k { font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .rl-seg { align-self: start; width: max-content; }
@@ -1096,7 +1103,7 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
 .rl-row { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; }
 .rl-row .ic-tile { width: 22px; height: 22px; }
 .rl-item:hover .rl-row .ic-tile, .rl-item.open .rl-row .ic-tile { color: var(--text); }
-.rl-ed, .rl-skip { margin-left: 64px; }
+.rl-skip { margin-left: 64px; }
 .rl-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .rl-pick > select { flex: 1; min-width: 0; }
 .rl-pick .ic-tile { width: 28px; height: 28px; color: var(--text); }
