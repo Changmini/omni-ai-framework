@@ -1074,3 +1074,24 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
 .rl-every { width: 4.5em; }
 .rl-inline { display: flex; align-items: center; gap: 6px; }
 .rl-unit { color: var(--muted); font-size: 12px; }
+
+/* Line icons (icons.js), drawn like the shortcut icons: a framed 24px tile
+   in the muted colour, or a 13px glyph before a button's word. */
+.ic-tile {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: none; box-sizing: border-box;
+  border-radius: 6px; border: 1px solid var(--line); color: var(--muted);
+}
+.ic { display: inline-flex; flex: none; }
+.ic-btn, #rl-add, #rl-templates, #rs-clear, #rs-start { display: inline-flex; align-items: center; gap: 6px; }
+.rl-row { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; }
+.rl-row .ic-tile { width: 22px; height: 22px; }
+.rl-item:hover .rl-row .ic-tile, .rl-item.open .rl-row .ic-tile { color: var(--text); }
+.rl-ed, .rl-skip { margin-left: 64px; }
+.rl-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rl-pick > select { flex: 1; min-width: 0; }
+.rl-pick .ic-tile { width: 28px; height: 28px; color: var(--text); }
+.menu-item .ic-tile { width: 22px; height: 22px; margin-right: -6px; }
+.menu-item:hover .ic-tile { color: var(--text); border-color: var(--muted); }
+.rs-head { align-items: center; }
+.rs-del { display: inline-grid; place-items: center; }
+.menu-item .ic-tile + .menu-label { flex: 1; }

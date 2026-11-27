@@ -710,6 +710,7 @@ function openMenu(x, y, items) {
       row.type = 'button';
       row.setAttribute('role', 'menuitem');
       row.disabled = Boolean(it.disabled);
+      if (it.icon) row.append(Icons.tile(it.icon));
       row.append(h('span', 'menu-label', it.label), h('span', 'menu-hint', it.sub ? '▸' : it.hint || ''));
       if (it.sub) {
         const open = () => {
@@ -2387,10 +2388,10 @@ async function ruleFill(rule, source, target, text, send) {
   const a = agents.get(target);
   if (!a) return;
   const block = ViewLogic.promptBlock(a.info);
-  if (block) { rule.lastSkip = block === 'waiting' ? '⏸ 승인 대기라 안 넣음' : '⏸ Claude 없어 안 넣음'; return; }
+  if (block) { rule.lastSkip = block === 'waiting' ? '승인 대기라 안 넣음' : 'Claude가 없어 안 넣음'; return; }
   const depth = (autoDepth.get(source) || 0) + 1;
   const sendNow = send && depth <= MAX_AUTO_CHAIN;
-  rule.lastSkip = send && !sendNow ? `⏸ 자동 ${MAX_AUTO_CHAIN}번 연속이라 넣기만` : '';
+  rule.lastSkip = send && !sendNow ? `자동 ${MAX_AUTO_CHAIN}번 연속이라 넣기만` : '';
   api.write(target, ViewLogic.promptInput(text, a.term.modes.bracketedPasteMode));
   if (!sendNow) return;
   await sleep(120);
@@ -2451,9 +2452,10 @@ function renderRules() {
     main.append(h('div', 'rl-name ellipsis', r.name), h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
     main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
     const st = r.event === 'timer' ? autoState[r.id] || {} : null;
-    const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? `⏰ ${dayClock(st.last)}` : '—') : r.hits ? `⚡${r.hits} · ${clock(r.lastAt)}` : '—');
+    const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? dayClock(st.last) : '—') : r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '—');
     const row = h('div', 'rl-row');
-    row.append(sw, main, hits);
+    const ev = RuleLogic.EVENTS[r.event];
+    row.append(sw, Icons.tile(ev ? ev.icon : 'highlight', ev ? ev.label : ''), main, hits);
     li.append(row);
     if (r.lastSkip) li.append(h('div', 'rl-skip', r.lastSkip));
     if (ruleOpen === r.id) li.append(ruleEditor(r));
@@ -2515,7 +2517,7 @@ function ruleEditor(r) {
   const condCheck = () => {
     let bad = false;
     if (r.cond.kind === 'regex' && r.cond.value) { try { new RegExp(r.cond.value); } catch { bad = true; } }
-    condHint.textContent = bad ? '⚠️ 잘못된 정규식' : RULE_SUBJECT[r.event] || '';
+    condHint.textContent = bad ? '잘못된 정규식' : RULE_SUBJECT[r.event] || '';
     condHint.classList.toggle('bad', bad);
   };
   const condValue = input(r.cond.value, r.cond.kind === 'regex' ? '예: git push|migrate' : '예: 배포', (v) => { r.cond.value = v; delete r.cond.label; condCheck(); changed(); }, 'pp-in mono');
@@ -2536,9 +2538,9 @@ function ruleEditor(r) {
   };
 
   // 어디서: every terminal, a group, one terminal, or an agent.
-  const [tOpts, tVal] = terminalOpts('🖥️ ', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
-  const scopeOpts = [['all', '🌐 모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `📁 ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal'), ['agent', '🤖 에이전트…']];
-  if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '📁 (고르세요)']);
+  const [tOpts, tVal] = terminalOpts('', 'scope', r.scope.kind === 'terminal' ? r.scope.name : '');
+  const scopeOpts = [['all', '모든 터미널'], ...groups.map((g) => [`g:${g.id}`, `그룹: ${g.name}`]), ...tOpts.filter(([v]) => v !== 'n:' || r.scope.kind === 'terminal'), ['agent', '🤖 에이전트…']];
+  if (r.scope.kind === 'group' && !groupById(r.scope.id)) scopeOpts.push([`g:${r.scope.id}`, '그룹: (고르세요)']);
   const scopeVal = r.scope.kind === 'group' ? `g:${r.scope.id}` : r.scope.kind === 'terminal' ? tVal : r.scope.kind === 'agent' ? 'agent' : 'all';
   const where = select(scopeOpts, scopeVal, (v) => {
     if (v === 'all') r.scope = { kind: 'all' };
@@ -2565,7 +2567,9 @@ function ruleEditor(r) {
     r.action = { ...r.action, kind: v };
     changed(true);
   });
-  const parts = [field('이름', name), field('언제', when), field('조건', seg, condValue, condHint), field('어디서', ...whereParts), field('무엇을', what)];
+  const scopeIcon = { all: 'all', group: 'group', terminal: 'terminal', agent: 'agent' }[r.scope.kind] || 'all';
+  whereParts[0] = rulePick(scopeIcon, where);
+  const parts = [field('이름', name), field('언제', rulePick(RuleLogic.EVENTS[r.event].icon, when)), field('조건', seg, condValue, condHint), field('어디서', ...whereParts), field('무엇을', rulePick(RuleLogic.ACTIONS[r.action.kind].icon, what))];
   const kind = r.action.kind;
   if (kind === 'fill') {
     const [opts, val] = terminalOpts('', 'target', r.action.target);
@@ -2593,7 +2597,7 @@ function ruleEditor(r) {
     vals.title = RuleLogic.VARS.map((v) => `{${v}}`).join('  ');
     parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : kind === 'result' ? '남길 글' : '이유', text, vals));
   }
-  if (kind === 'pipeline') parts.push(h('div', 'rl-note', '🧭 연결된 노드와 앞뒤 노드'));
+  if (kind === 'pipeline') parts.push(h('div', 'rl-note', '연결된 노드와 앞뒤 노드'));
   if (kind !== 'block' && kind !== 'ask') {
     parts.push(field('빈도', select(Object.entries(RuleLogic.FREQS), r.freq, (v) => { r.freq = v; changed(true); })));
   }
@@ -2601,7 +2605,7 @@ function ruleEditor(r) {
 
   // 시험: the condition against the last events this app run saw.
   const out = h('ol', 'rl-test');
-  const test = h('button', 'btn', '🧪 시험');
+  const test = Icons.label(h('button', 'btn ic-btn'), 'test', '시험');
   test.title = '최근 기록에 조건을 맞춰 보기';
   test.type = 'button';
   test.addEventListener('click', async () => {
@@ -2616,7 +2620,7 @@ function ruleEditor(r) {
       return li;
     }));
   });
-  const del = h('button', 'btn pp-del', '🗑 삭제');
+  const del = Icons.label(h('button', 'btn pp-del ic-btn'), 'trash', '삭제');
   del.type = 'button';
   del.addEventListener('click', () => {
     if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
@@ -2641,7 +2645,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   every.max = String(RuleLogic.EVERY.max);
   every.value = String(RuleLogic.everyHours(r.every));
   every.addEventListener('change', () => { r.every = RuleLogic.everyHours(Number(every.value)); every.value = String(r.every); changed(); });
-  const job = select([...Object.entries(RuleLogic.PRESETS).map(([k, p]) => [k, `🤖 ${p.label}`]), ['', '🤖 직접 지시']], r.action.preset || '', (v) => {
+  const job = select([...Object.entries(RuleLogic.PRESETS).map(([k, p]) => [k, p.label]), ['', '직접 지시']], r.action.preset || '', (v) => {
     r.action = { kind: 'agent', preset: v, text: v === 'skills' ? RuleLogic.SKILLS_PROMPT : r.action.text || '' };
     changed(true);
   });
@@ -2657,7 +2661,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   const st = autoState[r.id] || {};
   const status = h('div', 'rl-note', st.running ? '실행 중…'
     : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyHours(r.every) * 3600e3)}` : '아직 실행 전');
-  const run = h('button', 'btn', '▶ 지금 실행');
+  const run = Icons.label(h('button', 'btn ic-btn'), 'play', '지금 실행');
   run.type = 'button';
   run.disabled = Boolean(st.running) || !r.enabled;
   run.title = r.enabled ? '기다리지 않고 지금 한 번 실행' : '켜진 규칙만 실행';
@@ -2665,7 +2669,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
     run.disabled = true;
     if (await api.automationRun(r.id)) setInspectorTab('results');
   });
-  const del = h('button', 'btn pp-del', '🗑 삭제');
+  const del = Icons.label(h('button', 'btn pp-del ic-btn'), 'trash', '삭제');
   del.type = 'button';
   del.addEventListener('click', () => {
     if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
@@ -2678,8 +2682,8 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   foot.append(run, del);
   ed.append(
     field('이름', name),
-    field('언제', when, (() => { const row = h('div', 'rl-inline'); row.append(every, h('span', 'rl-unit', '시간마다')); return row; })()),
-    field('무엇을', job),
+    field('언제', rulePick('timer', when), (() => { const row = h('div', 'rl-inline'); row.append(every, h('span', 'rl-unit', '시간마다')); return row; })()),
+    field('무엇을', rulePick('agent', job)),
     field('지시', text, vals),
     h('div', 'rl-note', '앱이 켜져 있는 동안 프로젝트마다 Claude를 따로 한 번씩 실행합니다. 실행마다 사용량이 듭니다. 결과는 자동화 결과 탭에 쌓입니다.'),
     status, foot,
@@ -2693,13 +2697,21 @@ let autoState = {};
 api.automationState().then((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); }).catch(() => {});
 api.onAutomationState((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); });
 
+// A select with the icon of its value in a tile on its left (an option
+// itself can only hold text).
+function rulePick(icon, el) {
+  const d = h('div', 'rl-pick');
+  d.append(Icons.tile(icon), el);
+  return d;
+}
+
 // What a condition is checked against, per event.
 const RULE_SUBJECT = {
-  prompt: '🔎 보낸 글',
-  pre: '🔎 도구 + 명령·경로 (예: Bash git push)',
-  post: '🔎 도구 + 명령·경로',
-  wait: '🔎 도구 + 명령',
-  stop: '🔎 마지막 답',
+  prompt: '찾는 곳: 보낸 글',
+  pre: '찾는 곳: 도구 + 명령·경로 (예: Bash git push)',
+  post: '찾는 곳: 도구 + 명령·경로',
+  wait: '찾는 곳: 도구 + 명령',
+  stop: '찾는 곳: 마지막 답',
   compact: '조건 없음',
 };
 
@@ -2710,6 +2722,7 @@ rulesEls.templates.addEventListener('click', () => {
   const groupsOf = [...new Set(RuleLogic.TEMPLATES.map((t) => t.group))];
   openMenu(b.left, b.bottom + 2, groupsOf.map((g) => ({
     label: g,
+    icon: RuleLogic.GROUP_ICONS[g],
     sub: RuleLogic.TEMPLATES.filter((t) => t.group === g).map((t) => ({ label: t.name, action: () => add(t) })),
   })));
 });
@@ -4435,9 +4448,11 @@ function resultItem(x) {
   const li = h('li', `rs-item${x.status === 'failed' ? ' failed' : ''}`);
   const head = h('div', 'rs-head');
   const where = x.kind === 'hook' ? x.terminal || rsBase(x.cwd) : rsBase(x.project);
-  head.append(h('span', 'rs-name ellipsis', x.ruleName || '규칙'), h('span', 'rs-where ellipsis', where || ''), h('span', 'rs-time', dayClock(x.at)));
+  head.append(Icons.tile(x.kind === 'hook' ? 'result' : 'agent'), h('span', 'rs-name ellipsis', x.ruleName || '규칙'), h('span', 'rs-where ellipsis', where || ''), h('span', 'rs-time', dayClock(x.at)));
   head.title = [x.ruleName, x.project || x.cwd, new Date(x.at).toLocaleString()].filter(Boolean).join('\n');
-  const del = h('button', 'mini-btn rs-del', '✕');
+  const del = h('button', 'mini-btn rs-del');
+  del.innerHTML = Icons.svg('close', 12);
+  del.setAttribute('aria-label', '이 결과 지우기');
   del.type = 'button';
   del.title = '이 결과 지우기';
   del.addEventListener('click', () => api.resultsRemove(x.id));
@@ -4465,7 +4480,7 @@ function resultItem(x) {
         for (const e of s.evidence) ul.append(h('li', null, e));
         card.append(ul);
       }
-      const make = h('button', 'btn rs-make', '스킬 만들기 요청 넣기');
+      const make = Icons.label(h('button', 'btn rs-make ic-btn'), 'fill', '스킬 만들기 요청 넣기');
       make.type = 'button';
       make.title = '이 프로젝트의 Claude 입력칸에 요청을 넣습니다 (보내지는 않음)';
       make.addEventListener('click', () => sendToClaude(x.project, skillRequest(s)));
@@ -4490,6 +4505,10 @@ function resultItem(x) {
   return li;
 }
 
+Icons.label(rs.clear, 'trash', '모두 지우기');
+Icons.label(rs.start, 'plus', '추천 스킬 찾기 규칙 만들기');
+Icons.label(rulesEls.add, 'plus', '규칙');
+Icons.label(rulesEls.templates, 'chevron', '템플릿', true);
 rs.clear.addEventListener('click', () => {
   if (window.confirm('자동화 결과를 모두 지울까요?')) api.resultsClear();
 });

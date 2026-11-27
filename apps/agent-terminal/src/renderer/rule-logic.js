@@ -14,13 +14,13 @@
   // Rule events and the Claude Code hook each one answers to. `timer` has
   // no hook: the main process runs it every `every` hours (src/automation.js).
   const EVENTS = {
-    prompt: { hook: 'UserPromptSubmit', label: '💬 프롬프트' },
-    pre: { hook: 'PreToolUse', label: '🛠️ 실행 전' },
-    post: { hook: 'PostToolUse', label: '✅ 실행 후' },
-    wait: { hook: 'PermissionRequest', label: '✋ 승인 대기' },
-    stop: { hook: 'Stop', label: '🏁 작업 끝' },
-    compact: { hook: 'PostCompact', label: '🗜️ 압축 뒤' },
-    timer: { hook: null, label: '⏰ 시간마다' },
+    prompt: { hook: 'UserPromptSubmit', label: '프롬프트', icon: 'prompt' },
+    pre: { hook: 'PreToolUse', label: '실행 전', icon: 'pre' },
+    post: { hook: 'PostToolUse', label: '실행 후', icon: 'post' },
+    wait: { hook: 'PermissionRequest', label: '승인 대기', icon: 'wait' },
+    stop: { hook: 'Stop', label: '작업 끝', icon: 'stop' },
+    compact: { hook: 'PostCompact', label: '압축 뒤', icon: 'compact' },
+    timer: { hook: null, label: '시간마다', icon: 'timer' },
   };
   const EVENT_OF_HOOK = Object.fromEntries(Object.entries(EVENTS).filter(([, v]) => v.hook).map(([k, v]) => [v.hook, k]));
   const HOOK_EVENTS = Object.keys(EVENTS).filter((k) => EVENTS[k].hook);
@@ -35,15 +35,17 @@
   // `result` keeps a text in the 자동화 결과 tab; `agent` runs Claude in the
   // background on a timer, once per project, and keeps its answer there.
   const ACTIONS = {
-    context: { label: '📝 글 붙이기', events: ['prompt', 'pre', 'post'], reply: true },
-    pipeline: { label: '🧭 노드 정보 붙이기', events: ['prompt'], reply: true },
-    block: { label: '⛔ 막기', events: ['pre'], reply: true },
-    ask: { label: '❓ 확인 받기', events: ['pre'], reply: true },
-    fill: { label: '↪️ 다른 터미널에 넣기', events: HOOK_EVENTS, reply: false },
-    highlight: { label: '⚡ 표시', events: HOOK_EVENTS, reply: false },
-    result: { label: '📋 결과에 남기기', events: HOOK_EVENTS, reply: false },
-    agent: { label: '🤖 에이전트 실행', events: ['timer'], reply: false },
+    context: { label: '글 붙이기', icon: 'context', events: ['prompt', 'pre', 'post'], reply: true },
+    pipeline: { label: '노드 정보 붙이기', icon: 'pipeline', events: ['prompt'], reply: true },
+    block: { label: '막기', icon: 'block', events: ['pre'], reply: true },
+    ask: { label: '확인 받기', icon: 'ask', events: ['pre'], reply: true },
+    fill: { label: '다른 터미널에 넣기', icon: 'fill', events: HOOK_EVENTS, reply: false },
+    highlight: { label: '표시', icon: 'highlight', events: HOOK_EVENTS, reply: false },
+    result: { label: '결과에 남기기', icon: 'result', events: HOOK_EVENTS, reply: false },
+    agent: { label: '에이전트 실행', icon: 'agent', events: ['timer'], reply: false },
   };
+  // The icon of each template group (src/renderer/icons.js).
+  const GROUP_ICONS = { 지키기: 'guard', '알려 주기': 'tell', '넘기기·표시': 'handoff', 보드: 'board', '정기 실행': 'timer', '결과에 남기기': 'result' };
   // Agent runs with a fixed job: the app adds the input and the answer's form.
   const PRESETS = { skills: { label: '추천 스킬 찾기' } };
 
@@ -127,8 +129,8 @@
   function describe(rule, groupName = (id) => id) {
     const a0 = rule.action || {};
     if (rule.event === 'timer') {
-      const job = a0.kind === 'agent' && PRESETS[a0.preset] ? `🤖 ${PRESETS[a0.preset].label}` : ACTIONS[a0.kind] ? ACTIONS[a0.kind].label : '?';
-      return `⏰ ${everyHours(rule.every)}시간마다 · 프로젝트마다 → ${job}`;
+      const job = a0.kind === 'agent' && PRESETS[a0.preset] ? PRESETS[a0.preset].label : ACTIONS[a0.kind] ? ACTIONS[a0.kind].label : '?';
+      return `${everyHours(rule.every)}시간마다 · 프로젝트마다 → ${job}`;
     }
     const ev = EVENTS[rule.event] ? EVENTS[rule.event].label : '?';
     const c = rule.cond || {};
@@ -136,10 +138,10 @@
     const cond = c.kind === 'none' || !c.value ? '' : ` · ${c.label || `「${shown}」`}`;
     const s = rule.scope || {};
     const scope = !s.kind || s.kind === 'all' ? ''
-      : s.kind === 'group' ? ` · 📁 ${groupName(s.id)}`
-        : s.kind === 'agent' ? ` · 🤖 ${s.name || '?'}` : ` · 🖥️ ${s.name || '?'}`;
+      : s.kind === 'group' ? ` · 그룹 ${groupName(s.id)}`
+        : s.kind === 'agent' ? ` · 에이전트 ${s.name || '?'}` : ` · ${s.name || '?'}`;
     const a = rule.action || {};
-    const what = a.kind === 'fill' ? `↪️ ${a.target || '?'} ${a.send ? '보내기' : '넣기'}`
+    const what = a.kind === 'fill' ? `${a.target || '?'}에 ${a.send ? '보내기' : '넣기'}`
       : (ACTIONS[a.kind] ? ACTIONS[a.kind].label : '?');
     return `${ev}${cond}${scope} → ${what}`;
   }
@@ -167,10 +169,10 @@
   // regex until the user changes it.
   const re = (value, label) => ({ kind: 'regex', value, label });
   const all = { kind: 'all' };
-  const guard = (name, label, kind, value, text) => ({ group: '🛡️ 지키기', name, event: 'pre', cond: re(value, label), scope: all, action: { kind, text }, freq: 'every' });
+  const guard = (name, label, kind, value, text) => ({ group: '지키기', name, event: 'pre', cond: re(value, label), scope: all, action: { kind, text }, freq: 'every' });
   // PowerShell: the Windows shell tool's name, unverified (harmless if absent).
   const shellGuard = (name, label, kind, value, text) => guard(name, label, kind, R`^(Bash|PowerShell) [\s\S]*?(?:` + value + ')', text);
-  const tell = (name, event, cond, text, freq = 'every', scope = all) => ({ group: '💬 알려 주기', name, event, cond, scope, action: { kind: 'context', text }, freq });
+  const tell = (name, event, cond, text, freq = 'every', scope = all) => ({ group: '알려 주기', name, event, cond, scope, action: { kind: 'context', text }, freq });
   const TEMPLATES = [
     guard('비밀 파일 막기', '비밀 파일', 'block',
       R`(^|[\\/\s])(\.env(\.[\w-]+)?|id_rsa|id_ed25519|id_ecdsa|[\w-]+\.(pem|key|p12|pfx)|credentials(\.json)?|\.netrc|\.pgpass)` + END,
@@ -217,19 +219,19 @@
     tell('수정 뒤 시험 상기', 'post', re(EDIT, '파일 수정'), '파일을 고쳤으면 끝내기 전에 관련 시험·검사를 돌려 결과를 확인하세요.', 'once'),
     tell('그룹 규칙 상기', 'prompt', none, '이 그룹의 작업 규칙: (여기에 적기)', 'once', { kind: 'group', id: '' }),
 
-    { group: '↪️ 넘기기·표시', name: '작업 끝나면 다른 터미널에 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 작업이 끝났어. {branch} 브랜치의 변경을 검토해줘.' }, freq: 'every' },
-    { group: '↪️ 넘기기·표시', name: '마지막 답 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 마지막 답이야. 이어서 처리해줘.\n\n{last_answer}' }, freq: 'every' },
-    { group: '↪️ 넘기기·표시', name: '질문으로 끝나면 표시', event: 'stop', cond: re(R`(\?|？|까요\.?)\s*$`, '질문으로 끝남'), scope: all, action: { kind: 'highlight' }, freq: 'every' },
-    { group: '↪️ 넘기기·표시', name: '승인 대기 표시', event: 'wait', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
-    { group: '↪️ 넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '넘기기·표시', name: '작업 끝나면 다른 터미널에 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 작업이 끝났어. {branch} 브랜치의 변경을 검토해줘.' }, freq: 'every' },
+    { group: '넘기기·표시', name: '마지막 답 넘기기', event: 'stop', cond: none, scope: { kind: 'terminal', name: '' }, action: { kind: 'fill', target: '', send: false, text: '「{terminal}」의 마지막 답이야. 이어서 처리해줘.\n\n{last_answer}' }, freq: 'every' },
+    { group: '넘기기·표시', name: '질문으로 끝나면 표시', event: 'stop', cond: re(R`(\?|？|까요\.?)\s*$`, '질문으로 끝남'), scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '넘기기·표시', name: '승인 대기 표시', event: 'wait', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
+    { group: '넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
 
-    { group: '🧭 보드', name: '보드 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
+    { group: '보드', name: '보드 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
 
-    { group: '⏰ 정기 실행', name: '추천 스킬 찾기', event: 'timer', every: 12, cond: none, scope: all, action: { kind: 'agent', preset: 'skills', text: SKILLS_PROMPT }, freq: 'every' },
+    { group: '정기 실행', name: '추천 스킬 찾기', event: 'timer', every: 12, cond: none, scope: all, action: { kind: 'agent', preset: 'skills', text: SKILLS_PROMPT }, freq: 'every' },
 
-    { group: '📋 결과에 남기기', name: '작업 끝 답 남기기', event: 'stop', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 작업 끝 ({branch})\n\n{last_answer}' }, freq: 'every' },
-    { group: '📋 결과에 남기기', name: '승인 요청 남기기', event: 'wait', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 승인 대기: {tool} {command}{file}' }, freq: 'every' },
+    { group: '결과에 남기기', name: '작업 끝 답 남기기', event: 'stop', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 작업 끝 ({branch})\n\n{last_answer}' }, freq: 'every' },
+    { group: '결과에 남기기', name: '승인 요청 남기기', event: 'wait', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 승인 대기: {tool} {command}{file}' }, freq: 'every' },
   ];
 
-  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, everyHours, ACTIONS, PRESETS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
+  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, everyHours, ACTIONS, PRESETS, GROUP_ICONS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
 }));
