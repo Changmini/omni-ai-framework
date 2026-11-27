@@ -232,4 +232,9 @@ test('rules: an agent scope follows the agent, in any terminal, and its subagent
   // A subagent of that type in a lead's session: blocked, not given text.
   assert.deepStrictEqual(r.reply('1', { ...push, agent_type: 'implementer', agent_id: 'x1' }), { permissionDecision: 'deny', permissionDecisionReason: '구현은 push 금지' });
   assert.match(RuleLogic.describe({ ...rule(), scope: { kind: 'agent', name: 'implementer' } }), / · 에이전트 implementer → /);
+  // The list shows each condition and the action as its own chip.
+  assert.deepStrictEqual(RuleLogic.describeParts({ ...rule({ event: 'pre' }), cond: { kind: 'regex', value: 'x', label: '비밀 파일' }, scope: { kind: 'group', id: 'g' } }, () => '백엔드'),
+    { when: ['실행 전', '비밀 파일', '그룹 백엔드'], what: '글 붙이기' });
+  assert.deepStrictEqual(RuleLogic.describeParts({ event: 'timer', minutes: 90, action: { kind: 'agent', preset: 'skills' } }),
+    { when: ['1시간 30분마다', '프로젝트마다'], what: '추천 스킬 찾기' });
 });
