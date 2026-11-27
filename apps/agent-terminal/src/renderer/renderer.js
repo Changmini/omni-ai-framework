@@ -4613,7 +4613,7 @@ splitResizer.addEventListener('dblclick', () => { applySplit(null); saveSplit(nu
 // it or to open it again at its last height; double-click the border for the
 // default height. Open state and height are remembered per dock.
 const DOCK_DEFAULT_H = { plan: 74, font: 66 };
-const DOCK_DEFAULT_OPEN = { plan: false, font: true }; // 현재 세션 starts closed (its bar shows in the title)
+const DOCK_DEFAULT_OPEN = { plan: false, font: false }; // both start closed; the title row shows the value
 const DOCK_SNAP = 14; // body px below which a drag closes the dock
 const SPLIT_MIN_H = 140; // terminal list + shortcuts keep at least this
 
