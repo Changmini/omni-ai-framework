@@ -25,7 +25,7 @@ test('requestText keeps typed requests and slash commands, drops the rest', () =
   assert.strictEqual(requestText({ type: 'assistant', message: { role: 'assistant', content: 'x' } }), '');
 });
 
-test('readRequests groups the period\'s requests by project folder', () => {
+test('readRequests groups the period\'s requests by project folder', async () => {
   const dir = tmp();
   const now = Date.parse('2026-11-27T12:00:00Z');
   try {
@@ -38,10 +38,10 @@ test('readRequests groups the period\'s requests by project folder', () => {
       + line({ type: 'assistant', cwd: '/home/user/sample-app', timestamp: new Date(now - HOUR).toISOString(), message: { role: 'assistant', content: 'x' } })
       + 'not json\n');
     fs.writeFileSync(path.join(dir, 'projects', '-home-user-other', 'b.jsonl'), user('/home/user/other', now - HOUR, '다른 프로젝트'));
-    const got = readRequests(dir, now - 12 * HOUR);
+    const got = await readRequests(dir, now - 12 * HOUR);
     assert.deepStrictEqual([...got.keys()].sort(), ['/home/user/other', '/home/user/sample-app']);
     assert.deepStrictEqual(got.get('/home/user/sample-app').map((r) => r.text), ['첫 번째', '두 번째']);
-    assert.strictEqual(readRequests(path.join(dir, 'none'), 0).size, 0);
+    assert.strictEqual((await readRequests(path.join(dir, 'none'), 0)).size, 0);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -194,6 +194,7 @@ test('runClaude: prompt on stdin, no tools, WSL through wsl.exe, the result read
   assert.strictEqual(wsl.calls[0].cmd, 'wsl.exe');
   assert.deepStrictEqual(wsl.calls[0].args.slice(0, 5), ['-d', 'Ubuntu', '--cd', '/home/user/sample-app', '-e']);
   assert.ok(wsl.calls[0].args.includes('--tools'));
+  assert.deepStrictEqual(wsl.calls[0].args.slice(5, 7), ['bash', '-lc'], 'not interactive: ~/.bashrc may start tmux');
 
   const bad = fakeSpawn('{"type":"result","is_error":true,"result":"Credit balance is too low"}', 1);
   await assert.rejects(runClaude({ prompt: 'q', cwd: '/x', platform: 'linux', spawnFn: bad.fn }), /Credit balance/);
