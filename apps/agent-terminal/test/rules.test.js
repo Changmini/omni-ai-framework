@@ -38,10 +38,10 @@ test('rule logic: an action runs only on the events it supports, in scope', () =
   assert.strictEqual(RuleLogic.fires(rule({ enabled: false }), prompt('x'), '1'), false);
   assert.strictEqual(RuleLogic.fires(rule({ action: { kind: 'block', text: '' } }), prompt('x'), '1'), false); // block: before a tool only
   assert.match(RuleLogic.describe({ ...rule(), scope: { kind: 'group', id: 'g' }, cond: { kind: 'text', value: '배포' } }, () => '백엔드'),
-    /^💬 프롬프트 · 「배포」 · 📁 백엔드 → 📝 글 붙이기$/);
+    /^프롬프트 · 「배포」 · 그룹 백엔드 → 글 붙이기$/);
   for (const t of RuleLogic.TEMPLATES) assert.ok(RuleLogic.ACTIONS[t.action.kind].events.includes(t.event), t.name);
   // A labelled condition reads as its label; a long one is cut.
-  assert.match(RuleLogic.describe({ ...rule({ event: 'pre' }), cond: { kind: 'regex', value: 'x', label: '비밀 파일' } }), /^🛠️ 실행 전 · 비밀 파일 → 📝 글 붙이기$/);
+  assert.match(RuleLogic.describe({ ...rule({ event: 'pre' }), cond: { kind: 'regex', value: 'x', label: '비밀 파일' } }), /^실행 전 · 비밀 파일 → 글 붙이기$/);
   assert.match(RuleLogic.describe({ ...rule({ event: 'pre' }), cond: { kind: 'regex', value: 'y'.repeat(50) } }), / · 「y{40}…」 → /);
 });
 
@@ -227,5 +227,5 @@ test('rules: an agent scope follows the agent, in any terminal, and its subagent
   assert.strictEqual(r.reply('1', { ...push, agent_type: 'lead' }), null);
   // A subagent of that type in a lead's session: blocked, not given text.
   assert.deepStrictEqual(r.reply('1', { ...push, agent_type: 'implementer', agent_id: 'x1' }), { permissionDecision: 'deny', permissionDecisionReason: '구현은 push 금지' });
-  assert.match(RuleLogic.describe({ ...rule(), scope: { kind: 'agent', name: 'implementer' } }), / · 🤖 implementer → /);
+  assert.match(RuleLogic.describe({ ...rule(), scope: { kind: 'agent', name: 'implementer' } }), / · 에이전트 implementer → /);
 });
