@@ -2414,7 +2414,7 @@ function showRuleHits() {
   rulesShowTimer = setTimeout(() => {
     rulesShowTimer = 0;
     writePref(RULES_KEY, JSON.stringify(rules));
-    if (rulesVisible()) renderRules();
+    rulesLive();
   }, RULES_SHOW_MS);
 }
 
@@ -2434,56 +2434,141 @@ function rulesVisible() {
 
 const clock = (t) => new Date(t).toTimeString().slice(0, 5);
 
+// Each rule's line in the list, by id: a change redraws only that line, and
+// counts or run state only their text, so an open editor is left alone.
+const ruleEls = new Map();
+const groupNameOf = (gid) => (groupById(gid) || {}).name || '?';
+
+// The whole list, built when the tab is shown.
 function renderRules() {
-  const { list, empty } = rulesEls;
-  // Hit counts redraw the list: keep what is being typed in the editor.
-  if (list.contains(document.activeElement) && document.activeElement.matches('input[type="text"], input:not([type]), textarea')) return;
-  empty.hidden = rules.length > 0;
-  list.replaceChildren(...rules.map((r) => {
-    const li = h('li', `rl-item${r.enabled ? '' : ' off'}${ruleOpen === r.id ? ' open' : ''}`);
-    const sw = h('button', 'rl-switch');
-    sw.type = 'button';
-    sw.setAttribute('role', 'switch');
+  ruleEls.clear();
+  rulesEls.list.replaceChildren(...rules.map(ruleItem));
+  rulesEls.empty.hidden = rules.length > 0;
+}
+
+function ruleItem(r) {
+  const li = h('li', `rl-item${r.enabled ? '' : ' off'}${ruleOpen === r.id ? ' open' : ''}`);
+  const sw = h('button', 'rl-switch');
+  sw.type = 'button';
+  sw.setAttribute('role', 'switch');
+  const showOn = () => {
+    li.classList.toggle('off', !r.enabled);
     sw.setAttribute('aria-checked', String(r.enabled));
     sw.title = r.enabled ? '켜짐 (누르면 끔)' : '꺼짐 (누르면 켬)';
-    sw.addEventListener('click', () => { r.enabled = !r.enabled; saveRules(); renderRules(); });
-    const main = h('button', 'rl-main');
-    main.type = 'button';
-    // What starts it: a hook from Claude, or the app's clock (src/automation.js).
-    const title = h('div', 'rl-title');
-    const kind = h('span', `rl-kind${r.event === 'timer' ? ' sched' : ''}`, r.event === 'timer' ? '스케줄' : '훅');
-    kind.title = r.event === 'timer' ? '앱이 시계를 보고 실행 (앱이 켜져 있을 때)' : 'Claude가 그 순간 보내는 훅으로 실행';
-    title.append(h('span', 'rl-name ellipsis', r.name), kind);
-    main.append(title);
-    // The chips take the row's full width, under the switch too.
-    const sent = ruleSentence(r, h('div', 'rl-sent'));
-    const toggle = () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); };
-    main.addEventListener('click', toggle);
-    sent.addEventListener('click', toggle);
-    const st = r.event === 'timer' ? autoState[r.id] || {} : null;
-    const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? dayClock(st.last) : '—') : r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '—');
-    const row = h('div', 'rl-row');
-    const ev = RuleLogic.EVENTS[r.event];
-    row.append(sw, Icons.tile(ev ? ev.icon : 'highlight', ev ? ev.label : ''), main, hits, sent);
-    li.append(row);
-    if (r.lastSkip) li.append(h('div', 'rl-skip', r.lastSkip));
-    if (ruleOpen === r.id) li.append(ruleEditor(r));
-    return li;
-  }));
+  };
+  showOn();
+  sw.addEventListener('click', () => { r.enabled = !r.enabled; saveRules(); showOn(); ruleLive(r); });
+  const main = h('button', 'rl-main');
+  main.type = 'button';
+  // What starts it: a hook from Claude, or the app's clock (src/automation.js).
+  const title = h('div', 'rl-title');
+  const kind = h('span', `rl-kind${r.event === 'timer' ? ' sched' : ''}`, r.event === 'timer' ? '스케줄' : '훅');
+  kind.title = r.event === 'timer' ? '앱이 시계를 보고 실행 (앱이 켜져 있을 때)' : 'Claude가 그 순간 보내는 훅으로 실행';
+  title.append(h('span', 'rl-name ellipsis', r.name), kind);
+  main.append(title);
+  // The chips take the row's full width, under the switch too.
+  const sent = ruleSentence(r, h('div', 'rl-sent'));
+  main.addEventListener('click', () => openRule(r.id));
+  sent.addEventListener('click', () => openRule(r.id));
+  const row = h('div', 'rl-row');
+  const ev = RuleLogic.EVENTS[r.event];
+  row.append(sw, Icons.tile(ev ? ev.icon : 'highlight', ev ? ev.label : ''), main, h('div', 'rl-hits', ruleHitsText(r)), sent);
+  li.append(row);
+  ruleSkip(li, r);
+  if (ruleOpen === r.id) li.append(ruleEditor(r));
+  ruleEls.set(r.id, li);
+  return li;
+}
+
+// Hit count and time, or a timer rule's last run.
+function ruleHitsText(r) {
+  if (r.event !== 'timer') return r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '—';
+  const st = autoState[r.id] || {};
+  return st.running ? '실행 중' : st.last ? dayClock(st.last) : '—';
+}
+
+// Why the rule's last fill did not happen, under its line.
+function ruleSkip(li, r) {
+  let s = li.querySelector(':scope > .rl-skip');
+  if (!r.lastSkip) { if (s) s.remove(); return; }
+  if (!s) { s = h('div', 'rl-skip'); li.querySelector('.rl-row').after(s); }
+  s.textContent = r.lastSkip;
+}
+
+// The text of a line: name, count, skip note, chips (edited, or a group or
+// terminal renamed), a timer's run state in its editor.
+function ruleLive(r) {
+  const li = ruleEls.get(r.id);
+  if (!li) return;
+  li.querySelector('.rl-name').textContent = r.name;
+  li.querySelector('.rl-hits').textContent = ruleHitsText(r);
+  ruleSkip(li, r);
+  const sent = li.querySelector('.rl-sent');
+  if (sent.title !== RuleLogic.describe(r, groupNameOf)) ruleSentence(r, sent);
+  const ed = li.querySelector(':scope > .rl-ed');
+  if (ed && ed.showRun) ed.showRun();
+}
+
+function rulesLive() {
+  if (rulesVisible()) for (const r of rules) ruleLive(r);
+}
+
+// Open a rule's editor (closing the one open), or close it.
+function openRule(id) {
+  const prev = ruleOpen;
+  ruleOpen = prev === id ? null : id;
+  for (const rid of new Set([prev, ruleOpen])) {
+    const li = rid && ruleEls.get(rid);
+    if (!li) continue;
+    const ed = li.querySelector(':scope > .rl-ed');
+    if (ed) ed.remove();
+    li.classList.toggle('open', rid === ruleOpen);
+    const r = rid === ruleOpen && rules.find((x) => x.id === rid);
+    if (r) li.append(ruleEditor(r));
+  }
+}
+
+// A new rule at the end of the list, opened.
+function addRule(r) {
+  rules.push(r);
+  saveRules();
+  if (ruleOpen) openRule(ruleOpen); // close the open one
+  ruleOpen = r.id;
+  const li = ruleItem(r);
+  rulesEls.list.append(li);
+  rulesEls.empty.hidden = true;
+  li.scrollIntoView({ block: 'nearest' });
+}
+
+function removeRule(r) {
+  rules = rules.filter((x) => x !== r);
+  if (ruleOpen === r.id) ruleOpen = null;
+  saveRules();
+  const li = ruleEls.get(r.id);
+  if (li) li.remove();
+  ruleEls.delete(r.id);
+  rulesEls.empty.hidden = rules.length > 0;
+}
+
+// The rule's line and editor again, after a change of its shape (event,
+// condition kind, action) in the editor.
+function redrawRule(r) {
+  const old = ruleEls.get(r.id);
+  if (old) old.replaceWith(ruleItem(r));
 }
 
 // The rule's second line: a chip per condition, then what it does.
 function ruleSentence(r, el) {
-  const { when, what } = RuleLogic.describeParts(r, (gid) => (groupById(gid) || {}).name || '?');
+  const { when, what } = RuleLogic.describeParts(r, groupNameOf);
   const chip = (text, cls = '') => { const c = h('span', `rl-chip${cls}`, text); c.title = text; return c; };
   el.replaceChildren(...when.map((w) => chip(w)), h('span', 'rl-arrow', '→'), chip(what, ' do'));
-  el.title = RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?');
+  el.title = RuleLogic.describe(r, groupNameOf);
   return el;
 }
 
 function ruleEditor(r) {
   const ed = h('div', 'rl-ed');
-  const changed = (redraw) => { saveRules(); if (redraw) renderRules(); else { const s = ed.closest('.rl-item')?.querySelector('.rl-sent'); if (s) ruleSentence(r, s); } };
+  const changed = (redraw) => { saveRules(); if (redraw) redrawRule(r); else ruleLive(r); };
   const field = (label, ...els) => { const l = h('div', 'rl-field'); l.append(h('span', 'rl-k', label), ...els); return l; };
   const select = (options, value, onChange) => {
     const s = document.createElement('select');
@@ -2652,10 +2737,7 @@ function ruleEditor(r) {
   del.type = 'button';
   del.addEventListener('click', () => {
     if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
-    rules = rules.filter((x) => x !== r);
-    ruleOpen = null;
-    saveRules();
-    renderRules();
+    removeRule(r);
   });
   const foot = h('div', 'rl-foot');
   foot.append(test, del);
@@ -2685,6 +2767,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
     delete r.every;
     showEvery();
     changed();
+    ed.showRun();
   };
   hrs.addEventListener('change', setEvery);
   mins.addEventListener('change', setEvery);
@@ -2701,13 +2784,18 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   const vals = h('span', 'rl-vars', '{ } 값');
   vals.tabIndex = 0;
   vals.title = '{project}  {period}  {skills}';
-  const st = autoState[r.id] || {};
-  const status = h('div', 'rl-note', st.running ? '실행 중…'
-    : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyMinutes(r) * 60e3)}` : '아직 실행 전');
+  const status = h('div', 'rl-note');
   const run = Icons.label(h('button', 'btn ic-btn'), 'play', '지금 실행');
   run.type = 'button';
-  run.disabled = Boolean(st.running) || !r.enabled;
-  run.title = r.enabled ? '기다리지 않고 지금 한 번 실행' : '켜진 규칙만 실행';
+  // Last and next run, and whether 지금 실행 can run: updated in place.
+  ed.showRun = () => {
+    const st = autoState[r.id] || {};
+    status.textContent = st.running ? '실행 중…'
+      : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyMinutes(r) * 60e3)}` : '아직 실행 전';
+    run.disabled = Boolean(st.running) || !r.enabled;
+    run.title = r.enabled ? '기다리지 않고 지금 한 번 실행' : '켜진 규칙만 실행';
+  };
+  ed.showRun();
   run.addEventListener('click', async () => {
     run.disabled = true;
     if (await api.automationRun(r.id)) setInspectorTab('results');
@@ -2716,10 +2804,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   del.type = 'button';
   del.addEventListener('click', () => {
     if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
-    rules = rules.filter((x) => x !== r);
-    ruleOpen = null;
-    saveRules();
-    renderRules();
+    removeRule(r);
   });
   const foot = h('div', 'rl-foot');
   foot.append(run, del);
@@ -2737,8 +2822,8 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
 const dayClock = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${clock(t)}`; };
 // Last run and running state of each timer rule, from the main process.
 let autoState = {};
-api.automationState().then((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); }).catch(() => {});
-api.onAutomationState((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); });
+api.automationState().then((s) => { autoState = s || {}; rulesLive(); }).catch(() => {});
+api.onAutomationState((s) => { autoState = s || {}; rulesLive(); });
 
 // A select with the icon of its value in a tile on its left (an option
 // itself can only hold text).
@@ -2758,10 +2843,10 @@ const RULE_SUBJECT = {
   compact: '조건 없음',
 };
 
-rulesEls.add.addEventListener('click', () => { const r = newRule(); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); });
+rulesEls.add.addEventListener('click', () => addRule(newRule()));
 rulesEls.templates.addEventListener('click', () => {
   const b = rulesEls.templates.getBoundingClientRect();
-  const add = (t) => { const r = newRule(t); rules.push(r); ruleOpen = r.id; saveRules(); renderRules(); };
+  const add = (t) => addRule(newRule(t));
   const groupsOf = [...new Set(RuleLogic.TEMPLATES.map((t) => t.group))];
   openMenu(b.left, b.bottom + 2, groupsOf.map((g) => ({
     label: g,
