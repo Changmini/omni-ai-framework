@@ -2754,7 +2754,9 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = ['config', 'git', 'files', 'results', 'rules', 'skills'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
+// The tab shown at start: the last one used, else 파일.
+const INSPECTOR_TABS = ['activity', 'files', 'git', 'config', 'results', 'rules', 'skills'];
+let inspectorTab = INSPECTOR_TABS.includes(readPref('inspectorTab', '')) ? readPref('inspectorTab', '') : 'files';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -4270,7 +4272,7 @@ function layoutPreview() {
   if (placement !== previewState.placement || !previewPane.el.parentElement) {
     previewState.placement = placement;
     (placement === 'split' ? previewEls.slot : previewEls.tabSlot).append(previewPane.el);
-    if (placement === 'split' && inspectorTab === 'preview') setInspectorTab('activity');
+    if (placement === 'split' && inspectorTab === 'preview') setInspectorTab('files');
   }
   const inline = placement === 'split' && previewState.open && !previewState.detached;
   previewEls.slot.hidden = !inline;
@@ -4316,7 +4318,7 @@ function togglePreview() {
     const showing = inspectorOpen() && inspectorTab === 'preview';
     previewState.userClosed = showing;
     writePref('previewUserClosed', showing);
-    if (showing) setInspectorTab('activity');
+    if (showing) setInspectorTab('files');
     else {
       if (previewState.badge) previewPane.flash();
       previewState.badge = false;
@@ -4535,6 +4537,10 @@ rs.start.addEventListener('click', () => {
   setInspectorTab('rules');
 });
 api.resultsList().then((items) => { rs.items = items || []; markResults(); }).catch(() => {});
+
+// The inspector as it was left (its tab and whether it is open).
+setInspectorTab(inspectorTab);
+setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
 
 // ---------- terminals | config height ----------
 // Drag the border between the terminal list and the config list. Dragging to
