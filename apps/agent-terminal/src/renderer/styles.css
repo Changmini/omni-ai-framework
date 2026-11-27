@@ -352,6 +352,10 @@ body.resizing .terminals { pointer-events: none; }
 .plan-bar[data-level="high"] .plan-fill { background: var(--err); }
 .plan-reset { margin-top: 7px; font-size: 11.5px; }
 /* top bar: plan usage while the sidebar is collapsed */
+/* Closed, the dock keeps a small bar beside the percentage. */
+.dock-mini { display: none; flex: none; width: 56px; margin: 0 0 0 auto; }
+.dock:not(.open) .dock-mini { display: block; }
+.dock:not(.open) .dock-mini + .dock-summary { margin-left: 0; }
 .plan-badge { display: none; font-size: 11.5px; color: var(--muted); }
 .app.collapsed .plan-badge:not([data-empty]) { display: inline; }
 .plan-badge[data-level="mid"] { color: var(--busy); }

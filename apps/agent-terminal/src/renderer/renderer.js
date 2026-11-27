@@ -2352,7 +2352,7 @@ function rulesSync() {
     name: r.name,
     enabled: r.enabled,
     event: r.event,
-    every: r.every,
+    minutes: RuleLogic.everyMinutes(r),
     cond: r.cond,
     terminals: !r.scope || r.scope.kind === 'all' ? null
       : r.scope.kind === 'group' ? [...agents.keys()].filter((t) => groupOf[t] === r.scope.id)
@@ -2497,7 +2497,8 @@ function ruleEditor(r) {
     r.event = v;
     if (v === 'timer') {
       // A timer runs an agent, by default the skill search, every 12 hours.
-      r.every = RuleLogic.everyHours(r.every);
+      r.minutes = RuleLogic.everyMinutes(r);
+      delete r.every;
       r.cond = { kind: 'none', value: '' };
       r.scope = { kind: 'all' };
       r.action = { kind: 'agent', preset: 'skills', text: RuleLogic.SKILLS_PROMPT };
@@ -2653,12 +2654,27 @@ function ruleEditor(r) {
 // and its last run. No condition, scope or 시험: it runs once per project
 // with Claude conversations in the period (src/automation.js).
 function timerEditor(r, ed, { name, when, field, select, changed }) {
-  const every = h('input', 'pp-in rl-every');
-  every.type = 'number';
-  every.min = String(RuleLogic.EVERY.min);
-  every.max = String(RuleLogic.EVERY.max);
-  every.value = String(RuleLogic.everyHours(r.every));
-  every.addEventListener('change', () => { r.every = RuleLogic.everyHours(Number(every.value)); every.value = String(r.every); changed(); });
+  // How often: hours and minutes (1 minute to 7 days).
+  const num = (max, label) => {
+    const el = h('input', 'pp-in rl-every');
+    el.type = 'number';
+    el.min = '0';
+    el.max = String(max);
+    el.setAttribute('aria-label', label);
+    return el;
+  };
+  const hrs = num(RuleLogic.EVERY.max / 60, '시간');
+  const mins = num(59, '분');
+  const showEvery = () => { const m = RuleLogic.everyMinutes(r); hrs.value = String(Math.floor(m / 60)); mins.value = String(m % 60); };
+  showEvery();
+  const setEvery = () => {
+    r.minutes = RuleLogic.clampMinutes((Number(hrs.value) || 0) * 60 + (Number(mins.value) || 0));
+    delete r.every;
+    showEvery();
+    changed();
+  };
+  hrs.addEventListener('change', setEvery);
+  mins.addEventListener('change', setEvery);
   const job = select([...Object.entries(RuleLogic.PRESETS).map(([k, p]) => [k, p.label]), ['', '직접 지시']], r.action.preset || '', (v) => {
     r.action = { kind: 'agent', preset: v, text: v === 'skills' ? RuleLogic.SKILLS_PROMPT : r.action.text || '' };
     changed(true);
@@ -2671,10 +2687,10 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   text.addEventListener('input', () => { r.action.text = text.value; changed(); });
   const vals = h('span', 'rl-vars', '{ } 값');
   vals.tabIndex = 0;
-  vals.title = '{project}  {hours}  {skills}';
+  vals.title = '{project}  {period}  {skills}';
   const st = autoState[r.id] || {};
   const status = h('div', 'rl-note', st.running ? '실행 중…'
-    : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyHours(r.every) * 3600e3)}` : '아직 실행 전');
+    : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyMinutes(r) * 60e3)}` : '아직 실행 전');
   const run = Icons.label(h('button', 'btn ic-btn'), 'play', '지금 실행');
   run.type = 'button';
   run.disabled = Boolean(st.running) || !r.enabled;
@@ -2696,7 +2712,7 @@ function timerEditor(r, ed, { name, when, field, select, changed }) {
   foot.append(run, del);
   ed.append(
     field('이름', name),
-    field('언제', rulePick('timer', when), (() => { const row = h('div', 'rl-inline'); row.append(every, h('span', 'rl-unit', '시간마다')); return row; })()),
+    field('언제', rulePick('timer', when), (() => { const row = h('div', 'rl-inline'); row.append(hrs, h('span', 'rl-unit', '시간'), mins, h('span', 'rl-unit', '분마다')); return row; })()),
     field('무엇을', rulePick('agent', job)),
     field('지시', text, vals),
     h('div', 'rl-note', '앱이 켜져 있는 동안 프로젝트마다 Claude를 따로 한 번씩 실행합니다. 실행마다 사용량이 듭니다. 결과는 자동화 결과 탭에 쌓입니다.'),
@@ -4516,7 +4532,7 @@ function resultItem(x) {
       li.append(more);
     }
   }
-  const meta = [x.requests ? `요청 ${x.requests}개` : '', x.hours ? `${x.hours}시간` : '', x.cost ? `$${x.cost.toFixed(2)}` : ''].filter(Boolean).join(' · ');
+  const meta = [x.requests ? `요청 ${x.requests}개` : '', x.minutes ? RuleLogic.periodText(x.minutes) : x.hours ? `${x.hours}시간` : '', x.cost ? `$${x.cost.toFixed(2)}` : ''].filter(Boolean).join(' · ');
   if (meta) li.append(h('div', 'rs-meta', meta));
   return li;
 }
@@ -4597,6 +4613,7 @@ splitResizer.addEventListener('dblclick', () => { applySplit(null); saveSplit(nu
 // it or to open it again at its last height; double-click the border for the
 // default height. Open state and height are remembered per dock.
 const DOCK_DEFAULT_H = { plan: 74, font: 66 };
+const DOCK_DEFAULT_OPEN = { plan: false, font: true }; // 현재 세션 starts closed (its bar shows in the title)
 const DOCK_SNAP = 14; // body px below which a drag closes the dock
 const SPLIT_MIN_H = 140; // terminal list + shortcuts keep at least this
 
@@ -4649,14 +4666,14 @@ for (const handle of document.querySelectorAll('.dock-resizer')) {
   handle.addEventListener('dblclick', () => setDock(name, true, DOCK_DEFAULT_H[name]));
 }
 for (const name of Object.keys(DOCK_DEFAULT_H)) {
-  setDock(name, readPref(`dock.${name}.open`, 'true') === 'true', savedDockH(name), false);
+  setDock(name, readPref(`dock.${name}.open`, String(DOCK_DEFAULT_OPEN[name])) === 'true', savedDockH(name), false);
 }
 
 // ---------- plan usage ----------
 // The claude.ai "current session" limit (5-hour window), reported through the
 // status line of claude in app terminals (plan-usage.js). Account-wide.
 const planEls = {
-  summary: $('#plan-summary'), bar: document.querySelector('.plan-bar'), fill: $('#plan-fill'),
+  summary: $('#plan-summary'), bar: $('#plan-bar'), fill: $('#plan-fill'), mini: $('#plan-mini'),
   reset: $('#plan-reset'), badge: $('#plan-badge'), dock: dockEl('plan'),
 };
 let planValue = null;
@@ -4683,7 +4700,9 @@ function renderPlan() {
   planEls.summary.dataset.level = level;
   planEls.bar.dataset.level = level;
   planEls.fill.style.width = `${pct || 0}%`;
-  planEls.reset.textContent = !p ? '앱 터미널의 Claude가 응답하면 표시됩니다 (claude.ai 구독 요금제).'
+  planEls.mini.dataset.level = level;
+  planEls.mini.firstElementChild.style.width = `${pct || 0}%`;
+  planEls.reset.textContent = !p ? 'Claude 응답으로 시작됩니다.'
     : reset ? '초기화됨 · 다음 응답부터 다시 집계됩니다.'
     : p.resetsAt ? `${clockText(p.resetsAt)} 초기화 (${untilText(p.resetsAt - now)} 뒤)` : '';
   const tip = p ? `claude.ai 현재 세션(5시간) 한도 ${pct}% 사용 · ${clockText(p.at)}에 받은 값 (바뀔 때만 보고됨)` : '현재 세션 사용량: 아직 값 없음';
