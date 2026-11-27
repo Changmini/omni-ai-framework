@@ -19,22 +19,43 @@ const { PlanUsage } = require('./plan-usage');
 const { readTextFile } = require('./files');
 const preview = require('./preview');
 const reap = require('./reap');
-const { Journal } = require('./journal');
-const journalLogic = require('./journal-logic');
-const allowRules = require('./allow-rules');
-const { wslToWindows } = require('./wsl');
-const gitView = require('./git-view');
 const appSkills = require('./app-skills');
+const { Results, Automation } = require('./automation');
+const { wslToWindows } = require('./wsl');
 
 let win = null;
 let manager = null;
 let plan = null;
 // The automation rules: run on the main session of a terminal only.
-const rules = new Rules({ emit: (ch, p) => send(ch, p), meta: (id, sid, cwd) => (manager ? manager.ruleMeta(id, sid, cwd) : null) });
+const rules = new Rules({
+  emit: (ch, p) => send(ch, p),
+  meta: (id, sid, cwd) => (manager ? manager.ruleMeta(id, sid, cwd) : null),
+  record: (e) => { if (results) results.add({ ...e, kind: 'hook' }); },
+});
+let results = null; // the 자동화 결과 tab
+let automation = null; // timer rules
+// WSL homes the terminals reported, kept across runs: a timer run at start
+// reads Claude's files there before any WSL terminal is open again.
+const wslHomesFile = () => path.join(app.getPath('userData'), 'automation-wsl.json');
+function claudeDirs() {
+  let saved = [];
+  try { saved = JSON.parse(fs.readFileSync(wslHomesFile(), 'utf8')); } catch { saved = []; }
+  const seen = new Map((Array.isArray(saved) ? saved : []).map((w) => [`${w.distro}|${w.home}`, w]));
+  const before = seen.size;
+  for (const w of manager ? manager.wslHomes() : []) seen.set(`${w.distro}|${w.home}`, w);
+  if (seen.size !== before) { try { fs.writeFileSync(wslHomesFile(), JSON.stringify([...seen.values()])); } catch { /* next time */ } }
+  const dirs = [{ dir: claudeDir(), distro: null }];
+  if (process.platform === 'win32') {
+    for (const w of seen.values()) {
+      const dir = wslToWindows(`${String(w.home).replace(/\/$/, '')}/.claude`, w.distro);
+      if (dir) dirs.push({ dir, distro: w.distro });
+    }
+  }
+  return dirs;
+}
 let previewWin = null; // the preview in its own window, when detached
 let previewActive = null; // the terminal the main window shows (the detached preview follows it)
 let previewWatch = null;
-let journal = null; // the "돌아보기" records
 
 const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -157,21 +178,6 @@ function openPreviewWindow() {
 const str = (v, max = 100000) => (typeof v === 'string' && v.length <= max ? v : null);
 const int = (v) => (Number.isInteger(v) && v > 0 && v < 10000 ? v : null);
 
-// One day of "돌아보기" (today when `day` is null), for one project or all.
-async function reviewSummary(day, project) {
-  const today = journalLogic.dayOf(Date.now());
-  const d = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : today;
-  const entries = journal.read(d);
-  const hosts = new Map();
-  for (const e of entries) if (e.project && !hosts.has(e.project)) hosts.set(e.project, e.host || e.project);
-  const allowed = new Map();
-  await Promise.all([...hosts].map(async ([p, host]) => {
-    allowed.set(p, await allowRules.allowedIn(host).catch(() => new Set()));
-  }));
-  const s = journalLogic.summarize(entries, { project: project || null, others: journal.otherPrompts(d), allowed });
-  return { day: d, today, days: journal.days(), enabled: journal.enabled, keepDays: journalLogic.KEEP_DAYS, ...s };
-}
-
 function registerIpc() {
   ipcMain.handle('session:create', (_e, opts = {}) =>
     manager.create({
@@ -190,7 +196,18 @@ function registerIpc() {
     const d = str(data);
     if (d !== null) manager.write(str(id, 20), d);
   });
-  ipcMain.on('rules:set', (_e, state) => rules.set(state));
+  ipcMain.on('rules:set', (_e, state) => {
+    rules.set(state);
+    if (!automation) return;
+    automation.tick();
+    send('automation:state', automation.state()); // the timer rules the page now has
+  });
+  // The 자동화 결과 tab, and timer rules run from the 자동화 tab.
+  ipcMain.handle('results:list', () => (results ? results.list() : []));
+  ipcMain.handle('results:remove', (_e, id) => { if (results) results.remove(str(id, 40)); });
+  ipcMain.handle('results:clear', () => { if (results) results.clear(); });
+  ipcMain.handle('automation:run', (_e, ruleId) => (automation ? automation.runNow(str(ruleId, 40)) : false));
+  ipcMain.handle('automation:state', () => (automation ? automation.state() : {}));
   ipcMain.handle('rules:recent', () => rules.recentEvents());
   ipcMain.on('session:resize', (_e, id, cols, rows) => manager.resize(str(id, 20), int(cols), int(rows)));
   ipcMain.handle('session:reorder', (_e, ids) =>
@@ -274,37 +291,6 @@ function registerIpc() {
     if (d !== null && (kind === 7 || kind === 9)) {
       manager.setCwd(str(id, 20), parseCwdReport(kind, d), true);
       manager.shellReported(str(id, 20));
-    }
-  });
-  // "돌아보기": the day's records summarized; allow rules added only from
-  // what the summary offers for that project (not any rule the page sends).
-  ipcMain.handle('review:summary', (_e, day, project) => reviewSummary(str(day, 10), str(project, 4000)));
-  ipcMain.handle('review:clear', (_e, day) => journal.clear(day === null ? null : str(day, 10) || '-'));
-  ipcMain.handle('review:enable', (_e, on) => journal.setEnabled(on === true));
-  ipcMain.handle('review:prompt', (_e, items) => {
-    const list = (Array.isArray(items) ? items.slice(0, 10) : [])
-      .map((x) => ({ text: str(x && x.text, 300), count: Number(x && x.count) || 1, days: Number(x && x.days) || 1 }))
-      .filter((x) => x.text);
-    return list.length ? journalLogic.claudeDirPrompt(list) : null;
-  });
-  ipcMain.handle('review:allow', async (_e, day, project, rules, write) => {
-    const p = str(project, 4000);
-    const offered = p ? await reviewSummary(str(day, 10), p) : null;
-    const g = offered && offered.approvals.filter((x) => x.project === p);
-    if (!g || !g.length || !Array.isArray(rules)) return { error: '추가할 규칙이 없습니다' };
-    const pick = g.filter((x) => rules.includes(x.rule)).map((x) => x.rule);
-    if (!pick.length) return { error: '추가할 규칙이 없습니다' };
-    const { host, distro } = g[0];
-    const req = {
-      project: p, host: host || p, rules: pick,
-      target: { cwd: p, distro, platform: process.platform },
-      runGit: gitView.runGit,
-      toHost: distro ? (x) => wslToWindows(x, distro) : (x) => x,
-    };
-    try {
-      return write === true ? await allowRules.addAllow(req) : await allowRules.previewAllow(req);
-    } catch (err) {
-      return { error: `설정 파일을 쓰지 못했습니다: ${err.message}` };
     }
   });
   ipcMain.handle('dialog:pickFolder', async () => {
@@ -402,9 +388,7 @@ if (primaryInstance) app.whenReady().then(async () => {
   fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
   fs.writeFileSync(settingsFile, JSON.stringify(buildClaudeSettings(hooks.port), null, 2));
 
-  journal = new Journal({ dir: path.join(app.getPath('userData'), 'journal') });
   manager = new SessionManager({
-    journal,
     spawn: pty.spawn,
     emit: send,
     shell: shellLaunch(),
@@ -439,14 +423,22 @@ if (primaryInstance) app.whenReady().then(async () => {
         : path.join(require('node:os').homedir(), '.claude.json'),
     },
   });
+  results = new Results({ file: path.join(app.getPath('userData'), 'automation-results.json'), emit: (items) => send('results:changed', items) });
+  automation = new Automation({
+    rules, results, claudeDirs,
+    stateFile: path.join(app.getPath('userData'), 'automation-state.json'),
+    emit: (state) => send('automation:state', state),
+  });
   registerIpc();
   createWindow();
+  automation.start();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('before-quit', () => {
+  if (automation) automation.stop();
   if (manager) manager.killAll();
   if (hooks) hooks.close();
   if (settingsFile) { try { fs.unlinkSync(settingsFile); } catch { /* already gone */ } }

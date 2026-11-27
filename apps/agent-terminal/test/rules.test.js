@@ -108,9 +108,36 @@ test('rules: what the page sends is checked', () => {
   assert.strictEqual(compile({ event: 'prompt', action: { kind: 'run-anything' } }), null);
   const c = compile({ id: 1, enabled: 'yes', event: 'pre', cond: { kind: 'eval', value: 'x' }, action: { kind: 'ask', send: 1 }, freq: 'often' });
   assert.deepStrictEqual(c, {
-    id: '', enabled: false, event: 'pre', cond: { kind: 'none', value: 'x' }, terminals: null, agent: null,
-    action: { kind: 'ask', text: '', target: null, send: false }, freq: 'every',
+    id: '', name: '', enabled: false, event: 'pre', every: 12, cond: { kind: 'none', value: 'x' }, terminals: null, agent: null,
+    action: { kind: 'ask', text: '', target: null, send: false, preset: '' }, freq: 'every',
   });
+  // A timer rule keeps its hours within 1..168 and a known preset only.
+  const t = compile({ id: 't', enabled: true, event: 'timer', every: 500, action: { kind: 'agent', preset: 'rm', text: 'x' } });
+  assert.strictEqual(t.every, 12);
+  assert.strictEqual(t.action.preset, '');
+  assert.strictEqual(compile({ event: 'timer', every: 3, action: { kind: 'agent', preset: 'skills' } }).every, 3);
+  // An agent action only on a timer; a result only on a hook event.
+  assert.strictEqual(RuleLogic.fires({ enabled: true, event: 'timer', action: { kind: 'agent' }, cond: {} }, { hook_event_name: 'Stop' }, '1'), false);
+  assert.ok(!RuleLogic.ACTIONS.agent.events.includes('stop'));
+  assert.ok(!RuleLogic.ACTIONS.result.events.includes('timer'));
+});
+
+test('rules: a result rule keeps its text through record(), timers() lists timer rules', () => {
+  const got = [];
+  const r = new Rules({ record: (x) => got.push(x), meta: () => ({ branch: 'feature/sample', cwd: '/home/user/sample-app' }) });
+  r.set({
+    rules: [
+      { id: 'a', name: '작업 끝 답 남기기', enabled: true, event: 'stop', cond: { kind: 'none' }, action: { kind: 'result', text: '{terminal}: {last_answer}' }, freq: 'changed' },
+      { id: 't', name: '추천 스킬 찾기', enabled: true, event: 'timer', every: 12, action: { kind: 'agent', preset: 'skills', text: 'x' } },
+      { id: 'off', enabled: false, event: 'timer', action: { kind: 'agent' } },
+    ],
+    names: { 1: 'sample-app' },
+  });
+  r.onEvent('1', { hook_event_name: 'Stop', session_id: 's', last_assistant_message: '끝' });
+  r.onEvent('1', { hook_event_name: 'Stop', session_id: 's', last_assistant_message: '끝' }); // same text: once
+  assert.deepStrictEqual(got, [{ ruleId: 'a', ruleName: '작업 끝 답 남기기', terminal: 'sample-app', cwd: '/home/user/sample-app', text: 'sample-app: 끝' }]);
+  assert.deepStrictEqual(r.timers().map((x) => x.id), ['t']);
+  assert.strictEqual(r.rule('t').every, 12);
 });
 
 test('rule templates: each condition catches what it names and spares the rest', () => {
