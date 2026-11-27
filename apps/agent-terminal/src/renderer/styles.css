@@ -1051,8 +1051,8 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
 
 /* 스킬 tab: one card per skill (develop first and set apart), then the agents.
    Each way to call a skill is a row: what it is, the text, a copy button. */
-.sk-status { margin-bottom: 4px; line-height: 1.5; }
-.sk-h:first-of-type { margin-top: 10px; }
+.sk-status { margin: 0 0 8px; line-height: 1.5; }
+.sk-status:empty { display: none; }
 .sk-card {
   border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 0 0 8px;
   display: grid; gap: 8px;
@@ -1079,7 +1079,7 @@ textarea.pp-in { resize: vertical; font-family: var(--mono); font-size: 12px; li
 .sk-steps[open] > summary::before { content: "▾ "; }
 .sk-steps > summary:hover { color: var(--text); }
 .sk-steps ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 3px; line-height: 1.45; }
-.sk-open { justify-self: start; height: 26px; font-size: 11.5px; }
+.sk-open { justify-self: start; display: inline-flex; align-items: center; height: 26px; padding: 0 10px; font-size: 11.5px; line-height: 1; }
 .sk-hint { margin: -2px 0 6px; }
 .sk-agents { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
 .sk-agent {

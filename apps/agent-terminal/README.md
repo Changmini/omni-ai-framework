@@ -209,7 +209,7 @@ B는 위 "실행 (Linux · WSL 안에서)"를 따르면 됩니다. 아래는 A �
 앱 터미널에서 `claude`를 실행하면 앱이 저장소의 개발 파이프라인 플러그인 `claude-code/plugins/omni-pipeline`을 `--plugin-dir`로 붙입니다. 복사하지 않고 그 폴더를 바로 쓰므로, 플러그인을 고치면 다음에 여는 Claude 세션부터 그대로 반영되고 따로 설치할 필요도 없습니다.
 
 - **부르는 법:** Claude 세션 안에서 `/omni-pipeline:develop <요청>` 또는 "개발 파이프라인으로 진행해줘". 세션 전체를 팀장으로 시작하려면 터미널에서 `claude --agent omni-pipeline:lead`.
-- **`스킬` 탭:** 스킬마다 하는 일, 부르는 법(복사 버튼), 진행 순서, `내용 보기`(SKILL.md와 딸린 문서를 뷰어로)와 에이전트(lead, router, implementer, reviewer) 목록을 보여 줍니다.
+- **`스킬` 탭:** 스킬마다 하는 일, 부르는 법(복사 버튼, `[요청]` 같은 자리 표시는 빼고 복사), 진행 순서, `내용 보기`(SKILL.md와 딸린 문서를 뷰어로)와 에이전트(lead, router, implementer, reviewer) 목록을 보여 줍니다.
 - **이미 설치했다면:** 마켓플레이스에서 `omni-pipeline`을 설치해 두었으면(`~/.claude/plugins/installed_plugins.json`) 그 설치본을 쓰고 저장소의 플러그인은 붙이지 않습니다.
 - **적용 시점:** 이미 실행 중인 Claude 세션에는 붙지 않습니다. 세션을 다시 시작하면 적용됩니다.
 - **앱 폴더만 따로 쓸 때:** `claude-code` 폴더가 없으면 `claude`는 이 플러그인 없이 시작하고, `스킬` 탭은 폴더를 찾지 못했다고 알려 줍니다.
