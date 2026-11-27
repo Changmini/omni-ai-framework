@@ -2449,7 +2449,12 @@ function renderRules() {
     sw.addEventListener('click', () => { r.enabled = !r.enabled; saveRules(); renderRules(); });
     const main = h('button', 'rl-main');
     main.type = 'button';
-    main.append(h('div', 'rl-name ellipsis', r.name), h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
+    // What starts it: a hook from Claude, or the app's clock (src/automation.js).
+    const title = h('div', 'rl-title');
+    const kind = h('span', `rl-kind${r.event === 'timer' ? ' sched' : ''}`, r.event === 'timer' ? '스케줄' : '훅');
+    kind.title = r.event === 'timer' ? '앱이 시계를 보고 실행 (앱이 켜져 있을 때)' : 'Claude가 그 순간 보내는 훅으로 실행';
+    title.append(h('span', 'rl-name ellipsis', r.name), kind);
+    main.append(title, h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
     main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
     const st = r.event === 'timer' ? autoState[r.id] || {} : null;
     const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? dayClock(st.last) : '—') : r.hits ? `${r.hits}회 · ${clock(r.lastAt)}` : '—');
@@ -2501,6 +2506,15 @@ function ruleEditor(r) {
     }
     changed(true);
   });
+  // The events in two groups: Claude's hooks, and the app's schedule.
+  const group = (label, keys) => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    for (const k of keys) g.append(new Option(RuleLogic.EVENTS[k].label, k));
+    return g;
+  };
+  when.replaceChildren(group('훅 — Claude가 보낼 때', RuleLogic.HOOK_EVENTS), group('스케줄 — 앱 시계', ['timer']));
+  when.value = r.event;
   if (r.event === 'timer') return timerEditor(r, ed, { name, when, field, select, changed });
 
   // 조건: none / text / regex, and the text when there is one.
