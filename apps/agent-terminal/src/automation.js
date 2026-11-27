@@ -3,7 +3,7 @@
 // Timer rules of the 자동화 tab (event `timer`, action `agent`) and the
 // 자동화 결과 tab they write to.
 //
-// Every `every` hours, and once at start for a run missed while the app was
+// Every `minutes`, and once at start for a run missed while the app was
 // closed, a timer rule runs Claude in the background (`claude -p`, no tools
 // granted) once for each project that has Claude conversations in the period.
 // Its input is the requests the user typed there, read from Claude Code's
@@ -19,7 +19,8 @@ const readline = require('node:readline');
 const RuleLogic = require('./renderer/rule-logic');
 const { wslToWindows, decodeOutput } = require('./wsl');
 
-const HOUR = 3600 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const MAX_RESULTS = 100;
 const MAX_CATCH_UP = 7 * 24 * HOUR; // a long-closed app reads at most this far back
 const MAX_PROMPT = 600; // characters of one request given to the agent
@@ -167,11 +168,11 @@ const stamp = (t) => {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-// What the agent is given: the rule's text (its {project}, {hours},
+// What the agent is given: the rule's text (its {project}, {period}, {hours},
 // {skills} filled), the requests of the period, and for a preset the form of
 // the answer.
-function buildPrompt(rule, { project, hours, skills, requests }) {
-  const head = RuleLogic.fillText(rule.action.text || '', { project, hours: String(hours), skills: skills.length ? skills.join(', ') : '없음' }).trim();
+function buildPrompt(rule, { project, minutes, skills, requests }) {
+  const head = RuleLogic.fillText(rule.action.text || '', { project, period: RuleLogic.periodText(minutes), hours: String(Math.max(1, Math.round(minutes / 60))), skills: skills.length ? skills.join(', ') : '없음' }).trim();
   let history = '';
   for (const r of requests.slice().reverse()) { // newest first, so the cap drops the oldest
     const one = r.text.replace(/\s+/g, ' ').slice(0, MAX_PROMPT);
@@ -306,7 +307,7 @@ class Automation {
     for (const rule of this.rules.timers()) {
       const last = this.last[rule.id];
       if (!last) { this.last[rule.id] = now; changed = true; continue; }
-      if (now - last >= rule.every * HOUR && !this.busy.has(rule.id)) this.runRule(rule).catch(() => {});
+      if (now - last >= rule.minutes * MINUTE && !this.busy.has(rule.id)) this.runRule(rule).catch(() => {});
     }
     if (changed) this.saveState();
   }
@@ -321,8 +322,9 @@ class Automation {
 
   async runRule(rule, manual = false) {
     const now = this.now();
-    const since = Math.max(this.last[rule.id] && !manual ? this.last[rule.id] : now - rule.every * HOUR, now - MAX_CATCH_UP);
-    const hours = Math.max(1, Math.round((now - since) / HOUR));
+    const since = Math.max(this.last[rule.id] && !manual ? this.last[rule.id] : now - rule.minutes * MINUTE, now - MAX_CATCH_UP);
+    const minutes = Math.max(1, Math.round((now - since) / MINUTE));
+    const period = RuleLogic.periodText(minutes);
     this.busy.add(rule.id);
     this.last[rule.id] = now;
     this.saveState();
@@ -335,14 +337,14 @@ class Automation {
         }
       }
       if (!jobs.length) {
-        if (manual) this.results.add({ ruleId: rule.id, ruleName: rule.name, kind: 'note', text: `지난 ${hours}시간 동안 Claude 대화 기록이 없어 실행하지 않았습니다.` });
+        if (manual) this.results.add({ ruleId: rule.id, ruleName: rule.name, kind: 'note', text: `지난 ${period} 동안 Claude 대화 기록이 없어 실행하지 않았습니다.` });
         return;
       }
       for (const job of jobs) {
-        const prompt = buildPrompt(rule, { project: job.cwd, hours, skills: skillNames(job.host, job.claudeDir), requests: job.requests });
+        const prompt = buildPrompt(rule, { project: job.cwd, minutes, skills: skillNames(job.host, job.claudeDir), requests: job.requests });
         const item = this.results.add({
           ruleId: rule.id, ruleName: rule.name, project: job.cwd, distro: job.distro, status: 'running',
-          kind: rule.action.preset || 'text', requests: job.requests.length, hours,
+          kind: rule.action.preset || 'text', requests: job.requests.length, minutes,
         });
         try {
           const { text, cost } = await this.run({ prompt, cwd: job.cwd, distro: job.distro });
@@ -359,4 +361,4 @@ class Automation {
   }
 }
 
-module.exports = { Results, Automation, readRequests, requestText, buildPrompt, parseSkills, runClaude, skillNames, HOUR };
+module.exports = { Results, Automation, readRequests, requestText, buildPrompt, parseSkills, runClaude, skillNames, HOUR, MINUTE };

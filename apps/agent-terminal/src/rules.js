@@ -34,7 +34,7 @@ function compile(r) {
     name: str(r.name, 60),
     enabled: r.enabled === true,
     event: r.event,
-    every: RuleLogic.everyHours(r.every),
+    minutes: RuleLogic.everyMinutes(r),
     cond: { kind: ['text', 'regex'].includes(cond.kind) ? cond.kind : 'none', value: str(cond.value, 500) },
     terminals: Array.isArray(r.terminals) ? r.terminals.slice(0, MAX_TERMINALS).map((t) => str(String(t), 20)) : null,
     agent: str(r.agent, 200).trim() || null,

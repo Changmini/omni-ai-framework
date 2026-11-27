@@ -12,7 +12,7 @@
   else root.RuleLogic = api;
 }(typeof self !== 'undefined' ? self : this, () => {
   // Rule events and the Claude Code hook each one answers to. `timer` has
-  // no hook: the main process runs it every `every` hours (src/automation.js).
+  // no hook: the main process runs it every `minutes` (src/automation.js).
   const EVENTS = {
     prompt: { hook: 'UserPromptSubmit', label: '프롬프트', icon: 'prompt' },
     pre: { hook: 'PreToolUse', label: '실행 전', icon: 'pre' },
@@ -20,13 +20,25 @@
     wait: { hook: 'PermissionRequest', label: '승인 대기', icon: 'wait' },
     stop: { hook: 'Stop', label: '작업 끝', icon: 'stop' },
     compact: { hook: 'PostCompact', label: '압축 뒤', icon: 'compact' },
-    timer: { hook: null, label: '시간마다', icon: 'timer' },
+    timer: { hook: null, label: '정해진 간격마다', icon: 'timer' },
   };
   const EVENT_OF_HOOK = Object.fromEntries(Object.entries(EVENTS).filter(([, v]) => v.hook).map(([k, v]) => [v.hook, k]));
   const HOOK_EVENTS = Object.keys(EVENTS).filter((k) => EVENTS[k].hook);
-  // Hours between two runs of a timer rule.
-  const EVERY = { min: 1, max: 168, def: 12 };
-  const everyHours = (v) => (Number.isInteger(v) && v >= EVERY.min && v <= EVERY.max ? v : EVERY.def);
+  // Minutes between two runs of a timer rule (1 minute to 7 days). Rules
+  // saved before kept whole hours in `every`.
+  const EVERY = { min: 1, max: 168 * 60, def: 12 * 60 };
+  const clampMinutes = (v) => (Number.isFinite(v) ? Math.min(EVERY.max, Math.max(EVERY.min, Math.round(v))) : EVERY.def);
+  function everyMinutes(rule) {
+    const m = rule && rule.minutes;
+    if (Number.isInteger(m) && m >= EVERY.min && m <= EVERY.max) return m;
+    const hr = rule && rule.every;
+    return Number.isInteger(hr) && hr >= 1 && hr <= 168 ? hr * 60 : EVERY.def;
+  }
+  // 90 -> "1시간 30분", 720 -> "12시간", 10 -> "10분".
+  function periodText(min) {
+    const hr = Math.floor(min / 60);
+    return hr ? `${hr}시간${min % 60 ? ` ${min % 60}분` : ''}` : `${min}분`;
+  }
 
   // Actions, and the events each one can run on. Text for Claude goes with a
   // prompt or a tool call (on a finished turn it would make Claude carry on);
@@ -130,7 +142,7 @@
     const a0 = rule.action || {};
     if (rule.event === 'timer') {
       const job = a0.kind === 'agent' && PRESETS[a0.preset] ? PRESETS[a0.preset].label : ACTIONS[a0.kind] ? ACTIONS[a0.kind].label : '?';
-      return `${everyHours(rule.every)}시간마다 · 프로젝트마다 → ${job}`;
+      return `${periodText(everyMinutes(rule))}마다 · 프로젝트마다 → ${job}`;
     }
     const ev = EVENTS[rule.event] ? EVENTS[rule.event].label : '?';
     const c = rule.cond || {};
@@ -157,7 +169,7 @@
   // What the 추천 스킬 찾기 agent is told; the user may edit it. The app adds
   // the project's requests of the period and the form of the answer.
   const SKILLS_PROMPT = [
-    '아래는 이 프로젝트({project})에서 지난 {hours}시간 동안 사용자가 Claude 에게 한 요청이다.',
+    '아래는 이 프로젝트({project})에서 지난 {period} 동안 사용자가 Claude 에게 한 요청이다.',
     '여러 번 되풀이됐거나, 매번 같은 순서·같은 설명으로 진행된 작업을 찾아 스킬로 만들면 좋은 것을 최대 5개 추천하라.',
     '이미 있는 스킬({skills})과 겹치는 것은 뺀다. 근거가 약하면 추천하지 않는다(0개도 된다).',
     '사용자의 말을 그대로 옮기지 말고, 스킬이 할 일을 짧은 동작 문장으로 정리한다.',
@@ -227,11 +239,11 @@
 
     { group: '보드', name: '보드 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
 
-    { group: '정기 실행', name: '추천 스킬 찾기', event: 'timer', every: 12, cond: none, scope: all, action: { kind: 'agent', preset: 'skills', text: SKILLS_PROMPT }, freq: 'every' },
+    { group: '정기 실행', name: '추천 스킬 찾기', event: 'timer', minutes: 720, cond: none, scope: all, action: { kind: 'agent', preset: 'skills', text: SKILLS_PROMPT }, freq: 'every' },
 
     { group: '결과에 남기기', name: '작업 끝 답 남기기', event: 'stop', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 작업 끝 ({branch})\n\n{last_answer}' }, freq: 'every' },
     { group: '결과에 남기기', name: '승인 요청 남기기', event: 'wait', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 승인 대기: {tool} {command}{file}' }, freq: 'every' },
   ];
 
-  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, everyHours, ACTIONS, PRESETS, GROUP_ICONS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
+  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, clampMinutes, everyMinutes, periodText, ACTIONS, PRESETS, GROUP_ICONS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
 }));

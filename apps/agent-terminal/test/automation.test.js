@@ -7,7 +7,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const RuleLogic = require('../src/renderer/rule-logic');
 const { Rules } = require('../src/rules');
-const { Results, Automation, readRequests, requestText, buildPrompt, parseSkills, runClaude, HOUR } = require('../src/automation');
+const { Results, Automation, readRequests, requestText, buildPrompt, parseSkills, runClaude, HOUR, MINUTE } = require('../src/automation');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'omni-auto-'));
 const line = (o) => `${JSON.stringify(o)}\n`;
@@ -47,17 +47,19 @@ test('readRequests groups the period\'s requests by project folder', async () =>
 
 test('buildPrompt fills the rule text, adds the requests and, for skills, the answer form', () => {
   const rule = { action: { kind: 'agent', preset: 'skills', text: RuleLogic.SKILLS_PROMPT } };
-  const p = buildPrompt(rule, { project: '/home/user/sample-app', hours: 12, skills: ['develop'], requests: [{ at: Date.parse('2026-11-27T01:00:00Z'), text: '배포 체크리스트 만들어줘' }] });
+  const p = buildPrompt(rule, { project: '/home/user/sample-app', minutes: 90, skills: ['develop'], requests: [{ at: Date.parse('2026-11-27T01:00:00Z'), text: '배포 체크리스트 만들어줘' }] });
   assert.match(p, /\/home\/user\/sample-app/);
-  assert.match(p, /12시간/);
+  assert.match(p, /지난 1시간 30분 동안/);
+  // A text saved before {period} keeps {hours}, in whole hours.
+  assert.match(buildPrompt({ action: { kind: 'agent', text: '지난 {hours}시간' } }, { project: '/p', minutes: 720, skills: [], requests: [] }), /지난 12시간/);
   assert.match(p, /이미 있는 스킬\(develop\)/);
   assert.match(p, /배포 체크리스트 만들어줘/);
   assert.match(p, /"skills": \[/);
-  const plain = buildPrompt({ action: { kind: 'agent', preset: '', text: '요약해줘' } }, { project: '/p', hours: 1, skills: [], requests: [] });
+  const plain = buildPrompt({ action: { kind: 'agent', preset: '', text: '요약해줘' } }, { project: '/p', minutes: 60, skills: [], requests: [] });
   assert.doesNotMatch(plain, /답 형식/);
   // Many long requests: the oldest are left out, the newest kept.
   const many = Array.from({ length: 400 }, (_, i) => ({ at: i * 1000, text: `${i} ${'가'.repeat(590)}` }));
-  const big = buildPrompt(rule, { project: '/p', hours: 12, skills: [], requests: many });
+  const big = buildPrompt(rule, { project: '/p', minutes: 720, skills: [], requests: many });
   assert.ok(big.length < 70000);
   assert.match(big, /399 /);
   assert.doesNotMatch(big, /\] 0 /);
@@ -92,13 +94,13 @@ test('Results keeps the newest 100, survives a restart, and ends a cut-off run a
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-function setup({ now, requestsAt = [] } = {}) {
+function setup({ now, requestsAt = [], period = { every: 12 } } = {}) {
   const dir = tmp();
   const claude = path.join(dir, 'claude');
   fs.mkdirSync(path.join(claude, 'projects', 'p'), { recursive: true });
   fs.writeFileSync(path.join(claude, 'projects', 'p', 's.jsonl'), requestsAt.map((at, i) => user('/home/user/sample-app', at, `요청 ${i}`)).join(''));
   const rules = new Rules();
-  rules.set({ rules: [{ id: 't', name: '추천 스킬 찾기', enabled: true, event: 'timer', every: 12, action: { kind: 'agent', preset: 'skills', text: RuleLogic.SKILLS_PROMPT } }] });
+  rules.set({ rules: [{ id: 't', name: '추천 스킬 찾기', enabled: true, event: 'timer', ...period, action: { kind: 'agent', preset: 'skills', text: RuleLogic.SKILLS_PROMPT } }] });
   const results = new Results({ file: path.join(dir, 'results.json'), now: () => now.t });
   const calls = [];
   const run = async (o) => { calls.push(o); return { text: '{"skills":[{"name":"sample","title":"제목","why":"이유","evidence":[]}]}', cost: 0.02 }; };
@@ -130,6 +132,24 @@ test('Automation: a new rule waits a full period, then runs once per project', a
   } finally { fs.rmSync(s.dir, { recursive: true, force: true }); }
 });
 
+test('Automation: a rule set in minutes runs after that many minutes', async () => {
+  const now = { t: Date.parse('2026-11-27T00:00:00Z') };
+  const s = setup({ now, requestsAt: [now.t + MINUTE], period: { minutes: 10 } });
+  try {
+    s.auto.tick();
+    now.t += 9 * MINUTE;
+    s.auto.tick();
+    await settle();
+    assert.strictEqual(s.calls.length, 0);
+    now.t += MINUTE;
+    s.auto.tick();
+    await settle();
+    assert.strictEqual(s.calls.length, 1);
+    assert.match(s.calls[0].prompt, /지난 10분 동안/);
+    assert.strictEqual(s.results.list()[0].minutes, 10);
+  } finally { fs.rmSync(s.dir, { recursive: true, force: true }); }
+});
+
 test('Automation: a run missed while the app was closed happens once at start', async () => {
   const now = { t: Date.parse('2026-11-27T00:00:00Z') };
   const s = setup({ now, requestsAt: [now.t + HOUR] });
@@ -141,7 +161,7 @@ test('Automation: a run missed while the app was closed happens once at start', 
     fresh.tick();
     await settle();
     assert.strictEqual(s.calls.length, 1);
-    assert.ok(s.results.list()[0].hours >= 50, 'read since the last run');
+    assert.ok(s.results.list()[0].minutes >= 50 * 60, 'read since the last run');
   } finally { fs.rmSync(s.dir, { recursive: true, force: true }); }
 });
 
