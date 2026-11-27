@@ -67,10 +67,7 @@ class SessionManager {
     // shows is not ended).
     reaper = null,
     runId = null,
-    // The "돌아보기" records (journal.js): prompts, permission requests, interrupts.
-    journal = null,
   }) {
-    this.journal = journal;
     this.reaper = reaper;
     this.runId = runId;
     this.spawn = spawn;
@@ -204,23 +201,7 @@ class SessionManager {
     s.interrupt = null;
     if (!['working', 'waiting'].includes(s.claude.status)) return; // a hook came first
     s.claude = reduce(s.claude, { hook_event_name: 'omni:interrupted' }, this.now());
-    if (this.journal) this.journal.onInterrupt({ sid: s.primarySid, project: this.journalProject(s, s.primarySid) });
     this.emitAgent(s);
-  }
-
-  // The project of a Claude session: the folder it first reported (where it
-  // was started, so where its .claude/settings.local.json is read).
-  journalProject(s, sid, cwd = null) {
-    if (!s.sidProjects) s.sidProjects = new Map();
-    if (sid && cwd && !s.sidProjects.has(sid)) s.sidProjects.set(sid, cwd);
-    return (sid && s.sidProjects.get(sid)) || cwd || s.cwd || null;
-  }
-
-  journalHook(s, ev, primary) {
-    if (!this.journal) return;
-    const sid = ev.session_id || '';
-    const project = this.journalProject(s, sid, ev.cwd || null);
-    this.journal.onHook(ev, { sid, project, host: project && this.hostPath(s, project), distro: s.wsl ? s.wsl.distro : null, primary });
   }
 
   sendLine(id, text) {
@@ -246,6 +227,12 @@ class SessionManager {
     if (s.wsl) s.wslDistros.add(s.wsl.distro);
     this.setCwd(id, cwd, true);
     this.shellReported(id, wslDistro ? String(wslDistro) : null);
+  }
+
+  // The WSL distros and homes the terminals have reported (for reading
+  // Claude's files there, src/automation.js).
+  wslHomes() {
+    return [...this.sessions.values()].filter((s) => s.wsl && s.wsl.home).map((s) => ({ distro: s.wsl.distro, home: s.wsl.home }));
   }
 
   // The shell reported in (its folder, at a prompt): it is ready for input.
@@ -381,7 +368,6 @@ class SessionManager {
     if (ev.hook_event_name === 'PostToolUse' && TEAM_TOOL.test(ev.tool_name || '')) s.teamDirty = true;
     if (sid && (s.teammateSids.has(sid) || (s.primarySid && sid !== s.primarySid))) {
       this.onOtherSession(s, sid, ev, meta, s.teammateSids.has(sid) || Boolean(ev.agent_type && !ev.agent_id));
-      this.journalHook(s, ev, false);
       const o = s.others.get(sid);
       this.recordActivity(s, ev, o ? otherName(o, sid) : `claude ${sid.slice(0, 8)}`);
       this.emitAgent(s);
@@ -396,7 +382,6 @@ class SessionManager {
     this.recordActivity(s, ev, ev.agent_id ? ev.agent_type || 'subagent' : null);
     if (meta.pane) s.primarySocket = meta.socket || s.tmuxSocket;
     s.claude = reduce(s.claude, ev, this.now());
-    this.journalHook(s, ev, true);
     if (ev.hook_event_name === 'SessionEnd') this.endPrimary(s);
     // The main agent's turn ended with nothing left running: teammates are gone.
     if (ev.hook_event_name === 'Stop' && !ev.agent_id && Array.isArray(ev.background_tasks) && ev.background_tasks.length === 0) {

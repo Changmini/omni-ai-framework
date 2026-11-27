@@ -7,10 +7,12 @@
 //   Claude Code reads for UserPromptSubmit, PreToolUse and PostToolUse
 //   (https://code.claude.com/docs/en/hooks; verified on 2.1.331), or
 // - work for the page (onEvent(): fill another terminal's input, mark the
-//   sidebar), sent as a `rules:fire` message.
-// Every run is also reported to the page (hit count, the ⚡ mark). Nothing
-// runs without a hook event: no timer, no polling. State is kept in memory
-// for this app run.
+//   sidebar), sent as a `rules:fire` message, or
+// - a text kept in the 자동화 결과 tab (onEvent(): `result`, through
+//   record()).
+// Every run is also reported to the page (hit count, the ⚡ mark). Timer
+// rules (event `timer`) are not run here: timers() lists them for
+// src/automation.js. State is kept in memory for this app run.
 const RuleLogic = require('./renderer/rule-logic');
 
 const MAX_RULES = 200;
@@ -29,12 +31,17 @@ function compile(r) {
   const cond = r.cond && typeof r.cond === 'object' ? r.cond : {};
   return {
     id: str(r.id, 40),
+    name: str(r.name, 60),
     enabled: r.enabled === true,
     event: r.event,
+    every: RuleLogic.everyHours(r.every),
     cond: { kind: ['text', 'regex'].includes(cond.kind) ? cond.kind : 'none', value: str(cond.value, 500) },
     terminals: Array.isArray(r.terminals) ? r.terminals.slice(0, MAX_TERMINALS).map((t) => str(String(t), 20)) : null,
     agent: str(r.agent, 200).trim() || null,
-    action: { kind: a.kind, text: str(a.text, MAX_TEXT), target: a.target == null ? null : str(String(a.target), 20), send: a.send === true },
+    action: {
+      kind: a.kind, text: str(a.text, MAX_TEXT), target: a.target == null ? null : str(String(a.target), 20), send: a.send === true,
+      preset: RuleLogic.PRESETS[a.preset] ? a.preset : '',
+    },
     freq: RuleLogic.FREQS[r.freq] ? r.freq : 'every',
   };
 }
@@ -51,9 +58,11 @@ function textMap(map) {
 
 class Rules {
   // emit(channel, payload) to the page; meta(terminalId, sessionId, cwd)
-  // gives { branch, cwd } for the terminal's main session, null for any other.
-  constructor({ emit = () => {}, meta = () => ({}), now = Date.now } = {}) {
+  // gives { branch, cwd } for the terminal's main session, null for any other;
+  // record({ ruleId, ruleName, terminal, text }) keeps a `result` text.
+  constructor({ emit = () => {}, meta = () => ({}), record = () => {}, now = Date.now } = {}) {
     this.emit = emit;
+    this.record = record;
     this.meta = meta;
     this.now = now;
     this.rules = [];
@@ -149,7 +158,12 @@ class Rules {
     }
     for (const rule of this.rules) {
       if (RuleLogic.ACTIONS[rule.action.kind].reply || !RuleLogic.fires(rule, ev, id)) continue;
-      if (rule.action.kind === 'fill') {
+      if (rule.action.kind === 'result') {
+        const text = RuleLogic.fillText(rule.action.text, v).trim();
+        if (!text || !this.due(rule, id, ev, text)) continue;
+        this.record({ ruleId: rule.id, ruleName: rule.name, terminal: this.names.get(id) || '', cwd: v.cwd, text });
+        this.fire(rule, id);
+      } else if (rule.action.kind === 'fill') {
         const text = RuleLogic.fillText(rule.action.text, v).trim();
         if (!rule.action.target || !text || !this.due(rule, id, ev, text)) continue;
         this.fire(rule, id, { target: rule.action.target, text, send: rule.action.send });
@@ -161,6 +175,15 @@ class Rules {
 
   recentEvents() {
     return this.recent.slice();
+  }
+
+  // The enabled timer rules (src/automation.js runs them).
+  timers() {
+    return this.rules.filter((r) => r.enabled && r.event === 'timer' && r.action.kind === 'agent');
+  }
+
+  rule(id) {
+    return this.rules.find((r) => r.id === id) || null;
   }
 }
 

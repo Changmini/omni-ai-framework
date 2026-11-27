@@ -2162,7 +2162,6 @@ function renderConfig(data, id = activeId) {
 cfgEls.refresh.addEventListener('click', () => {
   if (inspectorTab === 'git') loadGit(0);
   else if (inspectorTab === 'files') loadTree(0, true);
-  else if (inspectorTab === 'review') loadReview();
   else loadConfig(0);
 });
 // Coming back to the window: re-read, but not more than every 5s (the scan
@@ -2349,8 +2348,10 @@ function rulesSync() {
   followNames();
   const compiled = rules.map((r) => ({
     id: r.id,
+    name: r.name,
     enabled: r.enabled,
     event: r.event,
+    every: r.every,
     cond: r.cond,
     terminals: !r.scope || r.scope.kind === 'all' ? null
       : r.scope.kind === 'group' ? [...agents.keys()].filter((t) => groupOf[t] === r.scope.id)
@@ -2449,7 +2450,8 @@ function renderRules() {
     main.type = 'button';
     main.append(h('div', 'rl-name ellipsis', r.name), h('div', 'rl-sent', RuleLogic.describe(r, (gid) => (groupById(gid) || {}).name || '?')));
     main.addEventListener('click', () => { ruleOpen = ruleOpen === r.id ? null : r.id; renderRules(); });
-    const hits = h('div', 'rl-hits', r.hits ? `⚡${r.hits} · ${clock(r.lastAt)}` : '—');
+    const st = r.event === 'timer' ? autoState[r.id] || {} : null;
+    const hits = h('div', 'rl-hits', st ? (st.running ? '실행 중' : st.last ? `⏰ ${dayClock(st.last)}` : '—') : r.hits ? `⚡${r.hits} · ${clock(r.lastAt)}` : '—');
     const row = h('div', 'rl-row');
     row.append(sw, main, hits);
     li.append(row);
@@ -2484,10 +2486,20 @@ function ruleEditor(r) {
   name.maxLength = 60;
 
   const when = select(Object.entries(RuleLogic.EVENTS).map(([k, v]) => [k, v.label]), r.event, (v) => {
+    const wasTimer = r.event === 'timer';
     r.event = v;
-    if (!RuleLogic.ACTIONS[r.action.kind].events.includes(v)) r.action = { kind: Object.keys(RuleLogic.ACTIONS).find((k) => RuleLogic.ACTIONS[k].events.includes(v)), text: r.action.text || '' };
+    if (v === 'timer') {
+      // A timer runs an agent, by default the skill search, every 12 hours.
+      r.every = RuleLogic.everyHours(r.every);
+      r.cond = { kind: 'none', value: '' };
+      r.scope = { kind: 'all' };
+      r.action = { kind: 'agent', preset: 'skills', text: RuleLogic.SKILLS_PROMPT };
+    } else if (!RuleLogic.ACTIONS[r.action.kind].events.includes(v)) {
+      r.action = { kind: Object.keys(RuleLogic.ACTIONS).find((k) => RuleLogic.ACTIONS[k].events.includes(v)), text: wasTimer ? '' : r.action.text || '' };
+    }
     changed(true);
   });
+  if (r.event === 'timer') return timerEditor(r, ed, { name, when, field, select, changed });
 
   // 조건: none / text / regex, and the text when there is one.
   const condKinds = [['none', '없음'], ['text', '글 포함'], ['regex', '정규식']];
@@ -2568,18 +2580,18 @@ function ruleEditor(r) {
       ? `자동 ${MAX_AUTO_CHAIN}번 연속 뒤엔 넣기만`
       : 'Enter는 직접')));
   }
-  if (['context', 'block', 'ask', 'fill'].includes(kind)) {
+  if (['context', 'block', 'ask', 'fill', 'result'].includes(kind)) {
     const text = document.createElement('textarea');
     text.className = 'pp-in';
     text.rows = 3;
     text.value = r.action.text || '';
-    text.placeholder = kind === 'context' ? 'Claude에게 붙일 글' : kind === 'fill' ? '넣을 글' : 'Claude에게 보일 이유';
+    text.placeholder = kind === 'context' ? 'Claude에게 붙일 글' : kind === 'fill' ? '넣을 글' : kind === 'result' ? '자동화 결과 탭에 남길 글' : 'Claude에게 보일 이유';
     text.addEventListener('input', () => { r.action.text = text.value; changed(); });
     // The values a text can use, behind a small "{ }" (hover or focus).
     const vals = h('span', 'rl-vars', '{ } 값');
     vals.tabIndex = 0;
     vals.title = RuleLogic.VARS.map((v) => `{${v}}`).join('  ');
-    parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : '이유', text, vals));
+    parts.push(field(kind === 'context' ? '붙일 글' : kind === 'fill' ? '넣을 글' : kind === 'result' ? '남길 글' : '이유', text, vals));
   }
   if (kind === 'pipeline') parts.push(h('div', 'rl-note', '🧭 연결된 노드와 앞뒤 노드'));
   if (kind !== 'block' && kind !== 'ask') {
@@ -2619,6 +2631,68 @@ function ruleEditor(r) {
   return ed;
 }
 
+// The editor of a timer rule: how often, which job, what the agent is told,
+// and its last run. No condition, scope or 시험: it runs once per project
+// with Claude conversations in the period (src/automation.js).
+function timerEditor(r, ed, { name, when, field, select, changed }) {
+  const every = h('input', 'pp-in rl-every');
+  every.type = 'number';
+  every.min = String(RuleLogic.EVERY.min);
+  every.max = String(RuleLogic.EVERY.max);
+  every.value = String(RuleLogic.everyHours(r.every));
+  every.addEventListener('change', () => { r.every = RuleLogic.everyHours(Number(every.value)); every.value = String(r.every); changed(); });
+  const job = select([...Object.entries(RuleLogic.PRESETS).map(([k, p]) => [k, `🤖 ${p.label}`]), ['', '🤖 직접 지시']], r.action.preset || '', (v) => {
+    r.action = { kind: 'agent', preset: v, text: v === 'skills' ? RuleLogic.SKILLS_PROMPT : r.action.text || '' };
+    changed(true);
+  });
+  const text = document.createElement('textarea');
+  text.className = 'pp-in';
+  text.rows = 6;
+  text.value = r.action.text || '';
+  text.placeholder = '에이전트에게 줄 지시. 지난 기간의 요청 기록은 앱이 뒤에 붙입니다.';
+  text.addEventListener('input', () => { r.action.text = text.value; changed(); });
+  const vals = h('span', 'rl-vars', '{ } 값');
+  vals.tabIndex = 0;
+  vals.title = '{project}  {hours}  {skills}';
+  const st = autoState[r.id] || {};
+  const status = h('div', 'rl-note', st.running ? '실행 중…'
+    : st.last ? `마지막 실행 ${dayClock(st.last)} · 다음 ${dayClock(st.last + RuleLogic.everyHours(r.every) * 3600e3)}` : '아직 실행 전');
+  const run = h('button', 'btn', '▶ 지금 실행');
+  run.type = 'button';
+  run.disabled = Boolean(st.running) || !r.enabled;
+  run.title = r.enabled ? '기다리지 않고 지금 한 번 실행' : '켜진 규칙만 실행';
+  run.addEventListener('click', async () => {
+    run.disabled = true;
+    if (await api.automationRun(r.id)) setInspectorTab('results');
+  });
+  const del = h('button', 'btn pp-del', '🗑 삭제');
+  del.type = 'button';
+  del.addEventListener('click', () => {
+    if (!window.confirm(`규칙 "${r.name}"을(를) 삭제할까요?`)) return;
+    rules = rules.filter((x) => x !== r);
+    ruleOpen = null;
+    saveRules();
+    renderRules();
+  });
+  const foot = h('div', 'rl-foot');
+  foot.append(run, del);
+  ed.append(
+    field('이름', name),
+    field('언제', when, (() => { const row = h('div', 'rl-inline'); row.append(every, h('span', 'rl-unit', '시간마다')); return row; })()),
+    field('무엇을', job),
+    field('지시', text, vals),
+    h('div', 'rl-note', '앱이 켜져 있는 동안 프로젝트마다 Claude를 따로 한 번씩 실행합니다. 실행마다 사용량이 듭니다. 결과는 자동화 결과 탭에 쌓입니다.'),
+    status, foot,
+  );
+  return ed;
+}
+
+const dayClock = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${clock(t)}`; };
+// Last run and running state of each timer rule, from the main process.
+let autoState = {};
+api.automationState().then((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); }).catch(() => {});
+api.onAutomationState((s) => { autoState = s || {}; if (rulesVisible()) renderRules(); });
+
 // What a condition is checked against, per event.
 const RULE_SUBJECT = {
   prompt: '🔎 보낸 글',
@@ -2653,7 +2727,7 @@ const insp = {
   list: $('#activity-list'),
   empty: $('#activity-empty'),
 };
-let inspectorTab = ['config', 'git', 'files', 'review', 'rules', 'skills'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
+let inspectorTab = ['config', 'git', 'files', 'results', 'rules', 'skills'].includes(readPref('inspectorTab', 'activity')) ? readPref('inspectorTab', 'activity') : 'activity';
 
 function configVisible() {
   return !app.classList.contains('inspector-closed') && inspectorTab === 'config';
@@ -2680,11 +2754,11 @@ function setInspectorTab(tab) {
     if (t.dataset.tab === tab) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   for (const b of insp.bodies) b.hidden = b.dataset.tab !== tab;
-  cfgEls.refresh.hidden = tab === 'activity' || tab === 'rules' || tab === 'skills';
+  cfgEls.refresh.hidden = ['activity', 'rules', 'skills', 'results'].includes(tab); // these update by themselves
   if (tab === 'config' && cfgStale) loadConfig(0);
   if (tab === 'git' && gitStale) loadGit(0);
   if (tab === 'files' && treeStale) loadTree(0);
-  if (tab === 'review') loadReview();
+  if (tab === 'results') loadResults();
   if (tab === 'rules') renderRules();
   if (tab === 'skills') loadSkills();
   syncPreview();
@@ -4276,284 +4350,47 @@ if (previewPane) {
   api.previewIsDetached().then((on) => { previewState.detached = Boolean(on); syncPreview(); }).catch(() => {});
 }
 
-// ---------- inspector: 돌아보기 ----------
-// One day of the records the main process keeps (journal.js): the commands
-// approved most (to add to the project's allow list) and the requests made
-// again and again (to turn into a skill). Nothing leaves this computer; the
-// records can be deleted here.
-const rv = {
-  day: null, // null: today
-  project: readPref('reviewProject', '') || null,
-  data: null,
-  open: new Set(), // expanded items
-  picked: new Set(), // "project\nrule" checked for the bulk add
-  pickedFix: new Set(), // keys of the corrections checked
-  seq: 0,
-  els: {
-    prev: $('#rv-prev'), next: $('#rv-next'), day: $('#rv-day'), project: $('#rv-project'), enabled: $('#rv-enabled'),
-    stats: $('#rv-stats'), msg: $('#rv-msg'), body: $('#rv-body'),
-    clearDay: $('#rv-clear-day'), clearAll: $('#rv-clear-all'),
-    dialog: $('#rv-dialog'), dialogBody: $('#rv-dialog-body'), dialogOk: $('#rv-dialog-ok'), dialogCancel: $('#rv-dialog-cancel'),
-  },
+// ---------- inspector: 자동화 결과 ----------
+// What automation rules produced, newest first (src/automation.js keeps
+// them in the app's data folder): a timer rule's skill recommendations or
+// answer per project, and the texts of `result` rules. A recommendation
+// becomes a request in that project's Claude input (not sent).
+const rs = {
+  list: $('#rs-list'), empty: $('#rs-empty'), count: $('#rs-count'), msg: $('#rs-msg'),
+  clear: $('#rs-clear'), start: $('#rs-start'), tab: document.querySelector('.inspector-head .tab[data-tab="results"]'),
+  items: [], seen: readPref('resultsSeen', '') || '', loaded: false,
 };
 
-const rvBase = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
-const rvDayLabel = (d) => { const [, m, dd] = d.split('-'); return `${Number(m)}월 ${Number(dd)}일`; };
-const rvTime = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const rvRuleText = (rule) => { const m = /^Bash\((.*?)(?: \*|:\*)?\)$/.exec(rule); return m ? m[1] : rule; };
+const rsBase = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p || '';
 
-function rvMessage(text, kind = '') {
-  rv.els.msg.hidden = !text;
-  rv.els.msg.textContent = text || '';
-  rv.els.msg.dataset.kind = kind;
+function rsMessage(text) {
+  rs.msg.hidden = !text;
+  rs.msg.textContent = text || '';
 }
 
-async function loadReview() {
-  if (!api.reviewSummary) return;
-  const seq = ++rv.seq;
-  const d = await api.reviewSummary(rv.day, rv.project).catch(() => null);
-  if (seq !== rv.seq || !d) return;
-  rv.data = d;
-  if (rv.project && !d.projects.includes(rv.project) && d.projects.length) { rv.project = null; return loadReview(); }
-  renderReview();
+function resultsVisible() {
+  return !app.classList.contains('inspector-closed') && inspectorTab === 'results';
 }
 
-function renderReview() {
-  const d = rv.data;
-  const { els } = rv;
-  els.day.replaceChildren(rvDayLabel(d.day), ...(d.day === d.today ? [h('span', 'rv-today', '오늘')] : []));
-  // Days with records, plus today; newest first.
-  const days = [...new Set([d.today, ...d.days])].sort().reverse();
-  const at = days.indexOf(d.day);
-  els.prev.disabled = at === -1 || at >= days.length - 1;
-  els.next.disabled = at <= 0;
-  els.project.replaceChildren(h('option', null, '모든 프로젝트'), ...d.projects.map((p) => {
-    const o = h('option', null, rvBase(p));
-    o.value = p;
-    o.title = p;
-    return o;
-  }));
-  els.project.firstChild.value = '';
-  els.project.value = rv.project || '';
-  els.enabled.checked = d.enabled;
-  els.clearAll.title = `최근 ${d.keepDays}일 기록 전부 (이 PC에만 저장)`;
-  const c = d.counts;
-  els.stats.replaceChildren(...[['💬', '프롬프트', c.prompts], ['✋', '승인 요청', c.permissions], ['⏹', '중단', c.interrupts], ['⚠️', '오류', c.errors]]
-    .map(([icon, k, n]) => { const s = h('span', null, `${icon} `); s.title = k; s.append(h('b', null, String(n))); return s; }));
-  els.clearDay.disabled = !d.days.includes(d.day);
-  els.clearAll.disabled = !d.days.length;
-
-  const body = [];
-  if (!d.enabled) {
-    const p = h('p', 'hint rv-empty', '기록 꺼짐 ');
-    const on = h('button', 'btn rv-act', '켜기');
-    on.type = 'button';
-    on.addEventListener('click', () => setReviewEnabled(true));
-    p.append(on);
-    body.push(p);
-  }
-  if (!c.prompts && !c.permissions) {
-    body.push(h('p', 'hint rv-empty', '기록 없음'));
-  } else {
-    body.push(...renderApprovals(d), ...renderRepeats(d), ...renderCorrections(d));
-  }
-  els.body.replaceChildren(...body);
+async function loadResults() {
+  try { rs.items = await api.resultsList(); } catch { rs.items = []; }
+  rs.loaded = true;
+  renderResults();
 }
 
-function renderApprovals(d) {
-  const head = h('h4', 'rv-h', '✋ 자주 승인');
-  if (!d.approvals.length) return [head, h('p', 'hint', '—')];
-  const list = h('ul', 'rv-list');
-  for (const g of d.approvals) {
-    const key = `${g.project}\n${g.rule}`;
-    const li = h('li', 'rv-item');
-    const row = h('div', 'rv-row');
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.disabled = g.added;
-    box.checked = !g.added && rv.picked.has(key);
-    box.setAttribute('aria-label', `${rvRuleText(g.rule)} 선택`);
-    box.addEventListener('change', () => { if (box.checked) rv.picked.add(key); else rv.picked.delete(key); renderReview(); });
-    const main = h('span', `rv-main${g.rule.startsWith('Bash(') ? ' mono' : ''}`, rvRuleText(g.rule));
-    main.title = g.rule;
-    main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
-    row.append(box, main, h('span', 'rv-count', `${g.count}회`));
-    const sub = h('div', 'rv-sub');
-    const proj = h('span', 'rv-proj', rvBase(g.project));
-    proj.title = g.project || '';
-    const add = h('button', 'btn rv-act', g.added ? '허용됨' : '✓ 허용');
-    add.title = '다음부터 묻지 않게 허용 목록에 추가';
-    add.type = 'button';
-    add.disabled = g.added;
-    add.addEventListener('click', () => confirmAllow(g.project, [g.rule]));
-    sub.append(proj, add);
-    li.append(row, sub);
-    if (rv.open.has(key)) {
-      const more = h('div', 'rv-more');
-      more.append('넣을 규칙 ', h('code', null, g.rule), h('br'), '넣을 곳 ', h('code', null, `${rvBase(g.project)}/.claude/settings.local.json`));
-      if (g.example) more.append(h('br'), '예: ', h('code', null, g.example.length > 120 ? `${g.example.slice(0, 120)}…` : g.example));
-      li.append(more);
-    }
-    list.append(li);
-  }
-  const out = [head, list];
-  const picked = d.approvals.filter((g) => !g.added && rv.picked.has(`${g.project}\n${g.rule}`));
-  if (picked.length) {
-    const bulk = h('div', 'rv-bulk');
-    const b = h('button', 'btn primary rv-act', `✓ ${picked.length}개 허용`);
-    b.type = 'button';
-    b.addEventListener('click', async () => {
-      // One confirmation per project (each has its own settings file).
-      for (const p of [...new Set(picked.map((g) => g.project))]) {
-        if (!(await confirmAllow(p, picked.filter((g) => g.project === p).map((g) => g.rule)))) break;
-      }
-    });
-    bulk.append(b);
-    out.push(bulk);
-  }
-  return out;
+api.onResults((items) => {
+  rs.items = Array.isArray(items) ? items : [];
+  if (resultsVisible()) renderResults();
+  else markResults();
+});
+
+// A dot on the tab while there is a finished result not seen yet.
+function markResults() {
+  const newest = rs.items[0];
+  rs.tab.classList.toggle('has-new', Boolean(newest && newest.status !== 'running' && newest.id !== rs.seen && !resultsVisible()));
 }
 
-function renderRepeats(d) {
-  const head = h('h4', 'rv-h', '🔁 반복 요청');
-  if (!d.repeats.length) return [head, h('p', 'hint', '—')];
-  const list = h('ul', 'rv-list');
-  for (const g of d.repeats) {
-    const key = `repeat\n${g.key}`;
-    const li = h('li', 'rv-item');
-    const row = h('div', 'rv-row');
-    const main = h('span', 'rv-main', `「${g.text}」`);
-    main.title = g.text;
-    main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
-    row.append(main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? `, ${g.days}일` : ''}`));
-    const sub = h('div', 'rv-sub');
-    const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
-    proj.title = g.project || '';
-    const make = h('button', 'btn rv-act', '＋ 스킬');
-    make.title = '이 요청을 스킬로 만들기';
-    make.type = 'button';
-    make.addEventListener('click', () => makeSkill(g));
-    sub.append(proj, make);
-    li.append(row, sub);
-    if (rv.open.has(key)) {
-      const more = h('div', 'rv-more', '실제로 보낸 말');
-      for (const x of g.examples) {
-        const ex = h('div', 'rv-ex');
-        ex.append(h('time', null, rvTime(x.t)), x.text);
-        more.append(ex);
-      }
-      li.append(more);
-    }
-    list.append(li);
-  }
-  return [head, list];
-}
-
-// Sentences that corrected how Claude works. The picked ones go to Claude
-// as a request to turn them into what lives in the project's .claude/
-// folder; CLAUDE.md is left to the user (a file the team shares).
-function renderCorrections(d) {
-  const head = h('h4', 'rv-h', '✏️ 고쳐 준 말');
-  if (!d.corrections.length) return [head, h('p', 'hint', '—')];
-  const list = h('ul', 'rv-list');
-  for (const g of d.corrections) {
-    const key = `fix\n${g.key}`;
-    const li = h('li', 'rv-item');
-    const row = h('div', 'rv-row');
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = rv.pickedFix.has(g.key);
-    box.setAttribute('aria-label', `${g.text} 선택`);
-    box.addEventListener('change', () => { if (box.checked) rv.pickedFix.add(g.key); else rv.pickedFix.delete(g.key); renderReview(); });
-    const main = h('span', 'rv-main', g.text);
-    main.title = g.text;
-    main.addEventListener('click', () => { if (rv.open.has(key)) rv.open.delete(key); else rv.open.add(key); renderReview(); });
-    row.append(box, main, h('span', 'rv-count', `${g.count}회${g.days > 1 ? `, ${g.days}일` : ''}`));
-    const sub = h('div', 'rv-sub');
-    const proj = h('span', 'rv-proj', g.project ? rvBase(g.project) : '여러 프로젝트');
-    proj.title = g.project || '';
-    sub.append(proj);
-    li.append(row, sub);
-    if (rv.open.has(key)) {
-      const more = h('div', 'rv-more', '보낸 말 전체');
-      for (const x of g.examples) {
-        const ex = h('div', 'rv-ex');
-        ex.append(h('time', null, rvTime(x.t)), x.text);
-        more.append(ex);
-      }
-      li.append(more);
-    }
-    list.append(li);
-  }
-  const out = [head, list];
-  const picked = d.corrections.filter((g) => rv.pickedFix.has(g.key));
-  const bulk = h('div', 'rv-bulk');
-  const b = h('button', `btn rv-act${picked.length ? ' primary' : ''}`, picked.length ? `＋ ${picked.length}개 지침으로` : '＋ 지침으로');
-  b.title = '.claude/ 에 지침으로 만들도록 Claude 입력칸에 요청을 채움 (CLAUDE.md 는 고치지 않음)';
-  b.type = 'button';
-  b.disabled = !picked.length;
-  b.addEventListener('click', () => askClaudeDir(picked));
-  bulk.append(b);
-  out.push(bulk);
-  return out;
-}
-
-async function askClaudeDir(picked) {
-  const projects = [...new Set(picked.map((g) => g.project).filter(Boolean))];
-  if (projects.length > 1) { rvMessage('한 프로젝트의 말만 골라 주세요', 'err'); return; }
-  const text = await api.reviewPrompt(picked.map((g) => ({ text: g.text, count: g.count, days: g.days })));
-  if (!text) return;
-  await sendToClaude(projects[0] || null, text);
-  rv.pickedFix.clear();
-  renderReview();
-}
-
-// The confirmation for adding allow rules: what the file will hold. -> added?
-function confirmAllow(project, rules) {
-  return new Promise((resolve) => {
-    const { els } = rv;
-    const close = (v) => {
-      els.dialog.hidden = true;
-      els.dialogOk.onclick = null;
-      els.dialogCancel.onclick = null;
-      els.dialog.onkeydown = null;
-      resolve(v);
-    };
-    els.dialogBody.replaceChildren(h('p', 'hint', '읽는 중…'));
-    els.dialogOk.disabled = true;
-    els.dialog.hidden = false;
-    els.dialogCancel.onclick = () => close(false);
-    els.dialog.onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(false); } };
-    els.dialogCancel.focus();
-    api.reviewAllow(rv.data.day, project, rules, false).then((p) => {
-      if (els.dialog.hidden) return;
-      if (!p || p.error) { els.dialogBody.replaceChildren(h('p', 'hint', (p && p.error) || '읽지 못했습니다')); return; }
-      const pre = h('pre');
-      const lines = [...p.allow.map((r) => `      ${JSON.stringify(r)},`), ...p.add.map((r) => `+     ${JSON.stringify(r)},`)];
-      if (lines.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/,$/, '');
-      pre.append('{\n  "permissions": {\n    "allow": [\n');
-      for (const l of lines) pre.append(l.startsWith('+') ? h('span', 'rv-add', `${l}\n`) : `${l}\n`);
-      pre.append('    ]\n  }\n}');
-      els.dialogBody.replaceChildren(
-        h('p', 'hint', `${p.file}${p.exists ? '' : ' (새 파일)'}`),
-        pre,
-        ...(p.ignored === false ? [h('p', 'hint', '+ .git/info/exclude (커밋 안 됨)')] : []),
-      );
-      els.dialogOk.disabled = !p.add.length;
-      els.dialogOk.onclick = async () => {
-        els.dialogOk.disabled = true;
-        const r = await api.reviewAllow(rv.data.day, project, rules, true).catch((err) => ({ error: err.message }));
-        close(Boolean(r && !r.error));
-        if (!r || r.error) rvMessage((r && r.error) || '추가하지 못했습니다', 'err');
-        else rvMessage(`${r.added}개 추가함`, 'ok');
-        for (const rule of rules) rv.picked.delete(`${project}\n${rule}`);
-        loadReview();
-      };
-    });
-  });
-}
-
-// The Claude terminal of a project: the shown one first.
+// The Claude of `project` (the active terminal first), or any Claude.
 function claudeTerminalFor(project) {
   const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '');
   const inside = (cwd) => project && (norm(cwd) === norm(project) || norm(cwd).startsWith(`${norm(project)}/`));
@@ -4562,77 +4399,109 @@ function claudeTerminalFor(project) {
   return mine.find((a) => a.info.id === activeId) || mine[0] || null;
 }
 
-// The request to turn the repeated prompts into a skill, put in the input of
-// that project's Claude (not sent: the user reads it and presses Enter).
-function makeSkill(g) {
-  return sendToClaude(g.project, g.prompt);
-}
-
+// Puts `text` in that project's Claude input (the user reads it and presses
+// Enter), or on the clipboard when no Claude runs there.
 async function sendToClaude(project, text) {
   const a = claudeTerminalFor(project);
   if (!a) {
     await api.clipboardWrite(text);
-    rvMessage('Claude 터미널이 없어 클립보드에 복사함');
+    rsMessage('이 프로젝트의 Claude 터미널이 없어 클립보드에 복사했습니다.');
     return;
   }
   select(a.info.id);
-  api.write(a.info.id, text);
+  api.write(a.info.id, ViewLogic.promptInput(text, a.term.modes.bracketedPasteMode));
   a.term.focus();
-  rvMessage(a.info.claude.status === 'working'
-    ? 'Claude 입력칸에 채움 · 작업이 끝난 뒤 Enter'
-    : 'Claude 입력칸에 채움 · Enter로 보내기');
+  rsMessage(a.info.claude.status === 'working' ? 'Claude 입력칸에 넣었습니다. 작업이 끝난 뒤 Enter로 보내세요.' : 'Claude 입력칸에 넣었습니다. Enter로 보내세요.');
 }
 
-async function setReviewEnabled(on) {
-  await api.reviewEnable(on);
-  rvMessage(on ? '기록 켜짐' : '기록 꺼짐', 'ok');
-  loadReview();
+// The request to make one recommended skill: one line, no control characters.
+function skillRequest(s) {
+  const clean = (x) => String(x || '').replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const ev = s.evidence.length ? ` 근거가 된 요청: ${s.evidence.map((e) => `「${clean(e)}」`).join(', ')}.` : '';
+  return clean(`스킬을 하나 만들어줘. 이름: ${s.name}. 할 일: ${s.title}. 이유: ${s.why}.${ev} 이 프로젝트의 .claude/skills 에 만들고, 만들기 전에 무엇을 어디에 만들지 먼저 보여 주고 내 확인을 받아.`);
 }
 
-function stepReviewDay(delta) {
-  const d = rv.data;
-  if (!d) return;
-  const days = [...new Set([d.today, ...d.days])].sort().reverse();
-  const next = days[days.indexOf(d.day) + delta];
-  if (!next) return;
-  rv.day = next === d.today ? null : next;
-  rv.open.clear();
-  rv.picked.clear();
-  rv.pickedFix.clear();
-  rvMessage('');
-  loadReview();
+function renderResults() {
+  const items = rs.items;
+  if (items[0] && items[0].status !== 'running' && rs.seen !== items[0].id) { rs.seen = items[0].id; writePref('resultsSeen', rs.seen); }
+  markResults();
+  rs.count.textContent = items.length ? `${items.length}개` : '';
+  rs.clear.hidden = !items.length;
+  rs.empty.hidden = items.length > 0 || !rs.loaded;
+  rs.list.replaceChildren(...items.map(resultItem));
 }
 
-rv.els.prev.addEventListener('click', () => stepReviewDay(1));
-rv.els.next.addEventListener('click', () => stepReviewDay(-1));
-rv.els.project.addEventListener('change', () => {
-  rv.project = rv.els.project.value || null;
-  writePref('reviewProject', rv.project || '');
-  rv.open.clear();
-  rv.picked.clear();
-  rv.pickedFix.clear();
-  loadReview();
-});
-rv.els.enabled.addEventListener('change', () => setReviewEnabled(rv.els.enabled.checked));
-rv.els.clearDay.addEventListener('click', async () => {
-  const d = rv.data;
-  if (!d || !window.confirm(`${rvDayLabel(d.day)} 기록을 지울까요? 되돌릴 수 없습니다.`)) return;
-  await api.reviewClear(d.day);
-  rv.day = null;
-  rvMessage(`${rvDayLabel(d.day)} 기록 지움`, 'ok');
-  loadReview();
-});
-rv.els.clearAll.addEventListener('click', async () => {
-  if (!rv.data || !window.confirm(`모아 둔 기록(최근 ${rv.data.keepDays}일)을 전부 지울까요? 되돌릴 수 없습니다.`)) return;
-  await api.reviewClear(null);
-  rv.day = null;
-  rvMessage('기록 전부 지움', 'ok');
-  loadReview();
-});
-rv.els.dialog.addEventListener('click', (e) => { if (e.target === rv.els.dialog) rv.els.dialogCancel.click(); });
+function resultItem(x) {
+  const li = h('li', `rs-item${x.status === 'failed' ? ' failed' : ''}`);
+  const head = h('div', 'rs-head');
+  const where = x.kind === 'hook' ? x.terminal || rsBase(x.cwd) : rsBase(x.project);
+  head.append(h('span', 'rs-name ellipsis', x.ruleName || '규칙'), h('span', 'rs-where ellipsis', where || ''), h('span', 'rs-time', dayClock(x.at)));
+  head.title = [x.ruleName, x.project || x.cwd, new Date(x.at).toLocaleString()].filter(Boolean).join('\n');
+  const del = h('button', 'mini-btn rs-del', '✕');
+  del.type = 'button';
+  del.title = '이 결과 지우기';
+  del.addEventListener('click', () => api.resultsRemove(x.id));
+  head.append(del);
+  li.append(head);
+  if (x.status === 'running') {
+    li.append(h('p', 'hint rs-run', `실행 중… 요청 ${x.requests || 0}개를 읽고 있습니다.`));
+    return li;
+  }
+  if (x.status === 'failed') {
+    li.append(h('p', 'rs-err', `실패: ${x.error || '알 수 없음'}`));
+    return li;
+  }
+  if (x.kind === 'skills' && Array.isArray(x.skills)) {
+    if (!x.skills.length) li.append(h('p', 'hint', `추천할 스킬이 없습니다. (요청 ${x.requests || 0}개 확인)`));
+    for (const s of x.skills) {
+      const card = h('div', 'rs-skill');
+      const top = h('div', 'rs-skill-head');
+      top.append(h('span', 'rs-skill-name', s.name), h('span', 'rs-skill-title', s.title));
+      if (s.count) top.append(h('span', 'rs-skill-count', `${s.count}회`));
+      card.append(top);
+      if (s.why) card.append(h('p', 'rs-why', s.why));
+      if (s.evidence.length) {
+        const ul = h('ul', 'rs-ev');
+        for (const e of s.evidence) ul.append(h('li', null, e));
+        card.append(ul);
+      }
+      const make = h('button', 'btn rs-make', '스킬 만들기 요청 넣기');
+      make.type = 'button';
+      make.title = '이 프로젝트의 Claude 입력칸에 요청을 넣습니다 (보내지는 않음)';
+      make.addEventListener('click', () => sendToClaude(x.project, skillRequest(s)));
+      card.append(make);
+      li.append(card);
+    }
+  } else if (x.text) {
+    li.append(h('div', 'rs-text', x.text.length > 600 ? `${x.text.slice(0, 600)}…` : x.text));
+    if (x.text.length > 600) {
+      const more = h('button', 'btn rs-more', '전체 보기');
+      more.type = 'button';
+      more.addEventListener('click', () => openViewer({
+        path: `${x.ruleName || '결과'} · ${dayClock(x.at)}`,
+        views: [{ key: 'read', label: '읽기', load: async () => ({ text: x.text, markdown: x.text, size: x.text.length }) }],
+        actions: { copy: { label: '복사', text: x.text } },
+      }));
+      li.append(more);
+    }
+  }
+  const meta = [x.requests ? `요청 ${x.requests}개` : '', x.hours ? `${x.hours}시간` : '', x.cost ? `$${x.cost.toFixed(2)}` : ''].filter(Boolean).join(' · ');
+  if (meta) li.append(h('div', 'rs-meta', meta));
+  return li;
+}
 
-setInspectorTab(inspectorTab);
-setInspectorOpen(readPref('inspectorOpen', 'true') === 'true');
+rs.clear.addEventListener('click', () => {
+  if (window.confirm('자동화 결과를 모두 지울까요?')) api.resultsClear();
+});
+// The empty tab's shortcut: the skill search rule, opened in the 자동화 tab.
+rs.start.addEventListener('click', () => {
+  const t = RuleLogic.TEMPLATES.find((x) => x.event === 'timer' && x.action.preset === 'skills');
+  let r = rules.find((x) => x.event === 'timer' && x.action.preset === 'skills');
+  if (!r) { r = newRule(t); rules.push(r); saveRules(); }
+  ruleOpen = r.id;
+  setInspectorTab('rules');
+});
+api.resultsList().then((items) => { rs.items = items || []; markResults(); }).catch(() => {});
 
 // ---------- terminals | config height ----------
 // Drag the border between the terminal list and the config list. Dragging to

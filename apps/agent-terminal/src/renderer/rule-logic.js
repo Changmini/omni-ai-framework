@@ -11,7 +11,8 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.RuleLogic = api;
 }(typeof self !== 'undefined' ? self : this, () => {
-  // Rule events and the Claude Code hook each one answers to.
+  // Rule events and the Claude Code hook each one answers to. `timer` has
+  // no hook: the main process runs it every `every` hours (src/automation.js).
   const EVENTS = {
     prompt: { hook: 'UserPromptSubmit', label: '💬 프롬프트' },
     pre: { hook: 'PreToolUse', label: '🛠️ 실행 전' },
@@ -19,21 +20,32 @@
     wait: { hook: 'PermissionRequest', label: '✋ 승인 대기' },
     stop: { hook: 'Stop', label: '🏁 작업 끝' },
     compact: { hook: 'PostCompact', label: '🗜️ 압축 뒤' },
+    timer: { hook: null, label: '⏰ 시간마다' },
   };
-  const EVENT_OF_HOOK = Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [v.hook, k]));
+  const EVENT_OF_HOOK = Object.fromEntries(Object.entries(EVENTS).filter(([, v]) => v.hook).map(([k, v]) => [v.hook, k]));
+  const HOOK_EVENTS = Object.keys(EVENTS).filter((k) => EVENTS[k].hook);
+  // Hours between two runs of a timer rule.
+  const EVERY = { min: 1, max: 168, def: 12 };
+  const everyHours = (v) => (Number.isInteger(v) && v >= EVERY.min && v <= EVERY.max ? v : EVERY.def);
 
   // Actions, and the events each one can run on. Text for Claude goes with a
   // prompt or a tool call (on a finished turn it would make Claude carry on);
   // block and ask only before a tool runs (Claude Code reads
   // permissionDecision there; HTTP hook replies verified on 2.1.331).
+  // `result` keeps a text in the 자동화 결과 tab; `agent` runs Claude in the
+  // background on a timer, once per project, and keeps its answer there.
   const ACTIONS = {
     context: { label: '📝 글 붙이기', events: ['prompt', 'pre', 'post'], reply: true },
     pipeline: { label: '🧭 노드 정보 붙이기', events: ['prompt'], reply: true },
     block: { label: '⛔ 막기', events: ['pre'], reply: true },
     ask: { label: '❓ 확인 받기', events: ['pre'], reply: true },
-    fill: { label: '↪️ 다른 터미널에 넣기', events: Object.keys(EVENTS), reply: false },
-    highlight: { label: '⚡ 표시', events: Object.keys(EVENTS), reply: false },
+    fill: { label: '↪️ 다른 터미널에 넣기', events: HOOK_EVENTS, reply: false },
+    highlight: { label: '⚡ 표시', events: HOOK_EVENTS, reply: false },
+    result: { label: '📋 결과에 남기기', events: HOOK_EVENTS, reply: false },
+    agent: { label: '🤖 에이전트 실행', events: ['timer'], reply: false },
   };
+  // Agent runs with a fixed job: the app adds the input and the answer's form.
+  const PRESETS = { skills: { label: '추천 스킬 찾기' } };
 
   const FREQS = { every: '매번', once: '세션당 1번', changed: '바뀔 때만' };
   const VARS = ['terminal', 'branch', 'cwd', 'prompt', 'command', 'file', 'tool', 'last_answer'];
@@ -113,6 +125,11 @@
   // The rule as one short line for the list: when · condition · where →
   // what. "Every terminal" is left out; "?" marks a choice still to make.
   function describe(rule, groupName = (id) => id) {
+    const a0 = rule.action || {};
+    if (rule.event === 'timer') {
+      const job = a0.kind === 'agent' && PRESETS[a0.preset] ? `🤖 ${PRESETS[a0.preset].label}` : ACTIONS[a0.kind] ? ACTIONS[a0.kind].label : '?';
+      return `⏰ ${everyHours(rule.every)}시간마다 · 프로젝트마다 → ${job}`;
+    }
     const ev = EVENTS[rule.event] ? EVENTS[rule.event].label : '?';
     const c = rule.cond || {};
     const shown = String(c.value || '').length > 40 ? `${String(c.value).slice(0, 40)}…` : c.value;
@@ -135,6 +152,14 @@
   // regex is tested against what it must and must not catch
   // (test/rules.test.js).
   const R = String.raw;
+  // What the 추천 스킬 찾기 agent is told; the user may edit it. The app adds
+  // the project's requests of the period and the form of the answer.
+  const SKILLS_PROMPT = [
+    '아래는 이 프로젝트({project})에서 지난 {hours}시간 동안 사용자가 Claude 에게 한 요청이다.',
+    '여러 번 되풀이됐거나, 매번 같은 순서·같은 설명으로 진행된 작업을 찾아 스킬로 만들면 좋은 것을 최대 5개 추천하라.',
+    '이미 있는 스킬({skills})과 겹치는 것은 뺀다. 근거가 약하면 추천하지 않는다(0개도 된다).',
+    '사용자의 말을 그대로 옮기지 말고, 스킬이 할 일을 짧은 동작 문장으로 정리한다.',
+  ].join('\n');
   const END = R`(?=\s|;|&|\||\)|$)`; // end of a command-line word
   const EDIT = R`^(Edit|Write|MultiEdit) `;
   const none = { kind: 'none', value: '' };
@@ -199,7 +224,12 @@
     { group: '↪️ 넘기기·표시', name: '작업 끝 표시', event: 'stop', cond: none, scope: all, action: { kind: 'highlight' }, freq: 'every' },
 
     { group: '🧭 보드', name: '보드 노드 알리기', event: 'prompt', cond: none, scope: all, action: { kind: 'pipeline' }, freq: 'changed' },
+
+    { group: '⏰ 정기 실행', name: '추천 스킬 찾기', event: 'timer', every: 12, cond: none, scope: all, action: { kind: 'agent', preset: 'skills', text: SKILLS_PROMPT }, freq: 'every' },
+
+    { group: '📋 결과에 남기기', name: '작업 끝 답 남기기', event: 'stop', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 작업 끝 ({branch})\n\n{last_answer}' }, freq: 'every' },
+    { group: '📋 결과에 남기기', name: '승인 요청 남기기', event: 'wait', cond: none, scope: all, action: { kind: 'result', text: '「{terminal}」 승인 대기: {tool} {command}{file}' }, freq: 'every' },
   ];
 
-  return { EVENTS, EVENT_OF_HOOK, ACTIONS, FREQS, VARS, TEMPLATES, subject, vars, fillText, condHolds, agentMatches, fires, describe };
+  return { EVENTS, EVENT_OF_HOOK, HOOK_EVENTS, EVERY, everyHours, ACTIONS, PRESETS, FREQS, VARS, TEMPLATES, SKILLS_PROMPT, subject, vars, fillText, condHolds, agentMatches, fires, describe };
 }));
