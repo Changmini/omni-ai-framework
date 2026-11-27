@@ -15,6 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const readline = require('node:readline');
 const RuleLogic = require('./renderer/rule-logic');
 const { wslToWindows, decodeOutput } = require('./wsl');
 
@@ -25,6 +26,7 @@ const MAX_PROMPT = 600; // characters of one request given to the agent
 const MAX_HISTORY = 60000; // characters of requests given to the agent per run
 const RUN_TIMEOUT = 10 * 60 * 1000;
 const TICK = 60 * 1000;
+const WSL_START = 'PATH="$HOME/.local/bin:$PATH"; command -v claude >/dev/null 2>&1 || { [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"; }; exec claude "$@"';
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -111,33 +113,38 @@ function requestText(entry) {
 
 // Requests made since `since` in the conversation files under `claudeDir`,
 // by project folder: Map(cwd -> [{ at, text }]). Files not touched since
-// then are not opened.
-function readRequests(claudeDir, since) {
+// then are not opened. Read line by line without blocking: the files can
+// hold hundreds of MB (over \\wsl.localhost, slowly), and the main process
+// also carries every terminal's output.
+async function readRequests(claudeDir, since) {
   const out = new Map();
   const root = path.join(claudeDir, 'projects');
   let dirs = [];
-  try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()); } catch { return out; }
+  try { dirs = (await fs.promises.readdir(root, { withFileTypes: true })).filter((d) => d.isDirectory()); } catch { return out; }
   for (const d of dirs) {
     let files = [];
-    try { files = fs.readdirSync(path.join(root, d.name)).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
+    try { files = (await fs.promises.readdir(path.join(root, d.name))).filter((f) => f.endsWith('.jsonl')); } catch { continue; }
     for (const f of files) {
       const file = path.join(root, d.name, f);
-      let text;
       try {
-        if (fs.statSync(file).mtimeMs < since) continue;
-        text = fs.readFileSync(file, 'utf8');
+        if ((await fs.promises.stat(file)).mtimeMs < since) continue;
       } catch { continue; }
-      for (const line of text.split('\n')) {
-        if (!/"type"\s*:\s*"user"/.test(line)) continue; // skip the rest unparsed
-        let e;
-        try { e = JSON.parse(line); } catch { continue; }
-        const at = Date.parse(e.timestamp);
-        if (!(at >= since) || typeof e.cwd !== 'string') continue;
-        const req = requestText(e);
-        if (!req) continue;
-        if (!out.has(e.cwd)) out.set(e.cwd, []);
-        out.get(e.cwd).push({ at, text: req });
-      }
+      const stream = fs.createReadStream(file, { encoding: 'utf8' });
+      stream.on('error', () => {});
+      const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+        for await (const line of lines) {
+          if (!/"type"\s*:\s*"user"/.test(line)) continue; // skip the rest unparsed
+          let e;
+          try { e = JSON.parse(line); } catch { continue; }
+          const at = Date.parse(e.timestamp);
+          if (!(at >= since) || typeof e.cwd !== 'string') continue;
+          const req = requestText(e);
+          if (!req) continue;
+          if (!out.has(e.cwd)) out.set(e.cwd, []);
+          out.get(e.cwd).push({ at, text: req });
+        }
+      } catch { /* a file that went away or cannot be read: skipped */ }
     }
   }
   for (const list of out.values()) list.sort((a, b) => a.at - b.at);
@@ -217,10 +224,11 @@ function runClaude({ prompt, cwd, distro = null, platform = process.platform, sp
   const opts = { cwd: distro ? undefined : cwd, env: { ...process.env, OMNI_AUTOMATION: '1' }, windowsHide: true };
   for (const k of Object.keys(opts.env)) if (/^OMNI_(TERMINAL|HOOK|CWD_URL|CLAUDE_SETTINGS|PLUGIN_DIR)/.test(k)) delete opts.env[k];
   if (distro && platform === 'win32') {
-    // A login, interactive bash finds claude where the user's own shell does
-    // (nvm, ~/.local/bin are often set up in ~/.bashrc).
+    // A login bash (not interactive: ~/.bashrc may start tmux or another
+    // shell, and claude would then never run) with ~/.local/bin, where the
+    // native installer puts claude, and nvm, where npm installs often live.
     cmd = 'wsl.exe';
-    argv = ['-d', distro, '--cd', cwd, '-e', 'bash', '-lic', 'exec claude "$@"', 'claude', ...args];
+    argv = ['-d', distro, '--cd', cwd, '-e', 'bash', '-lc', WSL_START, 'claude', ...args];
   } else if (platform === 'win32') {
     opts.shell = true; // claude.cmd from npm
     argv = args.map((a) => (a === '' ? '""' : a));
@@ -321,7 +329,7 @@ class Automation {
     try {
       const jobs = [];
       for (const { dir, distro } of this.claudeDirs()) {
-        for (const [cwd, requests] of readRequests(dir, since)) {
+        for (const [cwd, requests] of await readRequests(dir, since)) {
           const host = distro ? wslToWindows(cwd, distro) || cwd : cwd;
           jobs.push({ cwd, distro, host, claudeDir: dir, requests });
         }
